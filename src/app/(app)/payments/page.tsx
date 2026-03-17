@@ -1,12 +1,14 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, DollarSign, Download, RefreshCw } from 'lucide-react'
-import { getPayments, syncTripPaymentStatus } from '@/lib/api'
+import { Plus, DollarSign, Download, RefreshCw, Trash2 } from 'lucide-react'
+import { getPayments, syncTripPaymentStatus, deletePayment } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import Modal from '@/components/ui/Modal'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { useAuth } from '@/context/AuthContext'
+import { showToast } from '@/components/ui/Toast'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Payment = any
@@ -17,6 +19,8 @@ export default function PaymentsPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<Payment | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const handleSync = async () => {
     setSyncing(true)
@@ -43,6 +47,18 @@ export default function PaymentsPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const handleDeletePayment = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deletePayment(deleteTarget.id)
+      showToast('success', 'تم حذف الدفعة')
+      setDeleteTarget(null)
+      load()
+    } catch { showToast('error', 'فشل الحذف') }
+    finally { setDeleting(false) }
+  }
 
   const totalPaid = payments.reduce((s: number, p: Payment) => s + Number(p.amount_paid), 0)
 
@@ -99,6 +115,7 @@ export default function PaymentsPage() {
                 <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">المبلغ</th>
                 <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">ملاحظات</th>
                 <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">وصل القبض</th>
+                {canEdit && <th className="px-6 py-3 text-xs text-slate-500 font-medium">إجراءات</th>}
               </tr>
             </thead>
             <tbody>
@@ -118,6 +135,11 @@ export default function PaymentsPage() {
                         <a href={p.receipt_image_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs hover:underline">عرض</a>
                       ) : '—'}
                     </td>
+                    {canEdit && (
+                      <td className="px-6 py-3">
+                        <button onClick={() => setDeleteTarget(p)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={14} /></button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -125,6 +147,20 @@ export default function PaymentsPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirm Modal */}
+      {deleteTarget && (
+        <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="تأكيد حذف الدفعة">
+          <div className="space-y-4">
+            <p className="text-slate-600">هل أنت متأكد من حذف دفعة <span className="font-bold text-slate-800">{deleteTarget.factories?.name}</span> بقيمة <span className="font-bold text-emerald-700">{Number(deleteTarget.amount_paid).toLocaleString()} ₪</span>؟</p>
+            <p className="text-xs text-red-500">⚠️ لا يمكن التراجع عن هذا الإجراء</p>
+            <div className="flex gap-2 pt-2">
+              <Button variant="danger" className="flex-1" onClick={handleDeletePayment} loading={deleting}>نعم، احذف</Button>
+              <Button variant="ghost" className="flex-1" onClick={() => setDeleteTarget(null)}>إلغاء</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

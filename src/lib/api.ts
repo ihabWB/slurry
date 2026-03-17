@@ -86,6 +86,20 @@ export async function updateTrip(id: string, updates: { volume_m3?: number | nul
   return data as Trip
 }
 
+export async function deleteTrip(id: string) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('trips').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function deletePayment(id: string) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('payments').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function createBulkTrips(factoryIds: string[], payment_status: 'paid' | 'credit', trip_date: string, notes?: string, volume_m3?: number | null, waste_type?: 'liquid' | 'solid' | null) {
   const supabase = createClient()
   const payment_method = payment_status === 'paid' ? 'cash' : null

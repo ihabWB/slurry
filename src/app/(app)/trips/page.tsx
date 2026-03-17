@@ -1,13 +1,15 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Filter, Download } from 'lucide-react'
-import { getTrips } from '@/lib/api'
+import { Plus, Filter, Download, Pencil, Trash2 } from 'lucide-react'
+import { getTrips, updateTrip, deleteTrip } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Select } from '@/components/ui/Input'
+import { Select, Input } from '@/components/ui/Input'
+import Modal from '@/components/ui/Modal'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { useAuth } from '@/context/AuthContext'
+import { showToast } from '@/components/ui/Toast'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Trip = any
@@ -17,6 +19,15 @@ export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'paid' | 'credit'>('all')
+
+  // Edit modal
+  const [editTrip, setEditTrip] = useState<Trip | null>(null)
+  const [editForm, setEditForm] = useState({ trip_date: '', notes: '', payment_status: 'credit', waste_type: '', volume_m3: '' })
+  const [saving, setSaving] = useState(false)
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<Trip | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -31,6 +42,47 @@ export default function TripsPage() {
   }, [filter])
 
   useEffect(() => { load() }, [load])
+
+  const openEdit = (t: Trip) => {
+    setEditTrip(t)
+    setEditForm({
+      trip_date: t.trip_date ?? '',
+      notes: t.notes ?? '',
+      payment_status: t.payment_status ?? 'credit',
+      waste_type: t.waste_type ?? '',
+      volume_m3: t.volume_m3 != null ? String(t.volume_m3) : '',
+    })
+  }
+
+  const handleSave = async () => {
+    if (!editTrip) return
+    setSaving(true)
+    try {
+      await updateTrip(editTrip.id, {
+        trip_date: editForm.trip_date || undefined,
+        notes: editForm.notes || null,
+        payment_status: editForm.payment_status as 'paid' | 'credit',
+        waste_type: (editForm.waste_type as 'liquid' | 'solid') || null,
+        volume_m3: editForm.volume_m3 ? Number(editForm.volume_m3) : null,
+      })
+      showToast('success', 'تم تحديث النقلة')
+      setEditTrip(null)
+      load()
+    } catch { showToast('error', 'فشل التحديث') }
+    finally { setSaving(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deleteTrip(deleteTarget.id)
+      showToast('success', 'تم حذف النقلة')
+      setDeleteTarget(null)
+      load()
+    } catch { showToast('error', 'فشل الحذف') }
+    finally { setDeleting(false) }
+  }
 
   const totalAmount = trips.reduce((s: number, t: Trip) => s + Number(t.amount), 0)
   const paidCount = trips.filter((t: Trip) => t.payment_status === 'paid').length
@@ -118,6 +170,7 @@ export default function TripsPage() {
                     <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">تاريخ النقلة</th>
                     <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">وقت الإدخال</th>
                     <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">ملاحظات</th>
+                    {canEdit && <th className="px-6 py-3 text-xs text-slate-500 font-medium">إجراءات</th>}
               </tr>
             </thead>
             <tbody>
@@ -157,6 +210,14 @@ export default function TripsPage() {
                     <td className="px-6 py-3 text-slate-700 text-xs font-medium">{t.trip_date ? format(new Date(t.trip_date), 'dd/MM/yyyy') : '—'}</td>
                     <td className="px-6 py-3 text-slate-400 text-xs">{format(new Date(t.created_at), 'dd/MM/yyyy HH:mm')}</td>
                     <td className="px-6 py-3 text-slate-400 text-xs max-w-[150px] truncate">{t.notes ?? '—'}</td>
+                    {canEdit && (
+                      <td className="px-6 py-3">
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors"><Pencil size={14} /></button>
+                          <button onClick={() => setDeleteTarget(t)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -164,6 +225,59 @@ export default function TripsPage() {
           </table>
         </div>
       </Card>
+
+      {/* Edit Modal */}
+      {editTrip && (
+        <Modal open={!!editTrip} onClose={() => setEditTrip(null)} title={`تعديل نقلة — ${editTrip.factories?.name ?? ''}`}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">تاريخ النقلة</label>
+              <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">حالة الدفع</label>
+              <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                <option value="credit">ذمة</option>
+                <option value="paid">مدفوع</option>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">نوع الربو</label>
+              <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
+                <option value="">غير محدد</option>
+                <option value="liquid">💧 سائل</option>
+                <option value="solid">🪨 جاف</option>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">الحجم (م³)</label>
+              <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">ملاحظات</label>
+              <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button className="flex-1" onClick={handleSave} loading={saving}>حفظ التغييرات</Button>
+              <Button variant="ghost" className="flex-1" onClick={() => setEditTrip(null)}>إلغاء</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteTarget && (
+        <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="تأكيد الحذف">
+          <div className="space-y-4">
+            <p className="text-slate-600">هل أنت متأكد من حذف نقلة <span className="font-bold text-slate-800">{deleteTarget.factories?.name}</span>؟</p>
+            <p className="text-xs text-red-500">⚠️ لا يمكن التراجع عن هذا الإجراء</p>
+            <div className="flex gap-2 pt-2">
+              <Button variant="danger" className="flex-1" onClick={handleDelete} loading={deleting}>نعم، احذف</Button>
+              <Button variant="ghost" className="flex-1" onClick={() => setDeleteTarget(null)}>إلغاء</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
