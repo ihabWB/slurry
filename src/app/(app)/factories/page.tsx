@@ -52,7 +52,7 @@ export default function FactoriesPage() {
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 }) as string[][]
         // Skip header row
-        const parsed = rows.slice(1).filter(r => r.length >= 3 && r[0]).map(r => ({
+        const parsed = rows.slice(1).filter(r => r && r[0] && String(r[0]).trim()).map(r => ({
           name: String(r[0] ?? '').trim(),
           owner_name: String(r[1] ?? '').trim(),
           phone: String(r[2] ?? '').trim(),
@@ -76,16 +76,18 @@ export default function FactoriesPage() {
     for (let i = 0; i < updated.length; i++) {
       const r = updated[i]
       if (r.status === 'success') continue
-      if (!r.name || !r.owner_name || !r.phone || !r.lat || !r.lng) {
-        updated[i] = { ...r, status: 'error', error: 'حقول ناقصة' }
+      if (!r.name || !r.owner_name || !r.phone) {
+        updated[i] = { ...r, status: 'error', error: 'حقول ناقصة (الاسم، المالك، الجوال مطلوبة)' }
         continue
       }
-      if (isNaN(Number(r.lat)) || isNaN(Number(r.lng))) {
+      const latVal = r.lat ? Number(r.lat) : 0
+      const lngVal = r.lng ? Number(r.lng) : 0
+      if (r.lat && isNaN(latVal) || r.lng && isNaN(lngVal)) {
         updated[i] = { ...r, status: 'error', error: 'إحداثيات غير صحيحة' }
         continue
       }
       try {
-        await createFactory({ name: r.name, owner_name: r.owner_name, phone: r.phone, region: r.region || '', lat: Number(r.lat), lng: Number(r.lng) })
+        await createFactory({ name: r.name, owner_name: r.owner_name, phone: r.phone, region: r.region || '', lat: latVal, lng: lngVal })
         updated[i] = { ...r, status: 'success' }
       } catch (e: unknown) {
         updated[i] = { ...r, status: 'error', error: e instanceof Error ? e.message : 'خطأ' }
