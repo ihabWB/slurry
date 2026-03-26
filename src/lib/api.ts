@@ -290,7 +290,9 @@ export async function getFactoryStatement(factory_id: string) {
   const totalAmount = totalTrips * 50
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalPaid = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-  const balance = totalAmount - totalPaid
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const creditTripsCount = (tripsRes.data || []).filter((t: any) => t.payment_status === 'credit').length
+  const balance = creditTripsCount * 50
 
   return { trips: tripsRes.data, payments: paymentsRes.data, totalTrips, totalAmount, totalPaid, balance }
 }
