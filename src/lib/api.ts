@@ -184,16 +184,6 @@ export async function createPayment(payment: PaymentInsert) {
 
   return data as Payment
 }
-        await (supabase as any)
-          .from('trips')
-          .update({ payment_status: 'paid', payment_method: 'later' })
-          .in('id', ids)
-      }
-    }
-  }
-
-  return data as Payment
-}
 
 export async function uploadReceipt(file: File, paymentId: string): Promise<string> {
   const supabase = createClient()
