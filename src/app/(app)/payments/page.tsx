@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, DollarSign, Download, RefreshCw, Trash2 } from 'lucide-react'
-import { getPayments, syncTripPaymentStatus, deletePayment } from '@/lib/api'
+import { Plus, DollarSign, Download, Trash2 } from 'lucide-react'
+import { getPayments, deletePayment } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
@@ -17,25 +17,8 @@ export default function PaymentsPage() {
   const { canEdit } = useAuth()
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Payment | null>(null)
   const [deleting, setDeleting] = useState(false)
-
-  const handleSync = async () => {
-    setSyncing(true)
-    setSyncMsg('')
-    try {
-      const updated = await syncTripPaymentStatus()
-      setSyncMsg(`✅ تم تحديث ${updated} نقلة بنجاح`)
-      await load()
-    } catch (e) {
-      setSyncMsg('❌ حدث خطأ أثناء المزامنة')
-      console.error(e)
-    } finally {
-      setSyncing(false)
-    }
-  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -72,9 +55,6 @@ export default function PaymentsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={handleSync} loading={syncing}>
-            <RefreshCw size={14} /> مزامنة الدفعات
-          </Button>
           {canEdit && (
             <Link href="/payments/new">
               <Button size="lg"><Plus size={16} /> تسجيل دفعة</Button>
@@ -82,10 +62,6 @@ export default function PaymentsPage() {
           )}
         </div>
       </div>
-
-      {syncMsg && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700">{syncMsg}</div>
-      )}
 
       <Card>
         <CardBody className="flex items-center gap-4">

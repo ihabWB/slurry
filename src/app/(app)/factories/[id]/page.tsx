@@ -50,7 +50,11 @@ export default function FactoryDetailPage() {
     doc.save(`statement-${factory.name}.pdf`)
   }
 
-  if (loading) return <div className="text-center py-16 text-slate-400">جارٍ التحميل...</div>
+  const cashTrips = statement?.trips?.filter((t: any) => t.payment_method === 'cash').length ?? 0
+  const laterTrips = statement?.trips?.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').length ?? 0
+  const creditTrips = statement?.trips?.filter((t: any) => t.payment_status === 'credit').length ?? 0
+
+  if (loading) return <div className="text-center py-16 text-slate-400">جارّي التحميل...</div>
   if (!factory) return <div className="text-center py-16 text-red-500">المصنع غير موجود</div>
 
   return (
@@ -69,25 +73,62 @@ export default function FactoryDetailPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'إجمالي النقلات', value: statement?.totalTrips ?? 0, icon: Truck, color: 'text-blue-600 bg-blue-50', suffix: 'نقلة' },
-          { label: 'إجمالي المستحق', value: statement?.totalAmount ?? 0, icon: DollarSign, color: 'text-violet-600 bg-violet-50', suffix: '₪' },
-          { label: 'إجمالي المدفوع', value: statement?.totalPaid ?? 0, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50', suffix: '₪' },
-          { label: 'الرصيد المتبقي', value: statement?.balance ?? 0, icon: AlertTriangle, color: statement?.balance > 0 ? 'text-red-600 bg-red-50' : 'text-emerald-600 bg-emerald-50', suffix: '₪' },
-        ].map(({ label, value, icon: Icon, color, suffix }) => (
-          <Card key={label}>
-            <CardBody className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
-                <Icon size={18} />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">{label}</p>
-                <p className="font-bold text-slate-800">{Number(value).toLocaleString()} <span className="text-xs font-normal text-slate-500">{suffix}</span></p>
-              </div>
-            </CardBody>
-          </Card>
-        ))}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Card className="border-blue-100">
+          <CardBody className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50">
+              <Truck size={16} className="text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">إجمالي النقلات</p>
+              <p className="font-bold text-slate-800">{statement?.totalTrips ?? 0} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
+            </div>
+          </CardBody>
+        </Card>
+        <Card className="border-green-100">
+          <CardBody className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-50">
+              <span className="text-sm">💵</span>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">نقداً فور</p>
+              <p className="font-bold text-green-700">{cashTrips} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
+            </div>
+          </CardBody>
+        </Card>
+        <Card className="border-blue-100">
+          <CardBody className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50">
+              <span className="text-sm">🏦</span>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">مسوّاة لاحقاً</p>
+              <p className="font-bold text-blue-700">{laterTrips} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
+            </div>
+          </CardBody>
+        </Card>
+        <Card className="border-amber-100">
+          <CardBody className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber-50">
+              <AlertTriangle size={16} className="text-amber-600" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">غير مسوّاة</p>
+              <p className="font-bold text-amber-700">{creditTrips} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
+            </div>
+          </CardBody>
+        </Card>
+        <Card className={statement?.balance > 0 ? 'border-red-100' : 'border-emerald-100'}>
+          <CardBody className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${statement?.balance > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
+              <DollarSign size={16} className={statement?.balance > 0 ? 'text-red-600' : 'text-emerald-600'} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">الرصيد المتبقي</p>
+              <p className={`font-bold ${statement?.balance > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{Number(statement?.balance ?? 0).toLocaleString()} <span className="text-xs font-normal text-slate-500">₪</span></p>
+            </div>
+          </CardBody>
+        </Card>
       </div>
 
       {/* Trips Table */}
@@ -103,7 +144,6 @@ export default function FactoryDetailPage() {
                 <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">تاريخ النقلة</th>
                 <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">المبلغ</th>
                 <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">الحالة</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">طريقة الدفع</th>
                 <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">ملاحظات</th>
               </tr>
             </thead>
@@ -115,22 +155,19 @@ export default function FactoryDetailPage() {
                   <td className="px-6 py-3 text-slate-700 font-medium">{t.trip_date ? format(new Date(t.trip_date), 'dd/MM/yyyy') : format(new Date(t.created_at), 'dd/MM/yyyy')}</td>
                   <td className="px-6 py-3 font-semibold">{t.amount} ₪</td>
                   <td className="px-6 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                      {t.payment_status === 'paid' ? 'مدفوع' : 'ذمة'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-3">
-                    {t.payment_method === 'cash'
-                      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">💵 نقداً</span>
-                      : t.payment_method === 'later'
-                      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">🏦 لاحقاً</span>
-                      : <span className="text-slate-300 text-xs">—</span>}
+                    {t.payment_method === 'cash' ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">💵 نقداً</span>
+                    ) : t.payment_status === 'paid' && t.payment_method === 'later' ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">🏦 مسوّاة</span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700">⏳ ذمة</span>
+                    )}
                   </td>
                   <td className="px-6 py-3 text-slate-500 text-xs">{t.notes ?? '—'}</td>
                 </tr>
               ))}
               {(!statement?.trips || statement.trips.length === 0) && (
-                <tr><td colSpan={6} className="text-center py-8 text-slate-400">لا توجد نقلات</td></tr>
+                <tr><td colSpan={5} className="text-center py-8 text-slate-400">لا توجد نقلات</td></tr>
               )}
             </tbody>
           </table>

@@ -155,24 +155,35 @@ export async function createPayment(payment: PaymentInsert) {
   const { data, error } = await (supabase as any).from('payments').insert(payment).select().single()
   if (error) throw error
 
-  // Mark credit trips as paid based on the payment amount
-  // Each trip costs 50₪ — mark as many credit trips as the payment covers
+  // Auto-settle oldest credit trips for this factory based on amount paid
+  // Each trip costs 50₪ — settle as many as the payment covers
   if (payment.factory_id && payment.amount_paid) {
-    const tripsToMark = Math.floor(Number(payment.amount_paid) / 50)
-    if (tripsToMark > 0) {
+    const tripsToSettle = Math.floor(Number(payment.amount_paid) / 50)
+    if (tripsToSettle > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: creditTrips } = await (supabase as any)
         .from('trips')
         .select('id')
         .eq('factory_id', payment.factory_id)
         .eq('payment_status', 'credit')
+        .order('trip_date', { ascending: true })
         .order('created_at', { ascending: true })
-        .limit(tripsToMark)
+        .limit(tripsToSettle)
 
       if (creditTrips && creditTrips.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ids = (creditTrips as any[]).map((t: any) => t.id)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('trips')
+          .update({ payment_status: 'paid', payment_method: 'later' })
+          .in('id', ids)
+      }
+    }
+  }
+
+  return data as Payment
+}
         await (supabase as any)
           .from('trips')
           .update({ payment_status: 'paid', payment_method: 'later' })
