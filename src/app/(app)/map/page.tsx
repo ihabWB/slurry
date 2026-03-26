@@ -53,12 +53,13 @@ export default function MapPage() {
         mapInstanceRef.current.remove()
       }
 
-      // Center on first factory or default Palestine center
-      const center: [number, number] = factories[0]
-        ? [factories[0].lat, factories[0].lng]
-        : [31.5, 35.1]
+      // Fixed bounds: Hebron industrial area
+      const bounds: [[number, number], [number, number]] = [
+        [31.488633, 35.0687],   // SW corner
+        [31.5569,   35.143297], // NE corner
+      ]
 
-      const map = L.map(mapRef.current!).setView(center, 11)
+      const map = L.map(mapRef.current!).fitBounds(bounds)
       mapInstanceRef.current = map
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -152,12 +153,12 @@ export default function MapPage() {
           <div
             ref={mapRef}
             className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm"
-            style={{ height: '600px' }}
+            style={{ height: '720px' }}
           />
         </div>
 
         {/* Factory list sidebar */}
-        <div className="space-y-1.5 max-h-[600px] overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-[720px] overflow-y-auto pr-1">
           {(() => {
             const maxT = Math.max(...factories.map((f: FactoryWithCount) => f.trip_count ?? 0), 1)
             return factories.map((f: FactoryWithCount) => (
