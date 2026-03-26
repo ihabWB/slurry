@@ -11,6 +11,36 @@ export async function getFactories() {
   return data as Factory[]
 }
 
+// جلب ملخص مالي شامل لكل المصانع (للتقارير)
+export async function getFactoriesSummary() {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [factoriesRes, tripsRes, paymentsRes] = await Promise.all([
+    (supabase as any).from('factories').select('id, name, owner_name, phone, region'),
+    (supabase as any).from('trips').select('id, factory_id, payment_status, payment_method, amount'),
+    (supabase as any).from('payments').select('factory_id, amount_paid'),
+  ])
+  if (factoriesRes.error) throw factoriesRes.error
+  if (tripsRes.error) throw tripsRes.error
+  if (paymentsRes.error) throw paymentsRes.error
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (factoriesRes.data as any[]).map((f: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const trips = (tripsRes.data as any[]).filter((t: any) => t.factory_id === f.id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payments = (paymentsRes.data as any[]).filter((p: any) => p.factory_id === f.id)
+    const totalTrips = trips.length
+    const cashTrips = trips.filter((t: any) => t.payment_method === 'cash').length
+    const laterTrips = trips.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').length
+    const creditTrips = trips.filter((t: any) => t.payment_status === 'credit').length
+    const totalAmount = totalTrips * 50
+    const totalPaid = payments.reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+    const balance = creditTrips * 50
+    return { ...f, totalTrips, cashTrips, laterTrips, creditTrips, totalAmount, totalPaid, balance }
+  })
+}
+
 export async function getFactoriesWithTripCount() {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -136,14 +166,16 @@ export async function createBulkTrips(factoryIds: string[], payment_status: 'pai
 
 // ─── PAYMENTS ────────────────────────────────────────────────
 
-export async function getPayments(factory_id?: string) {
+export async function getPayments(filters?: { factory_id?: string; from?: string; to?: string }) {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query: any = (supabase as any)
     .from('payments')
     .select('*, factories(name)')
     .order('date', { ascending: false })
-  if (factory_id) query = query.eq('factory_id', factory_id)
+  if (filters?.factory_id) query = query.eq('factory_id', filters.factory_id)
+  if (filters?.from) query = query.gte('date', filters.from)
+  if (filters?.to) query = query.lte('date', filters.to)
   const { data, error } = await query
   if (error) throw error
   return data
