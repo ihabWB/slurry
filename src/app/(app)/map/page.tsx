@@ -1,17 +1,39 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { getFactories } from '@/lib/api'
-import type { Factory } from '@/lib/supabase/database.types'
+import { getFactoriesWithTripCount } from '@/lib/api'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FactoryWithCount = any
+
+// Returns a hex color interpolated between green→yellow→orange→red based on trip count
+function getTripColor(count: number, max: number): string {
+  if (max === 0) return '#22c55e'
+  const ratio = Math.min(count / max, 1)
+  // green (0,200,100) → yellow (255,200,0) → red (220,38,38)
+  let r, g, b
+  if (ratio < 0.5) {
+    const t = ratio * 2
+    r = Math.round(34 + t * (251 - 34))
+    g = Math.round(197 + t * (191 - 197))
+    b = Math.round(94 + t * (36 - 94))
+  } else {
+    const t = (ratio - 0.5) * 2
+    r = Math.round(251 + t * (220 - 251))
+    g = Math.round(191 + t * (38 - 191))
+    b = Math.round(36 + t * (38 - 36))
+  }
+  return `rgb(${r},${g},${b})`
+}
 
 export default function MapPage() {
   const mapRef = useRef<HTMLDivElement>(null)
-  const [factories, setFactories] = useState<Factory[]>([])
-  const [selected, setSelected] = useState<Factory | null>(null)
+  const [factories, setFactories] = useState<FactoryWithCount[]>([])
+  const [selected, setSelected] = useState<FactoryWithCount | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstanceRef = useRef<any>(null)
 
   useEffect(() => {
-    getFactories().then(setFactories).catch(console.error)
+    getFactoriesWithTripCount().then(setFactories).catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -43,33 +65,44 @@ export default function MapPage() {
         attribution: '© OpenStreetMap contributors',
       }).addTo(map)
 
-      factories.forEach(f => {
+      const maxTrips = Math.max(...(factories as FactoryWithCount[]).map((f: FactoryWithCount) => f.trip_count ?? 0), 1)
+
+      factories.forEach((f: FactoryWithCount) => {
+        const count = f.trip_count ?? 0
+        const color = getTripColor(count, maxTrips)
         const isOverdue = f.balance > 0
-        const color = isOverdue ? '#ef4444' : '#22c55e'
 
         const icon = L.divIcon({
           html: `<div style="
-            background: ${color};
-            width: 32px;
-            height: 32px;
-            border-radius: 50% 50% 50% 0;
-            transform: rotate(-45deg);
-            border: 3px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          "></div>`,
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
+            position: relative;
+            width: 20px;
+            height: 20px;
+          ">
+            <div style="
+              width: 20px;
+              height: 20px;
+              border-radius: 50%;
+              background: ${color};
+              border: 2.5px solid white;
+              box-shadow: 0 1px 5px rgba(0,0,0,0.35);
+            "></div>
+          </div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10],
           className: '',
         })
 
         const marker = L.marker([f.lat, f.lng], { icon })
           .addTo(map)
           .bindPopup(`
-            <div style="font-family: Arial, sans-serif; direction: rtl; min-width: 160px;">
-              <strong style="font-size: 14px">${f.name}</strong><br/>
-              <span style="color: #64748b; font-size: 12px">${f.region || ''}</span><br/>
-              <span style="font-size: 12px">👤 ${f.owner_name}</span><br/>
-              <span style="font-size: 12px">📞 ${f.phone}</span><br/>
+            <div style="font-family: Arial, sans-serif; direction: rtl; min-width: 170px; padding: 2px 0;">
+              <strong style="font-size: 13px; color: #1e293b">${f.name}</strong><br/>
+              <span style="color: #64748b; font-size: 11px">${f.region || ''}</span><br/>
+              <div style="margin-top: 5px; display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 11px">👤 ${f.owner_name}</span>
+                <span style="font-size: 11px">📞 ${f.phone}</span>
+                <span style="font-size: 11px">🚛 عدد النقلات: <strong>${count}</strong></span>
+              </div>
               <span style="
                 display: inline-block;
                 margin-top: 6px;
@@ -105,15 +138,11 @@ export default function MapPage() {
           <h1 className="text-2xl font-bold text-slate-800">خريطة المصانع</h1>
           <p className="text-sm text-slate-500 mt-0.5">{factories.length} مصنع على الخريطة</p>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-            <span className="text-slate-600">ملتزم</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <span className="text-slate-600">متأخر</span>
-          </div>
+        <div className="flex items-center gap-3 text-xs text-slate-500">
+          <span>قليل</span>
+          <div className="w-28 h-3 rounded-full" style={{ background: 'linear-gradient(to right, #22c55e, #eab308, #dc2626)' }}></div>
+          <span>كثير</span>
+          <span className="text-slate-400">← عدد النقلات</span>
         </div>
       </div>
 
@@ -128,26 +157,28 @@ export default function MapPage() {
         </div>
 
         {/* Factory list sidebar */}
-        <div className="space-y-2 max-h-[600px] overflow-y-auto">
-          {factories.map(f => (
-            <div
-              key={f.id}
-              onClick={() => setSelected(f)}
-              className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                selected?.id === f.id
-                  ? 'border-blue-400 bg-blue-50'
-                  : f.balance > 0
-                    ? 'border-red-100 bg-red-50 hover:border-red-300'
-                    : 'border-emerald-100 bg-emerald-50 hover:border-emerald-300'
-              }`}
-            >
-              <p className="font-medium text-slate-800 text-sm truncate">{f.name}</p>
-              <p className="text-xs text-slate-500">{f.region || 'غير محدد'}</p>
-              <p className={`text-xs font-semibold mt-1 ${f.balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                {f.balance > 0 ? `ذمة: ${f.balance} ₪` : 'ملتزم ✓'}
-              </p>
-            </div>
-          ))}
+        <div className="space-y-1.5 max-h-[600px] overflow-y-auto pr-1">
+          {(() => {
+            const maxT = Math.max(...factories.map((f: FactoryWithCount) => f.trip_count ?? 0), 1)
+            return factories.map((f: FactoryWithCount) => (
+              <div
+                key={f.id}
+                onClick={() => setSelected(f)}
+                className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                  selected?.id === f.id
+                    ? 'border-blue-400 bg-blue-50'
+                    : 'border-slate-100 bg-white hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: getTripColor(f.trip_count ?? 0, maxT) }}></div>
+                  <p className="font-medium text-slate-800 text-xs truncate flex-1">{f.name}</p>
+                  <span className="text-xs font-bold text-slate-500 flex-shrink-0">{f.trip_count ?? 0}</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 mr-5">{f.region || 'غير محدد'}</p>
+              </div>
+            ))
+          })()}
           {factories.length === 0 && (
             <div className="text-center py-8 text-slate-400 text-sm">
               لا توجد مصانع مسجلة

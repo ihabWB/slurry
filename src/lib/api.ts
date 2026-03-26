@@ -11,6 +11,21 @@ export async function getFactories() {
   return data as Factory[]
 }
 
+export async function getFactoriesWithTripCount() {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('factories')
+    .select('*, trips(count)')
+    .order('name')
+  if (error) throw error
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any[]).map((f: any) => ({
+    ...f,
+    trip_count: f.trips?.[0]?.count ?? 0,
+  }))
+}
+
 export async function getFactory(id: string) {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
