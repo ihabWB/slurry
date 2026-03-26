@@ -201,7 +201,7 @@ export async function syncTripPaymentStatus() {
 
     const [tripsRes, paymentsRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from('trips').select('id, payment_status').eq('factory_id', fid).order('created_at', { ascending: true }),
+      (supabase as any).from('trips').select('id, payment_status, payment_method').eq('factory_id', fid).order('created_at', { ascending: true }),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('payments').select('amount_paid').eq('factory_id', fid),
     ])
@@ -210,29 +210,47 @@ export async function syncTripPaymentStatus() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const totalPaidViaPayments = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
 
-    // How many credit trips does the payments table cover?
-    const creditTripsCoverable = Math.floor(totalPaidViaPayments / 50)
-
-    // Get only the credit trips (oldest first)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const creditTrips = (trips as any[]).filter((t: any) => t.payment_status === 'credit')
-
-    // Mark oldest credit trips as paid up to what payments cover
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const toMarkPaid = creditTrips.slice(0, creditTripsCoverable).map((t: any) => t.id)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const toMarkCredit = creditTrips.slice(creditTripsCoverable).map((t: any) => t.id)
-
-    // Only update trips that need to change — never touch 'paid' trips registered upfront
-    if (toMarkPaid.length > 0) {
+    // If no payments at all for this factory, revert any wrongly-synced trips back to credit
+    if (totalPaidViaPayments === 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('trips').update({ payment_status: 'paid', payment_method: 'later' }).in('id', toMarkPaid)
-      totalUpdated += toMarkPaid.length
+      const wronglyPaid = (trips as any[]).filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
+      if (wronglyPaid.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('trips').update({ payment_status: 'credit', payment_method: null }).in('id', wronglyPaid.map((t: any) => t.id))
+      }
+      continue
     }
-    // Revert any credit trips that were incorrectly marked paid (safety check)
-    if (toMarkCredit.length > 0) {
+
+    // How many trips (paid via 'later') are already marked as covered by payments?
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const alreadyCoveredByPayments = (trips as any[]).filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').length
+
+    // How many more trips can the remaining payment amount cover?
+    const alreadyCoveredAmount = alreadyCoveredByPayments * 50
+    const remainingPaymentAmount = totalPaidViaPayments - alreadyCoveredAmount
+    const additionalTripsCoverable = Math.floor(remainingPaymentAmount / 50)
+
+    if (additionalTripsCoverable > 0) {
+      // Get oldest credit trips not yet covered
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('trips').update({ payment_status: 'credit', payment_method: null }).in('id', toMarkCredit)
+      const creditTrips = (trips as any[]).filter((t: any) => t.payment_status === 'credit')
+      const toMarkPaid = creditTrips.slice(0, additionalTripsCoverable)
+
+      if (toMarkPaid.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('trips').update({ payment_status: 'paid', payment_method: 'later' }).in('id', toMarkPaid.map((t: any) => t.id))
+        totalUpdated += toMarkPaid.length
+      }
+    } else if (remainingPaymentAmount < 0) {
+      // Payments were deleted — revert excess 'later' trips back to credit
+      const excessCount = Math.ceil(Math.abs(remainingPaymentAmount) / 50)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const laterTrips = (trips as any[]).filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').reverse()
+      const toRevert = laterTrips.slice(0, excessCount)
+      if (toRevert.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('trips').update({ payment_status: 'credit', payment_method: null }).in('id', toRevert.map((t: any) => t.id))
+      }
     }
   }
 
