@@ -35,7 +35,8 @@ export async function getFactoriesSummary() {
     const laterTrips = trips.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').length
     const creditTrips = trips.filter((t: any) => t.payment_status === 'credit').length
     const totalAmount = totalTrips * 50
-    const totalPaid = payments.reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+    const paymentsTotal = payments.reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+    const totalPaid = cashTrips * 50 + paymentsTotal
     const balance = creditTrips * 50
     return { ...f, totalTrips, cashTrips, laterTrips, creditTrips, totalAmount, totalPaid, balance }
   })
