@@ -75,21 +75,15 @@ export default function MapPage() {
 
         const icon = L.divIcon({
           html: `<div style="
-            position: relative;
-            width: 20px;
-            height: 20px;
-          ">
-            <div style="
-              width: 20px;
-              height: 20px;
-              border-radius: 50%;
-              background: ${color};
-              border: 2.5px solid white;
-              box-shadow: 0 1px 5px rgba(0,0,0,0.35);
-            "></div>
-          </div>`,
-          iconSize: [20, 20],
-          iconAnchor: [10, 10],
+            width: 18px;
+            height: 18px;
+            transform: rotate(45deg);
+            background: ${color};
+            border: 2px solid white;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.4);
+          "></div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
           className: '',
         })
 
@@ -147,41 +141,41 @@ export default function MapPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* Map */}
-        <div className="lg:col-span-3">
+      <div className="flex flex-col gap-4">
+        {/* Map — full width */}
+        <div>
           <div
             ref={mapRef}
-            className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm"
+            className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full"
             style={{ height: '720px' }}
           />
         </div>
 
-        {/* Factory list sidebar */}
-        <div className="space-y-1.5 max-h-[720px] overflow-y-auto pr-1">
+        {/* Factory list — horizontal scrollable row below map */}
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {(() => {
             const maxT = Math.max(...factories.map((f: FactoryWithCount) => f.trip_count ?? 0), 1)
             return factories.map((f: FactoryWithCount) => (
               <div
                 key={f.id}
                 onClick={() => setSelected(f)}
-                className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                className={`flex-shrink-0 p-2.5 rounded-xl border cursor-pointer transition-all w-40 ${
                   selected?.id === f.id
                     ? 'border-blue-400 bg-blue-50'
                     : 'border-slate-100 bg-white hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: getTripColor(f.trip_count ?? 0, maxT) }}></div>
+                  <div className="w-3 h-3 flex-shrink-0" style={{ background: getTripColor(f.trip_count ?? 0, maxT), transform: 'rotate(45deg)' }}></div>
                   <p className="font-medium text-slate-800 text-xs truncate flex-1">{f.name}</p>
                   <span className="text-xs font-bold text-slate-500 flex-shrink-0">{f.trip_count ?? 0}</span>
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5 mr-5">{f.region || 'غير محدد'}</p>
+                <p className="text-xs text-slate-400 mt-0.5 mr-5 truncate">{f.region || 'غير محدد'}</p>
               </div>
             ))
           })()}
           {factories.length === 0 && (
-            <div className="text-center py-8 text-slate-400 text-sm">
+            <div className="text-center py-8 text-slate-400 text-sm w-full">
               لا توجد مصانع مسجلة
             </div>
           )}
