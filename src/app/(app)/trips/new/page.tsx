@@ -24,6 +24,15 @@ export default function NewTripPage() {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
 
+  // New extra fields
+  const [couponNumber, setCouponNumber] = useState('')
+  const [driverName, setDriverName] = useState('')
+  const [vehicleType, setVehicleType] = useState<'tank' | 'truck' | ''>('')
+  const [vehicleAutoSet, setVehicleAutoSet] = useState(false)
+  const [distanceKm, setDistanceKm] = useState('')
+  const [dumpSite, setDumpSite] = useState('')
+  const [transferZone, setTransferZone] = useState('')
+
   useEffect(() => {
     getFactories().then(setFactories).catch(console.error)
   }, [])
@@ -42,6 +51,18 @@ export default function NewTripPage() {
   const selectAll = () => setSelectedFactories(filteredFactories.map(f => f.id))
   const clearAll = () => setSelectedFactories([])
 
+  const handleWasteTypeChange = (type: 'liquid' | 'solid' | '') => {
+    setWasteType(type)
+    if (type === 'liquid') { setVehicleType('tank'); setVehicleAutoSet(true) }
+    else if (type === 'solid') { setVehicleType('truck'); setVehicleAutoSet(true) }
+    else { setVehicleAutoSet(false) }
+  }
+
+  const handleVehicleTypeChange = (type: 'tank' | 'truck' | '') => {
+    setVehicleType(type)
+    setVehicleAutoSet(false)
+  }
+
   const handleSubmit = async () => {
     if (mode === 'single' && !selectedFactory) {
       showToast('warning', 'يرجى اختيار مصنع')
@@ -52,13 +73,30 @@ export default function NewTripPage() {
       return
     }
 
+    const extraFields = {
+      notes: notes || undefined,
+      volume_m3: volumeM3 ? Number(volumeM3) : null,
+      waste_type: wasteType || null,
+      coupon_number: couponNumber || null,
+      driver_name: driverName || null,
+      vehicle_type: (vehicleType || null) as 'tank' | 'truck' | null,
+      distance_km: distanceKm ? Number(distanceKm) : null,
+      dump_site: dumpSite || null,
+      transfer_zone: transferZone || null,
+    }
+
     setLoading(true)
     try {
       if (mode === 'single') {
-        await createTrip({ factory_id: selectedFactory, payment_status: paymentStatus, trip_date: tripDate, notes: notes || null, volume_m3: volumeM3 ? Number(volumeM3) : null, waste_type: wasteType || null })
+        await createTrip({
+          factory_id: selectedFactory,
+          payment_status: paymentStatus,
+          trip_date: tripDate,
+          ...extraFields,
+        })
         showToast('success', 'تم تسجيل النقلة بنجاح')
       } else {
-        await createBulkTrips(selectedFactories, paymentStatus, tripDate, notes || undefined, volumeM3 ? Number(volumeM3) : null, wasteType || null)
+        await createBulkTrips(selectedFactories, paymentStatus, tripDate, extraFields)
         showToast('success', `تم تسجيل ${selectedFactories.length} نقلة بنجاح`)
       }
       router.push('/trips')
@@ -188,7 +226,7 @@ export default function NewTripPage() {
             <p className="text-sm font-medium text-slate-700 mb-2">نوع الربو</p>
             <div className="grid grid-cols-3 gap-3">
               <button
-                onClick={() => setWasteType('')}
+                onClick={() => handleWasteTypeChange('')}
                 className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
                   wasteType === '' ? 'border-slate-500 bg-slate-50 text-slate-700' : 'border-slate-200 text-slate-500'
                 }`}
@@ -196,7 +234,7 @@ export default function NewTripPage() {
                 غير محدد
               </button>
               <button
-                onClick={() => setWasteType('liquid')}
+                onClick={() => handleWasteTypeChange('liquid')}
                 className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
                   wasteType === 'liquid' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'
                 }`}
@@ -204,7 +242,7 @@ export default function NewTripPage() {
                 💧 سائل
               </button>
               <button
-                onClick={() => setWasteType('solid')}
+                onClick={() => handleWasteTypeChange('solid')}
                 className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
                   wasteType === 'solid' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'
                 }`}
@@ -239,6 +277,87 @@ export default function NewTripPage() {
             placeholder="أي ملاحظات إضافية..."
             value={notes}
             onChange={e => setNotes(e.target.value)}
+          />
+        </CardBody>
+      </Card>
+
+      {/* Additional Info */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800">معلومات إضافية</h2>
+          <p className="text-xs text-slate-400 mt-0.5">اختياري — يمكن تعبئتها لاحقاً</p>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="رقم الكوبون"
+              placeholder="رقم وصل الدفع"
+              value={couponNumber}
+              onChange={e => setCouponNumber(e.target.value)}
+            />
+            <Input
+              label="اسم السائق"
+              placeholder="اسم السائق"
+              value={driverName}
+              onChange={e => setDriverName(e.target.value)}
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-sm font-medium text-slate-700">نوع المركبة</p>
+              {vehicleAutoSet && (
+                <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">تلقائي</span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                onClick={() => handleVehicleTypeChange('')}
+                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                  vehicleType === '' ? 'border-slate-500 bg-slate-50 text-slate-700' : 'border-slate-200 text-slate-500'
+                }`}
+              >
+                غير محدد
+              </button>
+              <button
+                onClick={() => handleVehicleTypeChange('tank')}
+                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                  vehicleType === 'tank' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                🛢️ تنك
+              </button>
+              <button
+                onClick={() => handleVehicleTypeChange('truck')}
+                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                  vehicleType === 'truck' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                🚚 شاحنة
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="المسافة (كم)"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="مثال: 12.5"
+              value={distanceKm}
+              onChange={e => setDistanceKm(e.target.value)}
+            />
+            <Input
+              label="اسم المكب"
+              placeholder="موقع التفريغ"
+              value={dumpSite}
+              onChange={e => setDumpSite(e.target.value)}
+            />
+          </div>
+          <Input
+            label="منطقة النقل"
+            placeholder="المنطقة الجغرافية للنقل"
+            value={transferZone}
+            onChange={e => setTransferZone(e.target.value)}
           />
         </CardBody>
       </Card>

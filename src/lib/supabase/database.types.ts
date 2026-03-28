@@ -57,6 +57,12 @@ export interface Database {
           volume_m3: number | null
           waste_type: 'liquid' | 'solid' | null
           notes: string | null
+          coupon_number: string | null
+          driver_name: string | null
+          vehicle_type: 'tank' | 'truck' | null
+          distance_km: number | null
+          dump_site: string | null
+          transfer_zone: string | null
           created_at: string
           created_by: string | null
         }
@@ -70,6 +76,12 @@ export interface Database {
           volume_m3?: number | null
           waste_type?: 'liquid' | 'solid' | null
           notes?: string | null
+          coupon_number?: string | null
+          driver_name?: string | null
+          vehicle_type?: 'tank' | 'truck' | null
+          distance_km?: number | null
+          dump_site?: string | null
+          transfer_zone?: string | null
           created_at?: string
           created_by?: string | null
         }
@@ -80,6 +92,12 @@ export interface Database {
           volume_m3?: number | null
           waste_type?: 'liquid' | 'solid' | null
           notes?: string | null
+          coupon_number?: string | null
+          driver_name?: string | null
+          vehicle_type?: 'tank' | 'truck' | null
+          distance_km?: number | null
+          dump_site?: string | null
+          transfer_zone?: string | null
         }
       }
       payments: {

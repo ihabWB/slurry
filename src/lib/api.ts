@@ -117,7 +117,17 @@ export async function createTrip(trip: TripInsert) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('trips')
-    .insert({ ...trip, amount: 50, payment_method })
+    .insert({
+      ...trip,
+      amount: 50,
+      payment_method,
+      coupon_number: trip.coupon_number ?? null,
+      driver_name: trip.driver_name ?? null,
+      vehicle_type: trip.vehicle_type ?? null,
+      distance_km: trip.distance_km ?? null,
+      dump_site: trip.dump_site ?? null,
+      transfer_zone: trip.transfer_zone ?? null,
+    })
     .select()
     .single()
   if (error) throw error
@@ -146,7 +156,19 @@ export async function deletePayment(id: string) {
   if (error) throw error
 }
 
-export async function createBulkTrips(factoryIds: string[], payment_status: 'paid' | 'credit', trip_date: string, notes?: string, volume_m3?: number | null, waste_type?: 'liquid' | 'solid' | null) {
+export interface BulkTripExtra {
+  notes?: string
+  volume_m3?: number | null
+  waste_type?: 'liquid' | 'solid' | null
+  coupon_number?: string | null
+  driver_name?: string | null
+  vehicle_type?: 'tank' | 'truck' | null
+  distance_km?: number | null
+  dump_site?: string | null
+  transfer_zone?: string | null
+}
+
+export async function createBulkTrips(factoryIds: string[], payment_status: 'paid' | 'credit', trip_date: string, extra?: BulkTripExtra) {
   const supabase = createClient()
   const payment_method = payment_status === 'paid' ? 'cash' : null
   const trips: TripInsert[] = factoryIds.map(fid => ({
@@ -155,9 +177,15 @@ export async function createBulkTrips(factoryIds: string[], payment_status: 'pai
     payment_status,
     payment_method,
     trip_date,
-    notes: notes || null,
-    volume_m3: volume_m3 ?? null,
-    waste_type: waste_type ?? null,
+    notes: extra?.notes || null,
+    volume_m3: extra?.volume_m3 ?? null,
+    waste_type: extra?.waste_type ?? null,
+    coupon_number: extra?.coupon_number ?? null,
+    driver_name: extra?.driver_name ?? null,
+    vehicle_type: extra?.vehicle_type ?? null,
+    distance_km: extra?.distance_km ?? null,
+    dump_site: extra?.dump_site ?? null,
+    transfer_zone: extra?.transfer_zone ?? null,
   }))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('trips').insert(trips).select()
