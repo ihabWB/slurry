@@ -72,6 +72,14 @@ export default function NewTripPage() {
       showToast('warning', 'يرجى اختيار مصنع واحد على الأقل')
       return
     }
+    if (!couponNumber.trim()) {
+      showToast('warning', 'يرجى إدخال رقم الكوبون')
+      return
+    }
+    if (!distanceKm) {
+      showToast('warning', 'يرجى إدخال المسافة')
+      return
+    }
 
     const extraFields = {
       notes: notes || undefined,
@@ -213,15 +221,58 @@ export default function NewTripPage() {
             value={tripDate}
             onChange={e => setTripDate(e.target.value)}
           />
-          <Input
-            label="حجم النقلة (م³) — اختياري"
-            type="number"
-            min="0"
-            step="0.5"
-            placeholder="مثال: 5"
-            value={volumeM3}
-            onChange={e => setVolumeM3(e.target.value)}
-          />
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="رقم الكوبون *"
+              placeholder="رقم وصل الدفع"
+              value={couponNumber}
+              onChange={e => setCouponNumber(e.target.value)}
+            />
+            <Input
+              label="المسافة (كم) *"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="مثال: 12.5"
+              value={distanceKm}
+              onChange={e => setDistanceKm(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="اسم السائق"
+              placeholder="اسم السائق"
+              value={driverName}
+              onChange={e => setDriverName(e.target.value)}
+            />
+            <Input
+              label="اسم المكب"
+              placeholder="موقع التفريغ"
+              value={dumpSite}
+              onChange={e => setDumpSite(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="حجم النقلة (م³)"
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="مثال: 5"
+              value={volumeM3}
+              onChange={e => setVolumeM3(e.target.value)}
+            />
+            <Input
+              label="منطقة النقل"
+              placeholder="المنطقة الجغرافية للنقل"
+              value={transferZone}
+              onChange={e => setTransferZone(e.target.value)}
+            />
+          </div>
+
           <div>
             <p className="text-sm font-medium text-slate-700 mb-2">نوع الربو</p>
             <div className="grid grid-cols-3 gap-3">
@@ -251,57 +302,7 @@ export default function NewTripPage() {
               </button>
             </div>
           </div>
-          <div>
-            <p className="text-sm font-medium text-slate-700 mb-2">حالة الدفع *</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setPaymentStatus('paid')}
-                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
-                  paymentStatus === 'paid' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600'
-                }`}
-              >
-                💵 مدفوع نقداً
-              </button>
-              <button
-                onClick={() => setPaymentStatus('credit')}
-                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
-                  paymentStatus === 'credit' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'
-                }`}
-              >
-                📋 على الحساب (ذمة)
-              </button>
-            </div>
-          </div>
-          <Textarea
-            label="ملاحظات (اختياري)"
-            placeholder="أي ملاحظات إضافية..."
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-          />
-        </CardBody>
-      </Card>
 
-      {/* Additional Info */}
-      <Card>
-        <CardHeader>
-          <h2 className="font-semibold text-slate-800">معلومات إضافية</h2>
-          <p className="text-xs text-slate-400 mt-0.5">اختياري — يمكن تعبئتها لاحقاً</p>
-        </CardHeader>
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="رقم الكوبون"
-              placeholder="رقم وصل الدفع"
-              value={couponNumber}
-              onChange={e => setCouponNumber(e.target.value)}
-            />
-            <Input
-              label="اسم السائق"
-              placeholder="اسم السائق"
-              value={driverName}
-              onChange={e => setDriverName(e.target.value)}
-            />
-          </div>
           <div>
             <div className="flex items-center gap-2 mb-2">
               <p className="text-sm font-medium text-slate-700">نوع المركبة</p>
@@ -336,28 +337,34 @@ export default function NewTripPage() {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="المسافة (كم)"
-              type="number"
-              min="0"
-              step="0.1"
-              placeholder="مثال: 12.5"
-              value={distanceKm}
-              onChange={e => setDistanceKm(e.target.value)}
-            />
-            <Input
-              label="اسم المكب"
-              placeholder="موقع التفريغ"
-              value={dumpSite}
-              onChange={e => setDumpSite(e.target.value)}
-            />
+
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-2">حالة الدفع *</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setPaymentStatus('paid')}
+                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                  paymentStatus === 'paid' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                💵 مدفوع نقداً
+              </button>
+              <button
+                onClick={() => setPaymentStatus('credit')}
+                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                  paymentStatus === 'credit' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                📋 على الحساب (ذمة)
+              </button>
+            </div>
           </div>
-          <Input
-            label="منطقة النقل"
-            placeholder="المنطقة الجغرافية للنقل"
-            value={transferZone}
-            onChange={e => setTransferZone(e.target.value)}
+
+          <Textarea
+            label="ملاحظات (اختياري)"
+            placeholder="أي ملاحظات إضافية..."
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
           />
         </CardBody>
       </Card>
