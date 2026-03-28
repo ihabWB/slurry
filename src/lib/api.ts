@@ -111,6 +111,96 @@ export async function getTrips(filters?: {
   return data
 }
 
+// ─── IMPORT ──────────────────────────────────────────────────
+
+export interface ImportTripRow {
+  factory_id: string
+  trip_date: string         // YYYY-MM-DD
+  payment_status: 'paid' | 'credit'
+  coupon_number?: string | null
+  driver_name?: string | null
+  vehicle_type?: 'tank' | 'truck' | null
+  distance_km?: number | null
+  volume_m3?: number | null
+  waste_type?: 'liquid' | 'solid' | null
+  dump_site?: string | null
+  transfer_zone?: string | null
+  notes?: string | null
+}
+
+export interface ImportResult {
+  inserted: number
+  skipped: number
+  errors: { row: number; reason: string }[]
+}
+
+export async function importTrips(rows: ImportTripRow[]): Promise<ImportResult> {
+  const supabase = createClient()
+  const result: ImportResult = { inserted: 0, skipped: 0, errors: [] }
+
+  // Check existing coupon numbers in one query
+  const couponNumbers = rows.map(r => r.coupon_number).filter(Boolean) as string[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let existingCoupons: string[] = []
+  if (couponNumbers.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('trips')
+      .select('coupon_number')
+      .in('coupon_number', couponNumbers)
+    existingCoupons = (data ?? []).map((r: any) => r.coupon_number)
+  }
+
+  const toInsert: TripInsert[] = []
+  const seenCoupons = new Set<string>()
+
+  rows.forEach((row, i) => {
+    const rowNum = i + 2 // Excel row number (1=header)
+    if (row.coupon_number) {
+      if (existingCoupons.includes(row.coupon_number)) {
+        result.errors.push({ row: rowNum, reason: `رقم الكوبون "${row.coupon_number}" موجود مسبقاً` })
+        result.skipped++
+        return
+      }
+      if (seenCoupons.has(row.coupon_number)) {
+        result.errors.push({ row: rowNum, reason: `رقم الكوبون "${row.coupon_number}" مكرر في الملف` })
+        result.skipped++
+        return
+      }
+      seenCoupons.add(row.coupon_number)
+    }
+    toInsert.push({
+      factory_id: row.factory_id,
+      trip_date: row.trip_date,
+      amount: 50,
+      payment_status: row.payment_status,
+      payment_method: row.payment_status === 'paid' ? 'cash' : null,
+      coupon_number: row.coupon_number ?? null,
+      driver_name: row.driver_name ?? null,
+      vehicle_type: row.vehicle_type ?? null,
+      distance_km: row.distance_km ?? null,
+      volume_m3: row.volume_m3 ?? null,
+      waste_type: row.waste_type ?? null,
+      dump_site: row.dump_site ?? null,
+      transfer_zone: row.transfer_zone ?? null,
+      notes: row.notes ?? null,
+    })
+  })
+
+  if (toInsert.length > 0) {
+    // Insert in batches of 100
+    for (let i = 0; i < toInsert.length; i += 100) {
+      const batch = toInsert.slice(i, i + 100)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from('trips').insert(batch)
+      if (error) throw new Error(translateTripError(error))
+      result.inserted += batch.length
+    }
+  }
+
+  return result
+}
+
 export async function checkCouponExists(couponNumber: string, excludeId?: string): Promise<boolean> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

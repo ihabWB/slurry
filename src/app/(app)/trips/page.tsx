@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Filter, Download, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Filter, Download, Pencil, Trash2, Upload } from 'lucide-react'
 import { getTrips, updateTrip, deleteTrip } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -96,9 +96,14 @@ export default function TripsPage() {
           <p className="text-sm text-slate-500 mt-0.5">{trips.length} نقلة إجمالية</p>
         </div>
         {canEdit && (
-          <Link href="/trips/new">
-            <Button size="lg"><Plus size={16} /> تسجيل نقلة</Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/trips/import">
+              <Button variant="secondary" size="lg"><Upload size={16} /> استيراد Excel</Button>
+            </Link>
+            <Link href="/trips/new">
+              <Button size="lg"><Plus size={16} /> تسجيل نقلة</Button>
+            </Link>
+          </div>
         )}
       </div>
 
