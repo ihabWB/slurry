@@ -111,6 +111,26 @@ export async function getTrips(filters?: {
   return data
 }
 
+export async function checkCouponExists(couponNumber: string, excludeId?: string): Promise<boolean> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
+    .from('trips')
+    .select('id')
+    .eq('coupon_number', couponNumber)
+    .limit(1)
+  if (excludeId) query = query.neq('id', excludeId)
+  const { data } = await query
+  return Array.isArray(data) && data.length > 0
+}
+
+function translateTripError(error: { code?: string; message?: string }): string {
+  if (error.code === '23505' || error.message?.includes('trips_coupon_number_unique')) {
+    return 'رقم الكوبون مستخدم مسبقاً — يرجى إدخال رقم آخر'
+  }
+  return error.message ?? 'حدث خطأ غير متوقع'
+}
+
 export async function createTrip(trip: TripInsert) {
   const supabase = createClient()
   const payment_method = trip.payment_status === 'paid' ? 'cash' : null
@@ -130,7 +150,7 @@ export async function createTrip(trip: TripInsert) {
     })
     .select()
     .single()
-  if (error) throw error
+  if (error) throw new Error(translateTripError(error))
   return data as Trip
 }
 
@@ -189,7 +209,7 @@ export async function createBulkTrips(factoryIds: string[], payment_status: 'pai
   }))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('trips').insert(trips).select()
-  if (error) throw error
+  if (error) throw new Error(translateTripError(error))
   return data as Trip[]
 }
 

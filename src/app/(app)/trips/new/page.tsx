@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, CheckSquare, Truck } from 'lucide-react'
 import Link from 'next/link'
-import { getFactories, createTrip, createBulkTrips } from '@/lib/api'
+import { getFactories, createTrip, createBulkTrips, checkCouponExists } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
@@ -26,6 +26,8 @@ export default function NewTripPage() {
 
   // New extra fields
   const [couponNumber, setCouponNumber] = useState('')
+  const [couponError, setCouponError] = useState('')
+  const [couponChecking, setCouponChecking] = useState(false)
   const [driverName, setDriverName] = useState('')
   const [vehicleType, setVehicleType] = useState<'tank' | 'truck' | ''>('')
   const [vehicleAutoSet, setVehicleAutoSet] = useState(false)
@@ -63,6 +65,19 @@ export default function NewTripPage() {
     setVehicleAutoSet(false)
   }
 
+  const handleCouponBlur = async () => {
+    const val = couponNumber.trim()
+    if (!val) { setCouponError(''); return }
+    setCouponChecking(true)
+    setCouponError('')
+    try {
+      const exists = await checkCouponExists(val)
+      if (exists) setCouponError('رقم الكوبون مستخدم مسبقاً')
+    } finally {
+      setCouponChecking(false)
+    }
+  }
+
   const handleSubmit = async () => {
     if (mode === 'single' && !selectedFactory) {
       showToast('warning', 'يرجى اختيار مصنع')
@@ -74,6 +89,10 @@ export default function NewTripPage() {
     }
     if (!couponNumber.trim()) {
       showToast('warning', 'يرجى إدخال رقم الكوبون')
+      return
+    }
+    if (couponError) {
+      showToast('error', 'رقم الكوبون مستخدم مسبقاً — يرجى تغييره')
       return
     }
     if (!distanceKm) {
@@ -223,12 +242,24 @@ export default function NewTripPage() {
           />
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="رقم الكوبون *"
-              placeholder="رقم وصل الدفع"
-              value={couponNumber}
-              onChange={e => setCouponNumber(e.target.value)}
-            />
+            <div>
+              <Input
+                label="رقم الكوبون *"
+                placeholder="رقم وصل الدفع"
+                value={couponNumber}
+                onChange={e => { setCouponNumber(e.target.value); setCouponError('') }}
+                onBlur={handleCouponBlur}
+              />
+              {couponChecking && (
+                <p className="text-xs text-slate-400 mt-1">جاري التحقق...</p>
+              )}
+              {couponError && (
+                <p className="text-xs text-red-500 mt-1">⚠️ {couponError}</p>
+              )}
+              {!couponError && !couponChecking && couponNumber.trim() && (
+                <p className="text-xs text-emerald-500 mt-1">✔ رقم متاح</p>
+              )}
+            </div>
             <Input
               label="المسافة (كم) *"
               type="number"
