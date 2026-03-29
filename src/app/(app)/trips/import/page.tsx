@@ -19,7 +19,9 @@ const COLUMN_MAP: Record<string, string> = {
   'factory_id': 'factory_id', 'معرف المصنع': 'factory_id', 'id المصنع': 'factory_id',
   'اسم المصنع': 'factory_id', 'المصنع': 'factory_id', 'factory_name': 'factory_id', 'factory': 'factory_id',
   // tag
-  'tag': 'tag_number', 'tag_number': 'tag_number', 'رقم tag': 'tag_number', 'رقم الـ tag': 'tag_number', 'الـ tag': 'tag_number', 'رمز المصنع': 'tag_number',
+  'tag': 'tag_number', 'tag_number': 'tag_number', 'TAG': 'tag_number', 'TAG NUMBER': 'tag_number',
+  'رقم tag': 'tag_number', 'رقم الـ tag': 'tag_number', 'الـ tag': 'tag_number', 'رمز المصنع': 'tag_number',
+  'رقم TAG': 'tag_number', 'رقم الTAG': 'tag_number', 'الTAG': 'tag_number', 'tag number': 'tag_number',
   // date
   'trip_date': 'trip_date', 'تاريخ النقلة': 'trip_date', 'التاريخ': 'trip_date', 'date': 'trip_date',
   // payment_status
@@ -45,7 +47,13 @@ const COLUMN_MAP: Record<string, string> = {
 }
 
 function normalizeHeader(h: string): string {
-  return COLUMN_MAP[h.trim()] ?? ''
+  const clean = h.trim()
+  // exact match first
+  if (COLUMN_MAP[clean]) return COLUMN_MAP[clean]
+  // case-insensitive match
+  const lower = clean.toLowerCase()
+  const found = Object.keys(COLUMN_MAP).find(k => k.toLowerCase() === lower)
+  return found ? COLUMN_MAP[found] : ''
 }
 
 function normalizeDate(val: unknown): string {
@@ -130,7 +138,12 @@ export default function ImportTripsPage() {
 
     if (raw.length < 2) { showToast('warning', 'الملف فارغ أو لا يحتوي بيانات'); return }
 
-    const headers: string[] = (raw[0] as unknown[]).map(h => normalizeHeader(String(h)))
+    const rawHeaders: string[] = (raw[0] as unknown[]).map(h => String(h))
+    const headers: string[] = rawHeaders.map(h => normalizeHeader(h))
+    const unknownHeaders = rawHeaders.filter((h, i) => h.trim() !== '' && headers[i] === '')
+    if (unknownHeaders.length > 0) {
+      showToast('warning', `أعمدة غير معروفة: ${unknownHeaders.join(' | ')}`)
+    }
     const dataRows = raw.slice(1).filter(r => r.some((c: unknown) => String(c).trim() !== ''))
 
     const rows: PreviewRow[] = dataRows.map((r, i) => {
