@@ -496,7 +496,10 @@ export async function getLoginStats() {
 export async function getDashboardStats() {
   const supabase = createClient()
 
-  const [allTrips, totalFactories, overdueFactories, allPayments, cashTripsRes] = await Promise.all([
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+
+  const [allTrips, totalFactories, overdueFactoriesRes, allPayments, cashTripsRes, monthTripsRes, monthCashTripsRes, overdueBalances] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -507,18 +510,49 @@ export async function getDashboardStats() {
     (supabase as any).from('payments').select('amount_paid'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_method', 'cash'),
+    // trips this month
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart),
+    // cash trips this month
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_method', 'cash').gte('trip_date', monthStart),
+    // overdue balances to sum total debt
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('factories').select('balance').gt('balance', 0),
   ])
 
-  // cash trips (paid immediately) + payments (settled later)
+  // total collection (all time)
   const cashTripsCount = cashTripsRes.count ?? 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paymentsTotal = (allPayments.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
   const totalCollection = cashTripsCount * 50 + paymentsTotal
 
+  // this month
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const monthTripsData: any[] = monthTripsRes.data || []
+  const monthTripsCount = monthTripsData.length
+  const activeFactoriesThisMonth = new Set(monthTripsData.map((t: any) => t.factory_id)).size
+  const monthCashCount = monthCashTripsRes.count ?? 0
+  const monthCollection = monthCashCount * 50
+
+  // total debt
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const totalDebt = (overdueBalances.data || []).reduce((s: number, f: any) => s + Number(f.balance), 0)
+
+  // avg trips per factory (active ones only)
+  const avgTripsPerFactory = activeFactoriesThisMonth > 0
+    ? Math.round(monthTripsCount / activeFactoriesThisMonth * 10) / 10
+    : 0
+
   return {
     todayTripsCount: allTrips.count ?? 0,
     totalFactories: totalFactories.count ?? 0,
-    overdueFactories: overdueFactories.count ?? 0,
+    overdueFactories: overdueFactoriesRes.count ?? 0,
     todayCollection: totalCollection,
+    monthTripsCount,
+    activeFactoriesThisMonth,
+    monthCollection,
+    totalDebt,
+    avgTripsPerFactory,
   }
 }

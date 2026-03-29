@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock } from 'lucide-react'
+import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, CalendarDays, BarChart2 } from 'lucide-react'
 import { getDashboardStats, getTrips } from '@/lib/api'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -14,6 +14,11 @@ interface Stats {
   totalFactories: number
   overdueFactories: number
   todayCollection: number
+  monthTripsCount: number
+  activeFactoriesThisMonth: number
+  monthCollection: number
+  totalDebt: number
+  avgTripsPerFactory: number
 }
 
 type RecentTrip = any
@@ -48,7 +53,10 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const { lang, dir } = useLang()
   const dateLocale = lang === 'ar' ? ar : enUS
-  const [stats, setStats] = useState<Stats>({ todayTripsCount: 0, totalFactories: 0, overdueFactories: 0, todayCollection: 0 })
+  const [stats, setStats] = useState<Stats>({
+    todayTripsCount: 0, totalFactories: 0, overdueFactories: 0, todayCollection: 0,
+    monthTripsCount: 0, activeFactoriesThisMonth: 0, monthCollection: 0, totalDebt: 0, avgTripsPerFactory: 0,
+  })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -80,6 +88,35 @@ export default function DashboardPage() {
     { label: t(T.dashboard.overdueFactory, lang),  value: stats.overdueFactories, suffix: t(T.dashboard.factory, lang),  icon: AlertTriangle,  bg: 'bg-red-50',     text: 'text-red-500',    border: 'border-red-100',    trend: null, warn: true },
   ]
 
+  const monthCards = [
+    {
+      label: 'نقلات هذا الشهر',
+      value: stats.monthTripsCount,
+      suffix: 'نقلة',
+      icon: Truck,
+      bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-100',
+      sub: `تحصيل: ${stats.monthCollection.toLocaleString()} ₪`,
+    },
+    {
+      label: 'مصانع نشطة هذا الشهر',
+      value: stats.activeFactoriesThisMonth,
+      suffix: 'مصنع',
+      icon: Factory,
+      bg: 'bg-teal-50', text: 'text-teal-600', border: 'border-teal-100',
+      sub: `متوسط نقلات/مصنع: ${stats.avgTripsPerFactory}`,
+    },
+    {
+      label: 'إجمالي الذمم المتراكمة',
+      value: stats.totalDebt,
+      suffix: '₪',
+      icon: AlertTriangle,
+      bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-100',
+      isCurrency: true,
+      warn: stats.totalDebt > 0,
+      sub: `من ${stats.overdueFactories} مصنع`,
+    },
+  ]
+
   const quickActions = [
     { href: '/trips/new',    label: t(T.dashboard.newTrip, lang),     sub: t(T.dashboard.newTripSub, lang),     icon: Truck,       bg: 'bg-blue-600',    shadow: 'shadow-blue-200' },
     { href: '/payments/new', label: t(T.dashboard.newPayment, lang),  sub: t(T.dashboard.newPaymentSub, lang),  icon: DollarSign,  bg: 'bg-emerald-500', shadow: 'shadow-emerald-200' },
@@ -109,7 +146,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* Stat Cards */}
+      {/* Stat Cards Row 1 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {loading
           ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />)
@@ -128,6 +165,30 @@ export default function DashboardPage() {
               {isCurrency ? value.toLocaleString() : value}
               <span className="text-sm font-normal text-slate-400 ms-1">{suffix}</span>
             </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Stat Cards Row 2 — monthly */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {loading
+          ? [...Array(3)].map((_, i) => <SkeletonCard key={i} />)
+          : monthCards.map(({ label, value, icon: Icon, bg, text, border, suffix, isCurrency, warn, sub }) => (
+          <div key={label} className={`bg-white rounded-2xl border ${border} p-5 hover:shadow-md transition-shadow`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
+                <Icon size={20} className={text} />
+              </div>
+              <span className="text-[10px] font-semibold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-lg flex items-center gap-1">
+                <CalendarDays size={10} /> هذا الشهر
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mb-0.5">{label}</p>
+            <p className={`text-2xl font-bold ${warn ? 'text-orange-600' : 'text-slate-800'}`}>
+              {isCurrency ? value.toLocaleString() : value}
+              <span className="text-sm font-normal text-slate-400 ms-1">{suffix}</span>
+            </p>
+            {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
           </div>
         ))}
       </div>
