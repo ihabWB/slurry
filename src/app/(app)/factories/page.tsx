@@ -179,20 +179,6 @@ export default function FactoriesPage() {
             </Button>
           </div>
         )}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">المصانع</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{factories.length} مصنع مسجل</p>
-        </div>
-        {canEdit && (
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => { setImportRows([]); setImportOpen(true) }} size="lg">
-              <FileSpreadsheet size={16} /> استيراد Excel
-            </Button>
-            <Button onClick={openAdd} size="lg">
-              <Plus size={16} /> إضافة مصنع
-            </Button>
-          </div>
-        )}
       </div>
 
       {/* Approximate coordinates warning banner */}
