@@ -127,8 +127,9 @@ export default function ImportTripsPage() {
     const flist = await ensureFactories()
     const factoryByName = new Map(flist.map(f => [f.name.trim().toLowerCase(), f]))
     const factoryByTag = new Map(
-      flist.filter(f => f.tag_number).map(f => [f.tag_number!.trim().toLowerCase(), f])
+      flist.filter(f => f.tag_number).map(f => [String(f.tag_number!).trim().toLowerCase(), f])
     )
+    showToast('info', `تم تحميل ${flist.length} مصنع — منهم ${factoryByTag.size} لديهم TAG`)
 
     const buf = await file.arrayBuffer()
     const wb = XLSX.read(buf, { type: 'array', cellDates: false })
@@ -167,15 +168,12 @@ export default function ImportTripsPage() {
         if (byTag) {
           factory_id = byTag.id
           factoryName = `${byTag.name} [${byTag.tag_number}]`
-        } else {
-          errors.push(`لم يُعثر على TAG: "${raw_tag}"`)
-          factoryName = raw_tag
         }
-      } else if (!raw_factory) {
-        errors.push('المصنع مفقود (TAG أو الاسم)')
-        factoryName = '—'
-      } else {
-        // Priority 2: factory name
+        // TAG not found in DB — fall through to name/uuid below
+      }
+
+      // Priority 2: factory name (if TAG didn't resolve)
+      if (!factory_id && raw_factory) {
         const byName = factoryByName.get(raw_factory.toLowerCase())
         if (byName) {
           factory_id = byName.id
@@ -186,11 +184,16 @@ export default function ImportTripsPage() {
           if (isUUID) {
             factory_id = raw_factory
             factoryName = flist.find(f => f.id === raw_factory)?.name ?? raw_factory
-          } else {
-            errors.push(`لم يُعثر على المصنع: "${raw_factory}"`)
-            factoryName = raw_factory
           }
         }
+      }
+
+      // Still not resolved
+      if (!factory_id) {
+        if (raw_tag && !raw_factory) errors.push(`لم يُعثر على TAG: "${raw_tag}" — تأكد من إضافة TAG للمصانع أولاً`)
+        else if (!raw_tag && !raw_factory) errors.push('المصنع مفقود (TAG أو الاسم)')
+        else errors.push(`لم يُعثر على المصنع: TAG="${raw_tag}" الاسم="${raw_factory}"`)
+        factoryName = raw_tag || raw_factory || '—'
       }
 
       const trip_date = normalizeDate(get('trip_date'))
