@@ -472,16 +472,20 @@ export async function getFactoryStatement(factory_id: string) {
 
 export async function getLoginStats() {
   const supabase = createClient()
-  const [tripsRes, factoriesRes, paymentsRes] = await Promise.all([
+  const [tripsRes, factoriesRes, paymentsRes, cashTripsRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('*', { count: 'exact', head: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('amount_paid'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_method', 'cash'),
   ])
+  const cashTripsCount = cashTripsRes.count ?? 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalCollection = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+  const paymentsTotal = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+  const totalCollection = cashTripsCount * 50 + paymentsTotal
   return {
     totalTrips: tripsRes.count ?? 0,
     totalFactories: factoriesRes.count ?? 0,
@@ -492,7 +496,7 @@ export async function getLoginStats() {
 export async function getDashboardStats() {
   const supabase = createClient()
 
-  const [allTrips, totalFactories, overdueFactories, allPayments] = await Promise.all([
+  const [allTrips, totalFactories, overdueFactories, allPayments, cashTripsRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -501,10 +505,15 @@ export async function getDashboardStats() {
     (supabase as any).from('factories').select('*', { count: 'exact', head: true }).gt('balance', 0),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('amount_paid'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_method', 'cash'),
   ])
 
+  // cash trips (paid immediately) + payments (settled later)
+  const cashTripsCount = cashTripsRes.count ?? 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalCollection = (allPayments.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+  const paymentsTotal = (allPayments.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+  const totalCollection = cashTripsCount * 50 + paymentsTotal
 
   return {
     todayTripsCount: allTrips.count ?? 0,
