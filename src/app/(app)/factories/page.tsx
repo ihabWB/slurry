@@ -179,7 +179,32 @@ export default function FactoriesPage() {
             </Button>
           </div>
         )}
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">المصانع</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{factories.length} مصنع مسجل</p>
+        </div>
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => { setImportRows([]); setImportOpen(true) }} size="lg">
+              <FileSpreadsheet size={16} /> استيراد Excel
+            </Button>
+            <Button onClick={openAdd} size="lg">
+              <Plus size={16} /> إضافة مصنع
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Approximate coordinates warning banner */}
+      {(() => { const approxCount = factories.filter(f => f.lat === 31.1 && f.lng === 35.5).length; return approxCount > 0 ? (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <span className="text-amber-500 text-lg flex-shrink-0">⚠️</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">{approxCount} مصنع {approxCount === 1 ? 'يحتاج' : 'يحتاجون'} تحديث الإحداثيات</p>
+            <p className="text-xs text-amber-600 mt-0.5">هذه المصانع تستخدم إحداثيات تقريبية (31.1، 35.5) — يرجى تحديثها للظهور بشكل صحيح على الخريطة</p>
+          </div>
+        </div>
+      ) : null })()}
 
       {/* Search & Filter */}
       <Card>
@@ -206,8 +231,10 @@ export default function FactoriesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(f => (
-            <Card key={f.id} className={`border-2 ${f.balance > 0 ? 'border-red-100' : 'border-emerald-100'}`}>
+          {filtered.map(f => {
+            const isApproxCoords = f.lat === 31.1 && f.lng === 35.5
+            return (
+            <Card key={f.id} className={`border-2 ${isApproxCoords ? 'border-amber-300' : f.balance > 0 ? 'border-red-100' : 'border-emerald-100'}`}>
               <CardBody>
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -228,11 +255,18 @@ export default function FactoriesPage() {
                       )}
                     </div>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                    f.balance > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
-                  }`}>
-                    {f.balance > 0 ? `ذمة: ${f.balance} ₪` : 'ملتزم ✓'}
-                  </span>
+                  <div className="flex flex-col items-end gap-1.5">
+                    {isApproxCoords && (
+                      <span className="flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                        ⚠️ إحداثيات تقريبية
+                      </span>
+                    )}
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                      f.balance > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+                    }`}>
+                      {f.balance > 0 ? `ذمة: ${f.balance} ₪` : 'ملتزم ✓'}
+                    </span>
+                  </div>
                 </div>
                 <div className="space-y-1.5 text-sm text-slate-600">
                   <div className="flex items-center gap-2">
@@ -244,16 +278,19 @@ export default function FactoriesPage() {
                     <span dir="ltr">{f.phone}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <MapPin size={13} className="text-slate-400" />
+                    <MapPin size={13} className={isApproxCoords ? 'text-amber-400' : 'text-slate-400'} />
                     <span dir="ltr" className="text-xs">
-                      {f.lat != null && f.lng != null ? `${f.lat.toFixed(5)}, ${f.lng.toFixed(5)}` : <span className="text-amber-500">📍 إحداثيات غير محددة</span>}
+                      {f.lat != null && f.lng != null
+                        ? <span className={isApproxCoords ? 'text-amber-600' : ''}>{f.lat.toFixed(5)}, {f.lng.toFixed(5)}</span>
+                        : <span className="text-amber-500">📍 إحداثيات غير محددة</span>
+                      }
                     </span>
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
                   {canEdit && (
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(f)} className="flex-1">
-                      <Edit2 size={13} /> تعديل
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(f)} className={`flex-1 ${isApproxCoords ? 'ring-1 ring-amber-300' : ''}`}>
+                      <Edit2 size={13} /> {isApproxCoords ? 'تحديث الإحداثيات' : 'تعديل'}
                     </Button>
                   )}
                   <Link href={`/factories/${f.id}`} className="flex-1">
@@ -264,7 +301,8 @@ export default function FactoriesPage() {
                 </div>
               </CardBody>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
 
