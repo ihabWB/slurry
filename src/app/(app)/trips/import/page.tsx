@@ -17,6 +17,7 @@ import type { ImportTripRow } from '@/lib/api'
 const COLUMN_MAP: Record<string, string> = {
   // factory
   'factory_id': 'factory_id', 'معرف المصنع': 'factory_id', 'id المصنع': 'factory_id',
+  'اسم المصنع': 'factory_id', 'المصنع': 'factory_id', 'factory_name': 'factory_id', 'factory': 'factory_id',
   // date
   'trip_date': 'trip_date', 'تاريخ النقلة': 'trip_date', 'التاريخ': 'trip_date', 'date': 'trip_date',
   // payment_status
@@ -136,16 +137,30 @@ export default function ImportTripsPage() {
 
       const errors: string[] = []
 
-      // factory_id — can be direct id OR factory name
-      let factory_id = String(get('factory_id') ?? '').trim()
+      // factory_id — can be factory name OR direct uuid
+      const raw_factory = String(get('factory_id') ?? '').trim()
+      let factory_id = ''
       let factoryName: string | undefined
-      if (!factory_id || factory_id.length < 10) {
-        // try to resolve by name
-        const byName = factoryByName.get(factory_id.toLowerCase())
-        if (byName) { factory_id = byName.id; factoryName = byName.name }
-        else { errors.push('لم يُعثر على المصنع'); factoryName = factory_id || '—' }
+      if (!raw_factory) {
+        errors.push('المصنع مفقود')
+        factoryName = '—'
       } else {
-        factoryName = flist.find(f => f.id === factory_id)?.name ?? factory_id
+        // First: try to resolve by name (case-insensitive)
+        const byName = factoryByName.get(raw_factory.toLowerCase())
+        if (byName) {
+          factory_id = byName.id
+          factoryName = byName.name
+        } else {
+          // Second: check if it's a valid UUID (direct id)
+          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw_factory)
+          if (isUUID) {
+            factory_id = raw_factory
+            factoryName = flist.find(f => f.id === raw_factory)?.name ?? raw_factory
+          } else {
+            errors.push(`لم يُعثر على المصنع: "${raw_factory}"`)
+            factoryName = raw_factory
+          }
+        }
       }
 
       const trip_date = normalizeDate(get('trip_date'))
@@ -209,9 +224,9 @@ export default function ImportTripsPage() {
   // Download template
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['رقم الكوبون', 'معرف المصنع', 'تاريخ النقلة', 'حالة الدفع', 'المسافة كم', 'اسم السائق', 'نوع المركبة', 'حجم النقلة', 'نوع الربو', 'اسم المكب', 'منطقة النقل', 'ملاحظات'],
-      ['K-001', 'ضع هنا id المصنع أو اسمه', '2026-01-15', 'مدفوع', '12.5', 'أحمد محمود', 'تنك', '5', 'سائل', 'مكب أ', 'منطقة شمال', ''],
-      ['K-002', 'ضع هنا id المصنع أو اسمه', '2026-01-16', 'ذمة', '8', 'محمد علي', 'شاحنة', '3', 'جاف', 'مكب ب', 'منطقة جنوب', ''],
+      ['رقم الكوبون', 'اسم المصنع', 'تاريخ النقلة', 'حالة الدفع', 'المسافة كم', 'اسم السائق', 'نوع المركبة', 'حجم النقلة', 'نوع الربو', 'اسم المكب', 'منطقة النقل', 'ملاحظات'],
+      ['K-001', 'شركة العلمين للحجر والرخام', '2026-01-15', 'مدفوع', '12.5', 'أحمد محمود', 'تنك', '5', 'سائل', 'مكب أ', 'منطقة شمال', ''],
+      ['K-002', 'اكتب اسم المصنع بالضبط كما هو مسجل', '2026-01-16', 'ذمة', '8', 'محمد علي', 'شاحنة', '3', 'جاف', 'مكب ب', 'منطقة جنوب', ''],
     ])
     ws['!cols'] = Array(12).fill({ wch: 20 })
     const wb = XLSX.utils.book_new()
