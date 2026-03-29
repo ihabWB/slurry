@@ -6,21 +6,27 @@ import { getFactoriesWithTripCount } from '@/lib/api'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type FactoryWithCount = any
 
+// 5-stop gradient: blue(0) → green → lime → yellow → orange → red
 function getTripColor(count: number, max: number): string {
-  if (max === 0) return '#22c55e'
-  const ratio = Math.min(count / max, 1)
-  let r, g, b
-  if (ratio < 0.5) {
-    const t = ratio * 2
-    r = Math.round(34 + t * (251 - 34))
-    g = Math.round(197 + t * (191 - 197))
-    b = Math.round(94 + t * (36 - 94))
-  } else {
-    const t = (ratio - 0.5) * 2
-    r = Math.round(251 + t * (220 - 251))
-    g = Math.round(191 + t * (38 - 191))
-    b = Math.round(36 + t * (38 - 36))
-  }
+  if (count === 0) return '#3b82f6' // blue — no trips
+  if (max === 0) return '#3b82f6'
+  const ratio = Math.min(count / max, 1) // 0..1
+  // 4 segments between 5 stops
+  // stops: green #22c55e → lime #84cc16 → yellow #eab308 → orange #f97316 → red #ef4444
+  const stops = [
+    [34,  197, 94],   // #22c55e green
+    [132, 204, 22],   // #84cc16 lime
+    [234, 179, 8],    // #eab308 yellow
+    [249, 115, 22],   // #f97316 orange
+    [239, 68,  68],   // #ef4444 red
+  ]
+  const seg = ratio * (stops.length - 1)
+  const lo = Math.floor(seg)
+  const hi = Math.min(lo + 1, stops.length - 1)
+  const t = seg - lo
+  const r = Math.round(stops[lo][0] + t * (stops[hi][0] - stops[lo][0]))
+  const g = Math.round(stops[lo][1] + t * (stops[hi][1] - stops[lo][1]))
+  const b = Math.round(stops[lo][2] + t * (stops[hi][2] - stops[lo][2]))
   return `rgb(${r},${g},${b})`
 }
 
@@ -180,10 +186,15 @@ export default function MapPage() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span>قليل</span>
-            <div className="w-24 h-2.5 rounded-full" style={{ background: 'linear-gradient(to right, #22c55e, #eab308, #dc2626)' }}></div>
-            <span>كثير — عدد النقلات</span>
+          <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full" style={{ background: '#3b82f6' }}></div>
+              <span>لا توجد نقلات</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-20 h-2.5 rounded-full" style={{ background: 'linear-gradient(to right, #22c55e, #84cc16, #eab308, #f97316, #ef4444)' }}></div>
+              <span>قليل → كثير</span>
+            </div>
           </div>
         </div>
       </div>
