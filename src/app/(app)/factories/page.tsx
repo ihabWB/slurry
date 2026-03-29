@@ -182,12 +182,12 @@ export default function FactoriesPage() {
       </div>
 
       {/* Approximate coordinates warning banner */}
-      {(() => { const approxCount = factories.filter(f => f.lat === 31.1 && f.lng === 35.5).length; return approxCount > 0 ? (
+      {(() => { const approxCount = factories.filter(f => f.lat === 31.5 && f.lng === 35.5).length; return approxCount > 0 ? (
         <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <span className="text-amber-500 text-lg flex-shrink-0">⚠️</span>
           <div className="flex-1">
             <p className="text-sm font-semibold text-amber-800">{approxCount} مصنع {approxCount === 1 ? 'يحتاج' : 'يحتاجون'} تحديث الإحداثيات</p>
-            <p className="text-xs text-amber-600 mt-0.5">هذه المصانع تستخدم إحداثيات تقريبية (31.1، 35.5) — يرجى تحديثها للظهور بشكل صحيح على الخريطة</p>
+            <p className="text-xs text-amber-600 mt-0.5">هذه المصانع تستخدم إحداثيات تقريبية (31.5، 35.5) — يرجى تحديثها للظهور بشكل صحيح على الخريطة</p>
           </div>
         </div>
       ) : null })()}
@@ -218,7 +218,7 @@ export default function FactoriesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(f => {
-            const isApproxCoords = f.lat === 31.1 && f.lng === 35.5
+            const isApproxCoords = f.lat === 31.5 && f.lng === 35.5
             return (
             <Card key={f.id} className={`border-2 ${isApproxCoords ? 'border-amber-300' : f.balance > 0 ? 'border-red-100' : 'border-emerald-100'}`}>
               <CardBody>
