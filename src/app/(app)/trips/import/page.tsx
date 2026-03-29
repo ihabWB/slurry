@@ -15,9 +15,11 @@ import type { ImportTripRow } from '@/lib/api'
 // Column aliases — maps any header name to our internal key
 // ────────────────────────────────────────────────────────────
 const COLUMN_MAP: Record<string, string> = {
-  // factory
+  // factory (by tag, name, or uuid)
   'factory_id': 'factory_id', 'معرف المصنع': 'factory_id', 'id المصنع': 'factory_id',
   'اسم المصنع': 'factory_id', 'المصنع': 'factory_id', 'factory_name': 'factory_id', 'factory': 'factory_id',
+  // tag
+  'tag': 'tag_number', 'tag_number': 'tag_number', 'رقم tag': 'tag_number', 'رقم الـ tag': 'tag_number', 'الـ tag': 'tag_number', 'رمز المصنع': 'tag_number',
   // date
   'trip_date': 'trip_date', 'تاريخ النقلة': 'trip_date', 'التاريخ': 'trip_date', 'date': 'trip_date',
   // payment_status
@@ -116,6 +118,9 @@ export default function ImportTripsPage() {
     setFileName(file.name)
     const flist = await ensureFactories()
     const factoryByName = new Map(flist.map(f => [f.name.trim().toLowerCase(), f]))
+    const factoryByTag = new Map(
+      flist.filter(f => f.tag_number).map(f => [f.tag_number!.trim().toLowerCase(), f])
+    )
 
     const buf = await file.arrayBuffer()
     const wb = XLSX.read(buf, { type: 'array', cellDates: false })
@@ -137,21 +142,33 @@ export default function ImportTripsPage() {
 
       const errors: string[] = []
 
-      // factory_id — can be factory name OR direct uuid
+      // factory — resolve by TAG first, then name, then UUID
+      const raw_tag = String(get('tag_number') ?? '').trim()
       const raw_factory = String(get('factory_id') ?? '').trim()
       let factory_id = ''
       let factoryName: string | undefined
-      if (!raw_factory) {
-        errors.push('المصنع مفقود')
+
+      // Priority 1: TAG number
+      if (raw_tag) {
+        const byTag = factoryByTag.get(raw_tag.toLowerCase())
+        if (byTag) {
+          factory_id = byTag.id
+          factoryName = `${byTag.name} [${byTag.tag_number}]`
+        } else {
+          errors.push(`لم يُعثر على TAG: "${raw_tag}"`)
+          factoryName = raw_tag
+        }
+      } else if (!raw_factory) {
+        errors.push('المصنع مفقود (TAG أو الاسم)')
         factoryName = '—'
       } else {
-        // First: try to resolve by name (case-insensitive)
+        // Priority 2: factory name
         const byName = factoryByName.get(raw_factory.toLowerCase())
         if (byName) {
           factory_id = byName.id
           factoryName = byName.name
         } else {
-          // Second: check if it's a valid UUID (direct id)
+          // Priority 3: direct UUID
           const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw_factory)
           if (isUUID) {
             factory_id = raw_factory
@@ -224,9 +241,9 @@ export default function ImportTripsPage() {
   // Download template
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['رقم الكوبون', 'اسم المصنع', 'تاريخ النقلة', 'حالة الدفع', 'المسافة كم', 'اسم السائق', 'نوع المركبة', 'حجم النقلة', 'نوع الربو', 'اسم المكب', 'منطقة النقل', 'ملاحظات'],
-      ['K-001', 'شركة العلمين للحجر والرخام', '2026-01-15', 'مدفوع', '12.5', 'أحمد محمود', 'تنك', '5', 'سائل', 'مكب أ', 'منطقة شمال', ''],
-      ['K-002', 'اكتب اسم المصنع بالضبط كما هو مسجل', '2026-01-16', 'ذمة', '8', 'محمد علي', 'شاحنة', '3', 'جاف', 'مكب ب', 'منطقة جنوب', ''],
+      ['رقم TAG', 'رقم الكوبون', 'تاريخ النقلة', 'حالة الدفع', 'المسافة كم', 'اسم السائق', 'نوع المركبة', 'حجم النقلة', 'نوع الربو', 'اسم المكب', 'منطقة النقل', 'ملاحظات'],
+      ['T-001', 'K-001', '2026-01-15', 'مدفوع', '12.5', 'أحمد محمود', 'تنك', '5', 'سائل', 'مكب أ', 'منطقة شمال', ''],
+      ['T-002', 'K-002', '2026-01-16', 'ذمة', '8', 'محمد علي', 'شاحنة', '3', 'جاف', 'مكب ب', 'منطقة جنوب', ''],
     ])
     ws['!cols'] = Array(12).fill({ wch: 20 })
     const wb = XLSX.utils.book_new()
@@ -294,8 +311,8 @@ export default function ImportTripsPage() {
             <CardHeader><h2 className="font-semibold text-slate-700 text-sm">🗂 أعمدة الملف المدعومة</h2></CardHeader>
             <CardBody>
               <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-xs text-slate-600">
+                <div className="flex gap-2"><span className="font-mono bg-blue-50 border border-blue-200 px-1.5 rounded text-blue-800">رقم TAG</span><span className="text-red-500">*الأساسي — رقم TAG المصنع</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">رقم الكوبون</span><span className="text-red-500">*إجباري</span></div>
-                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">معرف المصنع</span><span className="text-red-500">*إجباري (id أو الاسم)</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">تاريخ النقلة</span><span className="text-red-500">*إجباري</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">المسافة كم</span><span className="text-red-500">*إجباري</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">حالة الدفع</span><span className="text-slate-400">مدفوع / ذمة</span></div>
@@ -369,6 +386,7 @@ export default function ImportTripsPage() {
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>
                       <th className="px-3 py-2 text-right font-medium text-slate-600 whitespace-nowrap">الصف</th>
+                      <th className="px-3 py-2 text-right font-medium text-blue-600 whitespace-nowrap">TAG</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600 whitespace-nowrap">المصنع</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600 whitespace-nowrap">التاريخ</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600 whitespace-nowrap">الكوبون</th>
@@ -382,7 +400,8 @@ export default function ImportTripsPage() {
                     {validRows.map(r => (
                       <tr key={r._rowNum} className="hover:bg-slate-50">
                         <td className="px-3 py-2 text-slate-400 font-mono">{r._rowNum}</td>
-                        <td className="px-3 py-2 text-slate-700 max-w-[140px] truncate">{r._factoryName}</td>
+                        <td className="px-3 py-2 font-mono text-blue-700 font-semibold">{r._factoryName?.match(/\[(.+)\]/)?.[1] ?? '—'}</td>
+                        <td className="px-3 py-2 text-slate-700 max-w-[140px] truncate">{r._factoryName?.replace(/\s*\[.+\]$/, '')}</td>
                         <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{r.trip_date}</td>
                         <td className="px-3 py-2 font-mono text-slate-800">{r.coupon_number}</td>
                         <td className="px-3 py-2 text-slate-600">{r.distance_km} كم</td>
