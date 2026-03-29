@@ -94,6 +94,7 @@ export default function MapPage() {
       const maxTrips = Math.max(...(factories as FactoryWithCount[]).map((f: FactoryWithCount) => f.trip_count ?? 0), 1)
 
       factories.forEach((f: FactoryWithCount) => {
+        if (f.lat == null || f.lng == null) return  // skip factories without coordinates
         const count = f.trip_count ?? 0
         const color = getTripColor(count, maxTrips)
         const isOverdue = f.balance > 0

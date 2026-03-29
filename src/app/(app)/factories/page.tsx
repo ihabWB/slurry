@@ -82,9 +82,9 @@ export default function FactoriesPage() {
         updated[i] = { ...r, status: 'error', error: 'حقول ناقصة (الاسم، المالك، الجوال مطلوبة)' }
         continue
       }
-      const latVal = r.lat ? Number(r.lat) : 0
-      const lngVal = r.lng ? Number(r.lng) : 0
-      if (r.lat && isNaN(latVal) || r.lng && isNaN(lngVal)) {
+      const latVal = r.lat ? Number(r.lat) : null
+      const lngVal = r.lng ? Number(r.lng) : null
+      if ((r.lat && isNaN(latVal!)) || (r.lng && isNaN(lngVal!))) {
         updated[i] = { ...r, status: 'error', error: 'إحداثيات غير صحيحة' }
         continue
       }
@@ -135,18 +135,20 @@ export default function FactoriesPage() {
   }
 
   const handleSave = async () => {
-    if (!form.name || !form.owner_name || !form.phone || !form.lat || !form.lng) {
-      showToast('warning', 'يرجى ملء جميع الحقول المطلوبة')
+    if (!form.name || !form.owner_name || !form.phone) {
+      showToast('warning', 'يرجى ملء الحقول المطلوبة: الاسم، المالك، الجوال')
       return
     }
     setSaving(true)
     try {
       const wt = (form.waste_type as 'liquid' | 'solid') || null
+      const latNum = form.lat ? Number(form.lat) : null
+      const lngNum = form.lng ? Number(form.lng) : null
       if (editTarget) {
-        await updateFactory(editTarget.id, { name: form.name, owner_name: form.owner_name, phone: form.phone, lat: Number(form.lat), lng: Number(form.lng), region: form.region, tag_number: form.tag_number || null, waste_type: wt })
+        await updateFactory(editTarget.id, { name: form.name, owner_name: form.owner_name, phone: form.phone, lat: latNum, lng: lngNum, region: form.region, tag_number: form.tag_number || null, waste_type: wt })
         showToast('success', 'تم تعديل المصنع بنجاح')
       } else {
-        await createFactory({ name: form.name, owner_name: form.owner_name, phone: form.phone, lat: Number(form.lat), lng: Number(form.lng), region: form.region, tag_number: form.tag_number || null, waste_type: wt })
+        await createFactory({ name: form.name, owner_name: form.owner_name, phone: form.phone, lat: latNum, lng: lngNum, region: form.region, tag_number: form.tag_number || null, waste_type: wt })
         showToast('success', 'تم إضافة المصنع بنجاح')
       }
       setModalOpen(false)
@@ -243,7 +245,9 @@ export default function FactoriesPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin size={13} className="text-slate-400" />
-                    <span dir="ltr" className="text-xs">{f.lat.toFixed(5)}, {f.lng.toFixed(5)}</span>
+                    <span dir="ltr" className="text-xs">
+                      {f.lat != null && f.lng != null ? `${f.lat.toFixed(5)}, ${f.lng.toFixed(5)}` : <span className="text-amber-500">📍 إحداثيات غير محددة</span>}
+                    </span>
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
@@ -336,18 +340,18 @@ export default function FactoriesPage() {
             </div>
           </div>
           <Input
-            label="خط العرض (Latitude) *"
+            label="خط العرض (Latitude)"
             type="number"
             step="any"
-            placeholder="31.12345"
+            placeholder="31.12345 — اختياري"
             value={form.lat}
             onChange={e => setForm(p => ({ ...p, lat: e.target.value }))}
           />
           <Input
-            label="خط الطول (Longitude) *"
+            label="خط الطول (Longitude)"
             type="number"
             step="any"
-            placeholder="35.12345"
+            placeholder="35.12345 — اختياري"
             value={form.lng}
             onChange={e => setForm(p => ({ ...p, lng: e.target.value }))}
           />

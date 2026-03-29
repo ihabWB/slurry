@@ -29,8 +29,8 @@ export interface Database {
           name: string
           owner_name: string
           phone: string
-          lat: number
-          lng: number
+          lat?: number | null
+          lng?: number | null
           region: string
           balance?: number
           tag_number?: string | null
@@ -43,8 +43,8 @@ export interface Database {
           name?: string
           owner_name?: string
           phone?: string
-          lat?: number
-          lng?: number
+          lat?: number | null
+          lng?: number | null
           region?: string
           balance?: number
           tag_number?: string | null
