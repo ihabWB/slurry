@@ -535,6 +535,9 @@ export async function getDashboardStats() {
   const monthCashCount = monthCashTripsRes.count ?? 0
   const monthCollection = monthCashCount * 50
 
+  // total due (all trips × 50)
+  const totalDue = (allTrips.count ?? 0) * 50
+
   // total debt
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalDebt = (overdueBalances.data || []).reduce((s: number, f: any) => s + Number(f.balance), 0)
@@ -549,6 +552,7 @@ export async function getDashboardStats() {
     totalFactories: totalFactories.count ?? 0,
     overdueFactories: overdueFactoriesRes.count ?? 0,
     todayCollection: totalCollection,
+    totalDue,
     monthTripsCount,
     activeFactoriesThisMonth,
     monthCollection,

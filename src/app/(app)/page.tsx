@@ -14,6 +14,7 @@ interface Stats {
   totalFactories: number
   overdueFactories: number
   todayCollection: number
+  totalDue: number
   monthTripsCount: number
   activeFactoriesThisMonth: number
   monthCollection: number
@@ -55,7 +56,7 @@ export default function DashboardPage() {
   const dateLocale = lang === 'ar' ? ar : enUS
   const [stats, setStats] = useState<Stats>({
     todayTripsCount: 0, totalFactories: 0, overdueFactories: 0, todayCollection: 0,
-    monthTripsCount: 0, activeFactoriesThisMonth: 0, monthCollection: 0, totalDebt: 0, avgTripsPerFactory: 0,
+    totalDue: 0, monthTripsCount: 0, activeFactoriesThisMonth: 0, monthCollection: 0, totalDebt: 0, avgTripsPerFactory: 0,
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
@@ -192,6 +193,60 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Financial Summary Card */}
+      {!loading && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart2 size={16} className="text-slate-500" />
+            <h2 className="text-sm font-semibold text-slate-600">الملخص المالي الكلي</h2>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {/* Total Due */}
+            <div className="text-center">
+              <p className="text-xs text-slate-400 mb-1">إجمالي المستحق</p>
+              <p className="text-2xl font-bold text-slate-800">{stats.totalDue.toLocaleString()}</p>
+              <p className="text-xs text-slate-400">₪</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">{stats.todayTripsCount} نقلة × 50₪</p>
+            </div>
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-y-0 right-0 w-px bg-slate-100" />
+              <div className="absolute inset-y-0 left-0 w-px bg-slate-100" />
+              <div className="text-center h-full flex flex-col justify-center">
+                <p className="text-xs text-slate-400 mb-1">تم تحصيله</p>
+                <p className="text-2xl font-bold text-emerald-600">{stats.todayCollection.toLocaleString()}</p>
+                <p className="text-xs text-slate-400">₪</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {stats.totalDue > 0 ? Math.round(stats.todayCollection / stats.totalDue * 100) : 0}% من الإجمالي
+                </p>
+              </div>
+            </div>
+            {/* Total Debt */}
+            <div className="text-center">
+              <p className="text-xs text-slate-400 mb-1">ذمم متراكمة</p>
+              <p className={`text-2xl font-bold ${stats.totalDebt > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {stats.totalDebt.toLocaleString()}
+              </p>
+              <p className="text-xs text-slate-400">₪</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">{stats.overdueFactories} مصنع مدين</p>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div className="mt-4">
+            <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+              <span>نسبة التحصيل</span>
+              <span>{stats.totalDue > 0 ? Math.round(stats.todayCollection / stats.totalDue * 100) : 0}%</span>
+            </div>
+            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all"
+                style={{ width: `${stats.totalDue > 0 ? Math.min(stats.todayCollection / stats.totalDue * 100, 100) : 0}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div>
