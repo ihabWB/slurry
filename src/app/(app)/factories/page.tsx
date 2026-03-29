@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext'
 import type { Factory } from '@/lib/supabase/database.types'
 import * as XLSX from 'xlsx'
 
-const emptyForm = { name: '', owner_name: '', phone: '', lat: '', lng: '', region: '' }
+const emptyForm = { name: '', owner_name: '', phone: '', lat: '', lng: '', region: '', tag_number: '', waste_type: '' }
 
 export default function FactoriesPage() {
   const { canEdit } = useAuth()
@@ -27,16 +27,16 @@ export default function FactoriesPage() {
 
   // Excel import state
   const [importOpen, setImportOpen] = useState(false)
-  const [importRows, setImportRows] = useState<{ name: string; owner_name: string; phone: string; region: string; lat: string; lng: string; status: 'pending' | 'success' | 'error'; error?: string }[]>([])
+  const [importRows, setImportRows] = useState<{ name: string; owner_name: string; phone: string; region: string; lat: string; lng: string; tag_number: string; waste_type: string; status: 'pending' | 'success' | 'error'; error?: string }[]>([])
   const [importing, setImporting] = useState(false)
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['اسم المصنع *', 'اسم المالك *', 'رقم الجوال *', 'المنطقة', 'خط العرض (lat) *', 'خط الطول (lng) *'],
-      ['مصنع الأمل', 'محمد أحمد', '0599123456', 'شمال', '31.52345', '35.12345'],
-      ['مصنع النور', 'خالد سعيد', '0598765432', 'جنوب', '31.48000', '35.09000'],
+      ['اسم المصنع *', 'اسم المالك *', 'رقم الجوال *', 'المنطقة', 'خط العرض (lat) *', 'خط الطول (lng) *', 'رقم TAG', 'نوع الربو'],
+      ['مصنع الأمل', 'محمد أحمد', '0599123456', 'شمال', '31.52345', '35.12345', 'T-001', 'سائل'],
+      ['مصنع النور', 'خالد سعيد', '0598765432', 'جنوب', '31.48000', '35.09000', 'T-002', 'جاف'],
     ])
-    ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 18 }, { wch: 18 }]
+    ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 12 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'المصانع')
     XLSX.writeFile(wb, 'نموذج_استيراد_المصانع.xlsx')
@@ -59,6 +59,8 @@ export default function FactoriesPage() {
           region: String(r[3] ?? '').trim(),
           lat: String(r[4] ?? '').trim(),
           lng: String(r[5] ?? '').trim(),
+          tag_number: String(r[6] ?? '').trim(),
+          waste_type: String(r[7] ?? '').trim(),
           status: 'pending' as const,
         }))
         setImportRows(parsed)
@@ -87,7 +89,9 @@ export default function FactoriesPage() {
         continue
       }
       try {
-        await createFactory({ name: r.name, owner_name: r.owner_name, phone: r.phone, region: r.region || '', lat: latVal, lng: lngVal })
+        const wtRaw = r.waste_type.toLowerCase()
+        const wt = wtRaw === 'سائل' || wtRaw === 'liquid' ? 'liquid' : wtRaw === 'جاف' || wtRaw === 'solid' ? 'solid' : null
+        await createFactory({ name: r.name, owner_name: r.owner_name, phone: r.phone, region: r.region || '', lat: latVal, lng: lngVal, tag_number: r.tag_number || null, waste_type: wt })
         updated[i] = { ...r, status: 'success' }
       } catch (e: unknown) {
         updated[i] = { ...r, status: 'error', error: e instanceof Error ? e.message : 'خطأ' }
@@ -126,7 +130,7 @@ export default function FactoriesPage() {
   const openAdd = () => { setEditTarget(null); setForm(emptyForm); setModalOpen(true) }
   const openEdit = (f: Factory) => {
     setEditTarget(f)
-    setForm({ name: f.name, owner_name: f.owner_name, phone: f.phone, lat: String(f.lat), lng: String(f.lng), region: f.region })
+    setForm({ name: f.name, owner_name: f.owner_name, phone: f.phone, lat: String(f.lat), lng: String(f.lng), region: f.region, tag_number: f.tag_number ?? '', waste_type: f.waste_type ?? '' })
     setModalOpen(true)
   }
 
@@ -137,11 +141,12 @@ export default function FactoriesPage() {
     }
     setSaving(true)
     try {
+      const wt = (form.waste_type as 'liquid' | 'solid') || null
       if (editTarget) {
-        await updateFactory(editTarget.id, { name: form.name, owner_name: form.owner_name, phone: form.phone, lat: Number(form.lat), lng: Number(form.lng), region: form.region })
+        await updateFactory(editTarget.id, { name: form.name, owner_name: form.owner_name, phone: form.phone, lat: Number(form.lat), lng: Number(form.lng), region: form.region, tag_number: form.tag_number || null, waste_type: wt })
         showToast('success', 'تم تعديل المصنع بنجاح')
       } else {
-        await createFactory({ name: form.name, owner_name: form.owner_name, phone: form.phone, lat: Number(form.lat), lng: Number(form.lng), region: form.region })
+        await createFactory({ name: form.name, owner_name: form.owner_name, phone: form.phone, lat: Number(form.lat), lng: Number(form.lng), region: form.region, tag_number: form.tag_number || null, waste_type: wt })
         showToast('success', 'تم إضافة المصنع بنجاح')
       }
       setModalOpen(false)
@@ -204,8 +209,22 @@ export default function FactoriesPage() {
               <CardBody>
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="font-semibold text-slate-800">{f.name}</h3>
-                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-block">{f.region || 'غير محدد'}</span>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-slate-800">{f.name}</h3>
+                      {f.tag_number && (
+                        <span className="text-xs font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{f.tag_number}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{f.region || 'غير محدد'}</span>
+                      {f.waste_type && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          f.waste_type === 'liquid' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'
+                        }`}>
+                          {f.waste_type === 'liquid' ? '💧 سائل' : '🪨 جاف'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
                     f.balance > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
@@ -279,6 +298,44 @@ export default function FactoriesPage() {
             <option value="غرب">غرب</option>
           </Select>
           <Input
+            label="رقم TAG"
+            placeholder="مثال: T-001"
+            value={form.tag_number}
+            onChange={e => setForm(p => ({ ...p, tag_number: e.target.value }))}
+          />
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-2">نوع الربو</p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setForm(p => ({ ...p, waste_type: '' }))}
+                className={`py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                  form.waste_type === '' ? 'border-slate-400 bg-slate-50 text-slate-700' : 'border-slate-200 text-slate-500'
+                }`}
+              >
+                غير محدد
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(p => ({ ...p, waste_type: 'liquid' }))}
+                className={`py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                  form.waste_type === 'liquid' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                💧 سائل
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(p => ({ ...p, waste_type: 'solid' }))}
+                className={`py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                  form.waste_type === 'solid' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                🪨 جاف
+              </button>
+            </div>
+          </div>
+          <Input
             label="خط العرض (Latitude) *"
             type="number"
             step="any"
@@ -344,6 +401,8 @@ export default function FactoriesPage() {
                       <th className="text-right px-3 py-2 text-slate-500 font-medium">المالك</th>
                       <th className="text-right px-3 py-2 text-slate-500 font-medium">الجوال</th>
                       <th className="text-right px-3 py-2 text-slate-500 font-medium">المنطقة</th>
+                      <th className="text-right px-3 py-2 text-slate-500 font-medium">TAG</th>
+                      <th className="text-right px-3 py-2 text-slate-500 font-medium">نوع الربو</th>
                       <th className="text-right px-3 py-2 text-slate-500 font-medium">الإحداثيات</th>
                       <th className="text-center px-3 py-2 text-slate-500 font-medium">الحالة</th>
                     </tr>
@@ -357,6 +416,14 @@ export default function FactoriesPage() {
                         <td className="px-3 py-2 text-slate-600">{r.owner_name}</td>
                         <td className="px-3 py-2 text-slate-600" dir="ltr">{r.phone}</td>
                         <td className="px-3 py-2 text-slate-500">{r.region || '—'}</td>
+                        <td className="px-3 py-2 font-mono text-slate-600">{r.tag_number || '—'}</td>
+                        <td className="px-3 py-2">
+                          {r.waste_type ? (
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                              r.waste_type === 'سائل' || r.waste_type === 'liquid' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'
+                            }`}>{r.waste_type}</span>
+                          ) : '—'}
+                        </td>
                         <td className="px-3 py-2 text-slate-400" dir="ltr">{r.lat}, {r.lng}</td>
                         <td className="px-3 py-2 text-center">
                           {r.status === 'success' && <CheckCircle size={14} className="text-emerald-600 inline" />}

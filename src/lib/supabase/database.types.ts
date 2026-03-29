@@ -19,6 +19,8 @@ export interface Database {
           lng: number
           region: string
           balance: number
+          tag_number: string | null
+          waste_type: 'liquid' | 'solid' | null
           created_at: string
           updated_at: string
         }
@@ -31,6 +33,8 @@ export interface Database {
           lng: number
           region: string
           balance?: number
+          tag_number?: string | null
+          waste_type?: 'liquid' | 'solid' | null
           created_at?: string
           updated_at?: string
         }
@@ -43,6 +47,8 @@ export interface Database {
           lng?: number
           region?: string
           balance?: number
+          tag_number?: string | null
+          waste_type?: 'liquid' | 'solid' | null
           updated_at?: string
         }
       }
