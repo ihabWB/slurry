@@ -499,7 +499,7 @@ export async function getDashboardStats() {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-  const [allTrips, totalFactories, overdueFactoriesRes, allPayments, cashTripsRes, monthTripsRes, monthCashTripsRes, overdueBalances] = await Promise.all([
+  const [allTrips, totalFactories, overdueFactoriesRes, allPayments, cashTripsRes, monthTripsRes, monthCashTripsRes, overdueBalances, paidTripsRes, creditTripsRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -519,6 +519,12 @@ export async function getDashboardStats() {
     // overdue balances to sum total debt
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('balance').gt('balance', 0),
+    // paid trips (all time)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
+    // credit trips (all time)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'credit'),
   ])
 
   // total collection (all time)
@@ -549,6 +555,8 @@ export async function getDashboardStats() {
 
   return {
     todayTripsCount: allTrips.count ?? 0,
+    paidTripsCount: paidTripsRes.count ?? 0,
+    creditTripsCount: creditTripsRes.count ?? 0,
     totalFactories: totalFactories.count ?? 0,
     overdueFactories: overdueFactoriesRes.count ?? 0,
     todayCollection: totalCollection,

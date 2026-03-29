@@ -11,6 +11,8 @@ import { translations as T, t } from '@/lib/i18n'
 
 interface Stats {
   todayTripsCount: number
+  paidTripsCount: number
+  creditTripsCount: number
   totalFactories: number
   overdueFactories: number
   todayCollection: number
@@ -55,7 +57,8 @@ export default function DashboardPage() {
   const { lang, dir } = useLang()
   const dateLocale = lang === 'ar' ? ar : enUS
   const [stats, setStats] = useState<Stats>({
-    todayTripsCount: 0, totalFactories: 0, overdueFactories: 0, todayCollection: 0,
+    todayTripsCount: 0, paidTripsCount: 0, creditTripsCount: 0,
+    totalFactories: 0, overdueFactories: 0, todayCollection: 0,
     totalDue: 0, monthTripsCount: 0, activeFactoriesThisMonth: 0, monthCollection: 0, totalDebt: 0, avgTripsPerFactory: 0,
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
@@ -83,10 +86,18 @@ export default function DashboardPage() {
   useEffect(() => { load() }, [])
 
   const statCards = [
-    { label: t(T.dashboard.todayTrips, lang),      value: stats.todayTripsCount,  suffix: t(T.dashboard.trip, lang),    icon: Truck,          bg: 'bg-blue-50',    text: 'text-blue-600',   border: 'border-blue-100',   trend: '+12%' },
-    { label: t(T.dashboard.todayCollect, lang),    value: stats.todayCollection,  suffix: '₪',                          icon: DollarSign,     bg: 'bg-emerald-50', text: 'text-emerald-600',border: 'border-emerald-100',trend: '+8%',  isCurrency: true },
-    { label: t(T.dashboard.totalFactory, lang),    value: stats.totalFactories,   suffix: t(T.dashboard.factory, lang),  icon: Factory,        bg: 'bg-violet-50',  text: 'text-violet-600', border: 'border-violet-100', trend: null },
-    { label: t(T.dashboard.overdueFactory, lang),  value: stats.overdueFactories, suffix: t(T.dashboard.factory, lang),  icon: AlertTriangle,  bg: 'bg-red-50',     text: 'text-red-500',    border: 'border-red-100',    trend: null, warn: true },
+    {
+      label: t(T.dashboard.todayTrips, lang),
+      value: stats.todayTripsCount,
+      suffix: t(T.dashboard.trip, lang),
+      icon: Truck,
+      bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-100',
+      paid: stats.paidTripsCount,
+      credit: stats.creditTripsCount,
+    },
+    { label: t(T.dashboard.todayCollect, lang),    value: stats.todayCollection,  suffix: '₪',                          icon: DollarSign,     bg: 'bg-emerald-50', text: 'text-emerald-600',border: 'border-emerald-100', isCurrency: true },
+    { label: t(T.dashboard.totalFactory, lang),    value: stats.totalFactories,   suffix: t(T.dashboard.factory, lang),  icon: Factory,        bg: 'bg-violet-50',  text: 'text-violet-600', border: 'border-violet-100' },
+    { label: t(T.dashboard.overdueFactory, lang),  value: stats.overdueFactories, suffix: t(T.dashboard.factory, lang),  icon: AlertTriangle,  bg: 'bg-red-50',     text: 'text-red-500',    border: 'border-red-100',   warn: true },
   ]
 
   const monthCards = [
@@ -151,7 +162,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {loading
           ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />)
-          : statCards.map(({ label, value, icon: Icon, bg, text, border, suffix, isCurrency, warn }) => (
+          : statCards.map(({ label, value, icon: Icon, bg, text, border, suffix, isCurrency, warn, ...rest }) => (
           <div key={label} className={`bg-white rounded-2xl border ${border} p-5 hover:shadow-md transition-shadow`}>
             <div className="flex items-start justify-between mb-3">
               <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
@@ -166,6 +177,18 @@ export default function DashboardPage() {
               {isCurrency ? value.toLocaleString() : value}
               <span className="text-sm font-normal text-slate-400 ms-1">{suffix}</span>
             </p>
+            {'paid' in rest && (
+              <div className="flex gap-2 mt-2">
+                <span className="flex items-center gap-1 text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                  محصلة {(rest as any).paid}
+                </span>
+                <span className="flex items-center gap-1 text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  ذمة {(rest as any).credit}
+                </span>
+              </div>
+            )}
           </div>
         ))}
       </div>
