@@ -82,8 +82,8 @@ export default function ReportsPage() {
     setTripsLoading(true)
     try {
       const filters: AnyData = {
-        from: new Date(from + 'T00:00:00').toISOString(),
-        to: new Date(to + 'T23:59:59').toISOString(),
+        from,
+        to,
       }
       if (statusFilter !== 'all') filters.payment_status = statusFilter
       const data = await getTrips(filters)
@@ -206,9 +206,14 @@ export default function ReportsPage() {
   const exportTripsExcel = () => {
     const tripsRows = filtered.map((t: AnyData, i: number) => ({
       '#': i + 1, 'المصنع': t.factories?.name ?? '', 'المنطقة': t.factories?.region ?? '',
+      'رقم القسيمة': t.coupon_number ?? '',
+      'اسم السائق': t.driver_name ?? '',
+      'نوع المركبة': t.vehicle_type === 'tank' ? 'صهريج' : t.vehicle_type === 'truck' ? 'شاحنة' : '',
       'نوع الربو': t.waste_type ? WASTE_LABEL[t.waste_type] : 'غير محدد',
       'الحجم (م³)': t.volume_m3 ?? '', 'المبلغ (₪)': t.amount,
       'حالة الدفع': t.payment_status === 'paid' ? 'مدفوع' : 'ذمة',
+      'موقع التفريغ': t.dump_site ?? '',
+      'منطقة النقل': t.transfer_zone ?? '',
       'تاريخ النقلة': t.trip_date ?? '', 'ملاحظات': t.notes ?? '',
     }))
     const factoryRows = factoryChart.map(f => ({
@@ -600,6 +605,8 @@ export default function ReportsPage() {
                         <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">#</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">المصنع</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">المنطقة</th>
+                        <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">رقم القسيمة</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">السائق</th>
                         <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">نوع الربو</th>
                         <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">الحجم</th>
                         <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">المبلغ</th>
@@ -610,12 +617,14 @@ export default function ReportsPage() {
                     </thead>
                     <tbody>
                       {filtered.length === 0 ? (
-                        <tr><td colSpan={9} className="text-center py-10 text-slate-400">لا توجد بيانات في هذه الفترة</td></tr>
+                        <tr><td colSpan={11} className="text-center py-10 text-slate-400">لا توجد بيانات في هذه الفترة</td></tr>
                       ) : filtered.map((t: AnyData, i: number) => (
                         <tr key={t.id} className={`border-b border-slate-50 hover:bg-blue-50/20 ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                           <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
                           <td className="px-4 py-3 font-medium text-slate-800">{t.factories?.name ?? '—'}</td>
                           <td className="px-4 py-3 text-slate-500 text-xs">{t.factories?.region ?? '—'}</td>
+                          <td className="px-4 py-3 text-center">{t.coupon_number ? <span className="bg-violet-50 text-violet-700 px-2 py-0.5 rounded-full text-xs font-mono font-semibold">{t.coupon_number}</span> : <span className="text-slate-300 text-xs">—</span>}</td>
+                          <td className="px-4 py-3 text-slate-600 text-xs">{t.driver_name ?? '—'}</td>
                           <td className="px-4 py-3 text-center">
                             {t.waste_type === 'liquid' ? <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-semibold">💧 سائل</span>
                               : t.waste_type === 'solid' ? <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full text-xs font-semibold">🪨 جاف</span>

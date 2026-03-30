@@ -103,8 +103,8 @@ export async function getTrips(filters?: {
 
   if (filters?.factory_id) query = query.eq('factory_id', filters.factory_id)
   if (filters?.payment_status) query = query.eq('payment_status', filters.payment_status)
-  if (filters?.from) query = query.gte('created_at', filters.from)
-  if (filters?.to) query = query.lte('created_at', filters.to)
+  if (filters?.from) query = query.gte('trip_date', filters.from.substring(0, 10))
+  if (filters?.to) query = query.lte('trip_date', filters.to.substring(0, 10))
 
   const { data, error } = await query
   if (error) throw error
