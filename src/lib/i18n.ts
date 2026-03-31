@@ -9,9 +9,10 @@ export const translations = {
     payments:   { ar: 'المدفوعات',   en: 'Payments' },
     reports:    { ar: 'التقارير',    en: 'Reports' },
     map:        { ar: 'الخريطة',     en: 'Map' },
-    users:      { ar: 'المستخدمون',  en: 'Users' },
-    settings:   { ar: 'الإعدادات',   en: 'Settings' },
-    signOut:    { ar: 'تسجيل الخروج', en: 'Sign Out' },
+    users:         { ar: 'المستخدمون',  en: 'Users' },
+    settings:      { ar: 'الإعدادات',   en: 'Settings' },
+    disbursements: { ar: 'الدفعات',      en: 'Disbursements' },
+    signOut:       { ar: 'تسجيل الخروج', en: 'Sign Out' },
   },
   navGroups: {
     main:       { ar: 'الرئيسية',   en: 'Main' },

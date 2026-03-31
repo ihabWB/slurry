@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
-import type { Factory, FactoryInsert, FactoryUpdate, Trip, TripInsert, Payment, PaymentInsert } from '@/lib/supabase/database.types'
+import type { Factory, FactoryInsert, FactoryUpdate, Trip, TripInsert, Payment, PaymentInsert, Disbursement } from '@/lib/supabase/database.types'
 
 // ─── FACTORIES ───────────────────────────────────────────────
 
@@ -157,8 +157,29 @@ export async function importTrips(rows: ImportTripRow[]): Promise<ImportResult> 
   const toInsert: TripInsert[] = []
   const seenCoupons = new Set<string>()
 
+  // ── جلب الفترات المقفلة مرة واحدة ──────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: closedDisb } = await (supabase as any)
+    .from('disbursements')
+    .select('period_from, period_to')
+    .eq('status', 'closed')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const closedPeriods: { period_from: string; period_to: string }[] = closedDisb ?? []
+
+  function isInLockedPeriod(date: string): boolean {
+    return closedPeriods.some(p => date >= p.period_from && date <= p.period_to)
+  }
+
   rows.forEach((row, i) => {
     const rowNum = i + 2 // Excel row number (1=header)
+
+    // فحص الفترة المقفلة
+    if (isInLockedPeriod(row.trip_date)) {
+      result.errors.push({ row: rowNum, reason: `التاريخ ${row.trip_date} ضمن فترة مقفلة — تم صرف دفعتها` })
+      result.skipped++
+      return
+    }
+
     if (row.coupon_number) {
       if (existingCoupons.includes(row.coupon_number)) {
         result.errors.push({ row: rowNum, reason: `رقم الكوبون "${row.coupon_number}" موجود مسبقاً` })
@@ -230,6 +251,21 @@ function translateTripError(error: { code?: string; message?: string }): string 
 export async function createTrip(trip: TripInsert) {
   const supabase = createClient()
   const payment_method = trip.payment_status === 'paid' ? 'cash' : null
+
+  // ── حماية: رفض النقلات ضمن فترة مقفلة ──────────────────
+  const tripDate = trip.trip_date ?? new Date().toISOString().slice(0, 10)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: lockedPeriods } = await (supabase as any)
+    .from('disbursements')
+    .select('id, period_from, period_to')
+    .eq('status', 'closed')
+    .lte('period_from', tripDate)
+    .gte('period_to', tripDate)
+    .limit(1)
+  if (lockedPeriods && lockedPeriods.length > 0) {
+    throw new Error('الفترة مقفلة — تم صرف الدفعة لهذه الفترة الزمنية ولا يمكن إضافة نقلات إليها')
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('trips')
@@ -527,6 +563,7 @@ export async function getDashboardStats() {
     monthTripsRes,
     costRes,            // كل النقلات: trip_cost + subsidy_amount
     settingsRes,        // الإعدادات: project_budget + factory_contribution
+    disbursementsRes,   // الدفعات المقفلة: disbursed_amount
   ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
@@ -557,6 +594,9 @@ export async function getDashboardStats() {
     // الإعدادات العامة
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('settings').select('key, value').in('key', ['project_budget', 'factory_contribution']),
+    // الدفعات المقفلة — لمعرفة المبلغ الفعلي المصروف
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('disbursements').select('disbursed_amount').eq('status', 'closed'),
   ])
 
   // ── مجاميع التكاليف ──────────────────────────────────────
@@ -602,6 +642,12 @@ export async function getDashboardStats() {
   const budgetSpentPct    = projectBudget > 0
     ? Math.min(Math.round(spentFromBudget / projectBudget * 100), 100) : 0
 
+  // ── الدفعات المقفلة ───────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const disbData: any[] = disbursementsRes.data || []
+  const totalDisbursed = disbData.reduce((s: number, d: any) => s + Number(d.disbursed_amount), 0)
+  const closedDisbursementsCount = disbData.length
+
   // ── اليوم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const todayData: any[] = todayTripsRes.data || []
@@ -642,6 +688,9 @@ export async function getDashboardStats() {
     spentFromBudget,
     remainingBudget,
     budgetSpentPct,
+    // الدفعات المقفلة
+    totalDisbursed,
+    closedDisbursementsCount,
     // شهري
     monthTripsCount,
     activeFactoriesThisMonth,
@@ -723,5 +772,130 @@ export async function updateSetting(key: string, value: string): Promise<void> {
     .from('settings')
     .update({ value, updated_at: new Date().toISOString() })
     .eq('key', key)
+  if (error) throw error
+}
+
+// ─── DISBURSEMENTS ────────────────────────────────────────────
+
+export async function getDisbursements(): Promise<Disbursement[]> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .select('*')
+    .order('period_from', { ascending: false })
+  if (error) throw error
+  return data as Disbursement[]
+}
+
+/** حساب مجاميع النقلات لفترة معينة */
+async function calcDisbursementAmounts(from: string, to: string) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .select('trip_cost, factory_contribution, subsidy_amount')
+    .gte('trip_date', from)
+    .lte('trip_date', to)
+  if (error) throw error
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: any[] = data ?? []
+  const trips_count         = rows.length
+  const total_trips_cost    = rows.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
+  const total_factory_share = rows.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 0), 0)
+  const disbursed_amount    = rows.reduce((s: number, r: any) => s + Number(r.subsidy_amount ?? 0), 0)
+  return { trips_count, total_trips_cost, total_factory_share, disbursed_amount }
+}
+
+/** إنشاء دفعة جديدة (مسودة) وحساب مجاميعها تلقائياً */
+export async function createDisbursement(period_from: string, period_to: string, notes?: string): Promise<Disbursement> {
+  const supabase = createClient()
+  const amounts = await calcDisbursementAmounts(period_from, period_to)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: { user } } = await (supabase as any).auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .insert({
+      period_from,
+      period_to,
+      ...amounts,
+      notes: notes ?? null,
+      status: 'draft',
+      created_by: user?.id ?? null,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data as Disbursement
+}
+
+/** إعادة حساب مجاميع دفعة مسودة (إذا تم تعديل نقلات في فترتها) */
+export async function recalcDisbursement(id: string): Promise<Disbursement> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: current, error: fetchErr } = await (supabase as any)
+    .from('disbursements')
+    .select('period_from, period_to, status')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw fetchErr
+  if (current.status === 'closed') throw new Error('لا يمكن إعادة الحساب — الدفعة مقفلة')
+
+  const amounts = await calcDisbursementAmounts(current.period_from, current.period_to)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .update(amounts)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data as Disbursement
+}
+
+/** إغلاق دفعة نهائياً (لا رجعة) */
+export async function closeDisbursement(id: string): Promise<Disbursement> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: { user } } = await (supabase as any).auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: current, error: fetchErr } = await (supabase as any)
+    .from('disbursements')
+    .select('status')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw fetchErr
+  if (current.status === 'closed') throw new Error('الدفعة مقفلة مسبقاً')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .update({
+      status: 'closed',
+      closed_at: new Date().toISOString(),
+      closed_by: user?.id ?? null,
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data as Disbursement
+}
+
+/** حذف دفعة (فقط المسودات) */
+export async function deleteDisbursement(id: string): Promise<void> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: current, error: fetchErr } = await (supabase as any)
+    .from('disbursements')
+    .select('status')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw fetchErr
+  if (current.status === 'closed') throw new Error('لا يمكن حذف دفعة مقفلة')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('disbursements').delete().eq('id', id)
   if (error) throw error
 }

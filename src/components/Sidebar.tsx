@@ -1,7 +1,7 @@
 ﻿'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Factory, Truck, Wallet, BarChart2, MapPin, Users, LogOut, Menu, X, Droplets, ChevronLeft, Languages, Settings } from 'lucide-react'
+import { LayoutDashboard, Factory, Truck, Wallet, BarChart2, MapPin, Users, LogOut, Menu, X, Droplets, ChevronLeft, Languages, Settings, Receipt } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useLang } from '@/context/LangContext'
@@ -31,9 +31,10 @@ export default function Sidebar() {
       { href: '/', label: t(T.nav.dashboard, lang), icon: LayoutDashboard, show: 'always' },
     ]},
     { label: t(T.navGroups.operations, lang), items: [
-      { href: '/factories', label: t(T.nav.factories, lang), icon: Factory,  show: 'edit' },
-      { href: '/trips',     label: t(T.nav.trips,     lang), icon: Truck,    show: 'edit' },
-      { href: '/payments',  label: t(T.nav.payments,  lang), icon: Wallet,   show: 'edit' },
+      { href: '/factories',     label: t(T.nav.factories,     lang), icon: Factory,  show: 'edit' },
+      { href: '/trips',         label: t(T.nav.trips,         lang), icon: Truck,    show: 'edit' },
+      { href: '/payments',      label: t(T.nav.payments,      lang), icon: Wallet,   show: 'edit' },
+      { href: '/disbursements', label: t(T.nav.disbursements, lang), icon: Receipt,  show: 'edit' },
     ]},
     { label: t(T.navGroups.analytics, lang), items: [
       { href: '/reports', label: t(T.nav.reports, lang), icon: BarChart2, show: 'edit' },

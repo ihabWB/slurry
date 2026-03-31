@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout, Banknote, BadgePercent } from 'lucide-react'
+import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout, Banknote, BadgePercent, Receipt, Lock } from 'lucide-react'
 import { getDashboardStats, getTrips } from '@/lib/api'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -31,6 +31,8 @@ interface Stats {
   spentFromBudget: number
   remainingBudget: number
   budgetSpentPct: number
+  totalDisbursed: number
+  closedDisbursementsCount: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,6 +104,7 @@ export default function DashboardPage() {
     monthTripsCount: 0, activeFactoriesThisMonth: 0, avgTripsPerFactory: 0,
     tripsWithCostCount: 0,
     projectBudget: 0, spentFromBudget: 0, remainingBudget: 0, budgetSpentPct: 0,
+    totalDisbursed: 0, closedDisbursementsCount: 0,
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
@@ -284,6 +287,29 @@ export default function DashboardPage() {
             />
           </>}
         </div>
+
+        {/* بطاقة الدفعات المصروفة الفعلية */}
+        {!loading && stats.closedDisbursementsCount > 0 && (
+          <div className="mt-4 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Lock size={18} className="text-emerald-700" />
+              </div>
+              <div>
+                <p className="text-xs text-emerald-700 font-medium">إجمالي المصروف الفعلي (دفعات مقفلة)</p>
+                <p className="text-xl font-bold text-emerald-800">
+                  {Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-sm font-normal">₪</span>
+                </p>
+              </div>
+            </div>
+            <div className="text-left">
+              <p className="text-xs text-emerald-600">{stats.closedDisbursementsCount} دفعة مقفلة</p>
+              <Link href="/disbursements" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1 mt-1">
+                <Receipt size={11} /> عرض الدفعات
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── أشرطة التقدم المالي ────────────────────────────── */}

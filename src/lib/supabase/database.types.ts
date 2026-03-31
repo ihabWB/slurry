@@ -161,6 +161,48 @@ export interface Database {
         }
         Update: Record<string, never>
       }
+      disbursements: {
+        Row: {
+          id: string
+          period_from: string
+          period_to: string
+          trips_count: number
+          total_trips_cost: number
+          total_factory_share: number
+          disbursed_amount: number
+          notes: string | null
+          status: 'draft' | 'closed'
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          period_from: string
+          period_to: string
+          trips_count?: number
+          total_trips_cost?: number
+          total_factory_share?: number
+          disbursed_amount?: number
+          notes?: string | null
+          status?: 'draft' | 'closed'
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          trips_count?: number
+          total_trips_cost?: number
+          total_factory_share?: number
+          disbursed_amount?: number
+          notes?: string | null
+          status?: 'draft' | 'closed'
+          closed_at?: string | null
+          closed_by?: string | null
+        }
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -180,3 +222,7 @@ export type Payment = Database['public']['Tables']['payments']['Row']
 export type PaymentInsert = Database['public']['Tables']['payments']['Insert']
 
 export type AuditLog = Database['public']['Tables']['audit_log']['Row']
+
+export type Disbursement = Database['public']['Tables']['disbursements']['Row']
+export type DisbursementInsert = Database['public']['Tables']['disbursements']['Insert']
+export type DisbursementUpdate = Database['public']['Tables']['disbursements']['Update']
