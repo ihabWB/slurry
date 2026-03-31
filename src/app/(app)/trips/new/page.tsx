@@ -286,16 +286,6 @@ export default function NewTripPage() {
                 <p className="text-xs text-emerald-500 mt-1">✔ رقم متاح</p>
               )}
             </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="المسافة (كم) *"
-              type="number"
-              min="0"
-              step="0.1"
-              placeholder="مثال: 12.5"
-              value={distanceKm}
-              onChange={e => { setDistanceKm(e.target.value); calcCost(wasteType, volumeM3, e.target.value, dumpSite) }}
-            />
             <Input
               label="اسم السائق"
               placeholder="اسم السائق"
