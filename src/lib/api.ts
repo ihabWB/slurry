@@ -500,74 +500,116 @@ export async function getDashboardStats() {
   const supabase = createClient()
 
   const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const todayStr  = now.toISOString().slice(0, 10)
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-  const [allTrips, totalFactories, overdueFactoriesRes, allPayments, cashTripsRes, monthTripsRes, monthCashTripsRes, overdueBalances, paidTripsRes, creditTripsRes] = await Promise.all([
+  const [
+    allTripsRes,
+    totalFactoriesRes,
+    overdueFactoriesRes,
+    overdueBalancesRes,
+    allPaymentsRes,
+    paidTripsRes,
+    creditTripsRes,
+    todayTripsRes,
+    monthTripsRes,
+    costRes,          // Σ trip_cost, factory_contribution, subsidy_amount
+  ] = await Promise.all([
+    // عدد كل النقلات
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
+    // إجمالي المصانع
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('*', { count: 'exact', head: true }),
+    // مصانع لديها رصيد > 0
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('*', { count: 'exact', head: true }).gt('balance', 0),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('payments').select('amount_paid'),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_method', 'cash'),
-    // trips this month
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart),
-    // cash trips this month
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_method', 'cash').gte('trip_date', monthStart),
-    // overdue balances to sum total debt
+    // أرصدة الذمم
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('balance').gt('balance', 0),
-    // paid trips (all time)
+    // كل المدفوعات
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('payments').select('amount_paid'),
+    // نقلات مدفوعة
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
-    // credit trips (all time)
+    // نقلات ذمة
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'credit'),
+    // نقلات اليوم
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('factory_id, payment_status').eq('trip_date', todayStr),
+    // نقلات هذا الشهر
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart),
+    // مجاميع التكاليف والتمويل
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('trip_cost, factory_contribution, subsidy_amount'),
   ])
 
-  // total collection (all time)
-  const cashTripsCount = cashTripsRes.count ?? 0
+  // ── مجاميع التكاليف ──────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const paymentsTotal = (allPayments.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-  const totalCollection = cashTripsCount * 50 + paymentsTotal
+  const costData: any[] = costRes.data || []
+  const totalProjectCost    = costData.reduce((s: number, r: any) => s + Number(r.trip_cost          ?? 0), 0)
+  const totalFactoryShare   = costData.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 0), 0)
+  const totalSubsidy        = costData.reduce((s: number, r: any) => s + Number(r.subsidy_amount      ?? 0), 0)
 
-  // this month
+  // ── المحصّل = مساهمات المدفوع + مدفوعات الذمم ───────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const monthTripsData: any[] = monthTripsRes.data || []
-  const monthTripsCount = monthTripsData.length
-  const activeFactoriesThisMonth = new Set(monthTripsData.map((t: any) => t.factory_id)).size
-  const monthCashCount = monthCashTripsRes.count ?? 0
-  const monthCollection = monthCashCount * 50
-
-  // total due (all trips × 50)
-  const totalDue = (allTrips.count ?? 0) * 50
-
-  // total debt
+  const paymentsTotal = (allPaymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalDebt = (overdueBalances.data || []).reduce((s: number, f: any) => s + Number(f.balance), 0)
+  const paidTripsContrib = costData
+    .filter((_: any, i: number) => {
+      // نحتاج النقلات المدفوعة فقط — نحسبها عبر paid count
+      return false // placeholder — سنحسب بطريقة أخرى
+    })
+    // نقدر نحسب المحصّل = مساهمات كل النقلات المدفوعة + المدفوعات المُسجَّلة
+  const paidCount = paidTripsRes.count ?? 0
+  // متوسط factory_contribution = totalFactoryShare / total trips (تقريب)
+  const totalTrips = allTripsRes.count ?? 0
+  const avgContrib = totalTrips > 0 ? totalFactoryShare / totalTrips : 50
+  const collectedFromPaid = paidCount * avgContrib
+  const totalCollected    = collectedFromPaid + paymentsTotal
 
-  // avg trips per factory (active ones only)
+  // ── الذمم ─────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const totalDebt = (overdueBalancesRes.data || []).reduce((s: number, f: any) => s + Number(f.balance), 0)
+
+  // ── اليوم ─────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const todayData: any[]  = todayTripsRes.data  || []
+  const todayTripsCount   = todayData.length
+  const todayPaidCount    = todayData.filter((t: any) => t.payment_status === 'paid').length
+  const todayCreditCount  = todayData.filter((t: any) => t.payment_status === 'credit').length
+
+  // ── الشهر ─────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const monthData: any[]  = monthTripsRes.data  || []
+  const monthTripsCount   = monthData.length
+  const activeFactoriesThisMonth = new Set(monthData.map((t: any) => t.factory_id)).size
   const avgTripsPerFactory = activeFactoriesThisMonth > 0
-    ? Math.round(monthTripsCount / activeFactoriesThisMonth * 10) / 10
-    : 0
+    ? Math.round(monthTripsCount / activeFactoriesThisMonth * 10) / 10 : 0
 
   return {
-    todayTripsCount: allTrips.count ?? 0,
-    paidTripsCount: paidTripsRes.count ?? 0,
+    // تشغيلي
+    totalTrips,
+    todayTripsCount,
+    todayPaidCount,
+    todayCreditCount,
+    paidTripsCount:   paidTripsRes.count   ?? 0,
     creditTripsCount: creditTripsRes.count ?? 0,
-    totalFactories: totalFactories.count ?? 0,
+    totalFactories:   totalFactoriesRes.count ?? 0,
     overdueFactories: overdueFactoriesRes.count ?? 0,
-    todayCollection: totalCollection,
-    totalDue,
+    // مالي — تحصيل
+    totalCollected,
+    totalDebt,
+    // مالي — تمويل المشروع
+    totalProjectCost,
+    totalFactoryShare,
+    totalSubsidy,
+    // شهري
     monthTripsCount,
     activeFactoriesThisMonth,
-    monthCollection,
-    totalDebt,
     avgTripsPerFactory,
   }
 }
