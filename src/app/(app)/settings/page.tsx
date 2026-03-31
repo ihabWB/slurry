@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useRouter } from 'next/navigation'
-import { Settings, DollarSign, Truck, Save, RefreshCw, Info, PiggyBank } from 'lucide-react'
+import { Settings, DollarSign, Truck, Save, RefreshCw, Info, PiggyBank, ShieldCheck } from 'lucide-react'
 import { getPricingRules, updatePricingRule, getSettings, updateSetting } from '@/lib/api'
 import type { PricingRule, AppSetting } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -91,6 +91,7 @@ export default function SettingsPage() {
 
   const factoryContrib = parseFloat(settings.find(s => s.key === 'factory_contribution')?.value ?? '50')
   const projectBudget  = parseFloat(settings.find(s => s.key === 'project_budget')?.value ?? '0')
+  const retentionPct   = parseFloat(settings.find(s => s.key === 'retention_pct')?.value ?? '10')
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -206,6 +207,62 @@ export default function SettingsPage() {
         </CardBody>
       </Card>
 
+      {/* نسبة حجز التأمينات */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <ShieldCheck size={16} className="text-orange-600" /> نسبة حجز التأمينات (Retention)
+          </h2>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 flex items-start gap-3">
+            <Info size={16} className="text-orange-500 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-orange-700">
+              نسبة تُحجز تلقائياً من كل دفعة كضمان حسن التنفيذ، تُرد للمقاول عند انتهاء المشروع وتسليمه.
+              النسبة الافتراضية 10%، ويمكن تعديلها لكل دفعة عند إنشائها.
+            </p>
+          </div>
+          {settings.filter(s => s.key === 'retention_pct').map(s => (
+            <div key={s.key} className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="text-sm font-medium text-slate-700 block mb-1">{s.label ?? 'نسبة الحجز'}</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={editedSettings[s.key] ?? s.value}
+                    onChange={e => setEditedSettings(prev => ({ ...prev, [s.key]: e.target.value }))}
+                    className="w-24 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    dir="ltr"
+                  />
+                  <span className="text-slate-500 text-sm">%</span>
+                  {retentionPct > 0 && (
+                    <span className="text-orange-600 text-xs font-semibold bg-orange-50 border border-orange-100 px-2 py-1 rounded-lg">
+                      {retentionPct}% من كل دفعة
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => saveSetting(s.key)}
+                disabled={savingSetting === s.key}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-xl text-sm font-medium hover:bg-orange-700 disabled:opacity-60 transition-colors">
+                <Save size={14} /> {savingSetting === s.key ? 'جارّي الحفظ...' : 'حفظ'}
+              </button>
+            </div>
+          ))}
+          {settings.filter(s => s.key === 'retention_pct').length === 0 && !loading && (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              ⚠️ شغّل{' '}
+              <code className="bg-amber-100 px-1 rounded font-mono text-xs">add_disbursement_retention.sql</code>
+              {' '}في Supabase SQL Editor أولاً.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+
       {/* جدول التسعيرة */}
       <Card>
         <CardHeader>
@@ -258,6 +315,7 @@ export default function SettingsPage() {
         <p>• <strong>دعم التمويل</strong> = سعر الوحدة − مساهمة المصنع</p>
         <p>• <strong>إجمالي التمويل</strong> = الميزانية الكلية للمشروع ({projectBudget > 0 ? projectBudget.toLocaleString() + ' ₪' : 'غير محدد'})</p>
         <p>• <strong>المتبقي من التمويل</strong> = إجمالي التمويل − Σ(دعم التمويل لكل النقلات)</p>
+        <p>• <strong>حجز التأمينات (Retention)</strong> = نسبة تُحجز من كل دفعة حتى نهاية المشروع</p>
       </div>
     </div>
   )

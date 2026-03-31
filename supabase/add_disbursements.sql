@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS public.disbursements (
   total_trips_cost    NUMERIC(12,2) NOT NULL DEFAULT 0,
   total_factory_share NUMERIC(12,2) NOT NULL DEFAULT 0,
   disbursed_amount    NUMERIC(12,2) NOT NULL DEFAULT 0,
+  retention_pct       NUMERIC(5,2)  NOT NULL DEFAULT 10,
+  retention_amount    NUMERIC(12,2) NOT NULL DEFAULT 0,
+  net_payment         NUMERIC(12,2) NOT NULL DEFAULT 0,
   notes               TEXT,
   status              TEXT NOT NULL DEFAULT 'draft'
                         CHECK (status IN ('draft','closed')),

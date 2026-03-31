@@ -170,6 +170,9 @@ export interface Database {
           total_trips_cost: number
           total_factory_share: number
           disbursed_amount: number
+          retention_pct: number
+          retention_amount: number
+          net_payment: number
           notes: string | null
           status: 'draft' | 'closed'
           closed_at: string | null
@@ -185,6 +188,9 @@ export interface Database {
           total_trips_cost?: number
           total_factory_share?: number
           disbursed_amount?: number
+          retention_pct?: number
+          retention_amount?: number
+          net_payment?: number
           notes?: string | null
           status?: 'draft' | 'closed'
           closed_at?: string | null
@@ -197,6 +203,9 @@ export interface Database {
           total_trips_cost?: number
           total_factory_share?: number
           disbursed_amount?: number
+          retention_pct?: number
+          retention_amount?: number
+          net_payment?: number
           notes?: string | null
           status?: 'draft' | 'closed'
           closed_at?: string | null

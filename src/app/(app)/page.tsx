@@ -32,6 +32,7 @@ interface Stats {
   remainingBudget: number
   budgetSpentPct: number
   totalDisbursed: number
+  totalRetained: number
   closedDisbursementsCount: number
 }
 
@@ -104,7 +105,7 @@ export default function DashboardPage() {
     monthTripsCount: 0, activeFactoriesThisMonth: 0, avgTripsPerFactory: 0,
     tripsWithCostCount: 0,
     projectBudget: 0, spentFromBudget: 0, remainingBudget: 0, budgetSpentPct: 0,
-    totalDisbursed: 0, closedDisbursementsCount: 0,
+    totalDisbursed: 0, totalRetained: 0, closedDisbursementsCount: 0,
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
@@ -290,24 +291,36 @@ export default function DashboardPage() {
 
         {/* بطاقة الدفعات المصروفة الفعلية */}
         {!loading && stats.closedDisbursementsCount > 0 && (
-          <div className="mt-4 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Lock size={18} className="text-emerald-700" />
+          <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Lock size={18} className="text-emerald-700" />
+                </div>
+                <div>
+                  <p className="text-xs text-emerald-700 font-medium">صافي المصروف الفعلي ({stats.closedDisbursementsCount} دفعة)</p>
+                  <p className="text-xl font-bold text-emerald-800">
+                    {Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-sm font-normal">₪</span>
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-emerald-700 font-medium">إجمالي المصروف الفعلي (دفعات مقفلة)</p>
-                <p className="text-xl font-bold text-emerald-800">
-                  {Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-sm font-normal">₪</span>
-                </p>
-              </div>
-            </div>
-            <div className="text-left">
-              <p className="text-xs text-emerald-600">{stats.closedDisbursementsCount} دفعة مقفلة</p>
-              <Link href="/disbursements" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1 mt-1">
+              <Link href="/disbursements" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1">
                 <Receipt size={11} /> عرض الدفعات
               </Link>
             </div>
+            {stats.totalRetained > 0 && (
+              <div className="flex items-center gap-3 border-t border-emerald-200 pt-3">
+                <div className="w-8 h-8 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <ShieldCheck size={14} className="text-orange-700" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-orange-700 font-medium">إجمالي حجز التأمينات (محتجز، يُعاد عند انتهاء المشروع)</p>
+                  <p className="text-base font-bold text-orange-800">
+                    {Math.round(stats.totalRetained).toLocaleString()} <span className="text-xs font-normal">₪</span>
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

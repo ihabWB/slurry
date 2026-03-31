@@ -596,7 +596,7 @@ export async function getDashboardStats() {
     (supabase as any).from('settings').select('key, value').in('key', ['project_budget', 'factory_contribution']),
     // الدفعات المقفلة — لمعرفة المبلغ الفعلي المصروف
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('disbursements').select('disbursed_amount').eq('status', 'closed'),
+    (supabase as any).from('disbursements').select('disbursed_amount, retention_amount, net_payment').eq('status', 'closed'),
   ])
 
   // ── مجاميع التكاليف ──────────────────────────────────────
@@ -642,10 +642,11 @@ export async function getDashboardStats() {
   const budgetSpentPct    = projectBudget > 0
     ? Math.min(Math.round(spentFromBudget / projectBudget * 100), 100) : 0
 
-  // ── الدفعات المقفلة ───────────────────────────────────────
+  // ── الدفعات المقفلة ───────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const disbData: any[] = disbursementsRes.data || []
-  const totalDisbursed = disbData.reduce((s: number, d: any) => s + Number(d.disbursed_amount), 0)
+  const totalDisbursed           = disbData.reduce((s: number, d: any) => s + Number(d.net_payment), 0)
+  const totalRetained            = disbData.reduce((s: number, d: any) => s + Number(d.retention_amount), 0)
   const closedDisbursementsCount = disbData.length
 
   // ── اليوم ─────────────────────────────────────────────────
@@ -690,6 +691,7 @@ export async function getDashboardStats() {
     budgetSpentPct,
     // الدفعات المقفلة
     totalDisbursed,
+    totalRetained,
     closedDisbursementsCount,
     // شهري
     monthTripsCount,
@@ -807,8 +809,21 @@ async function calcDisbursementAmounts(from: string, to: string) {
   return { trips_count, total_trips_cost, total_factory_share, disbursed_amount }
 }
 
+/** حساب حقول الحجوزات بناءً على disbursed_amount ونسبة الحجز */
+function calcRetention(disbursed_amount: number, retention_pct: number) {
+  const retention_amount = Math.round(disbursed_amount * retention_pct / 100 * 100) / 100
+  const net_payment      = Math.round((disbursed_amount - retention_amount) * 100) / 100
+  return { retention_amount, net_payment }
+}
+
 /** إنشاء دفعة جديدة (مسودة) وحساب مجاميعها تلقائياً */
-export async function createDisbursement(period_from: string, period_to: string, notes?: string): Promise<Disbursement> {
+export async function createDisbursement(
+  period_from: string,
+  period_to: string,
+  notes?: string,
+  retention_pct_override?: number,   // إن أدخلها المستخدم يدوياً
+  retention_amount_override?: number, // تجاوز الحساب وتحديد مبلغ مختلف
+): Promise<Disbursement> {
   const supabase = createClient()
 
   // ── تحقق من التسلسل: يجب إغلاق كل الفترات السابقة أولاً ──
@@ -829,7 +844,28 @@ export async function createDisbursement(period_from: string, period_to: string,
     )
   }
 
+  // ── جلب نسبة الحجز من الإعدادات إن لم تدخل يدوياً ──
+  let retention_pct = retention_pct_override ?? 10
+  if (retention_pct_override === undefined) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: setting } = await (supabase as any)
+      .from('settings')
+      .select('value')
+      .eq('key', 'retention_pct')
+      .single()
+    if (setting?.value) retention_pct = parseFloat(setting.value)
+  }
+
   const amounts = await calcDisbursementAmounts(period_from, period_to)
+
+  // ── حساب الحجوزات ──
+  const { retention_amount, net_payment } = retention_amount_override !== undefined
+    ? {
+        retention_amount: retention_amount_override,
+        net_payment: Math.round((amounts.disbursed_amount - retention_amount_override) * 100) / 100,
+      }
+    : calcRetention(amounts.disbursed_amount, retention_pct)
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: { user } } = await (supabase as any).auth.getUser()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -839,6 +875,9 @@ export async function createDisbursement(period_from: string, period_to: string,
       period_from,
       period_to,
       ...amounts,
+      retention_pct,
+      retention_amount,
+      net_payment,
       notes: notes ?? null,
       status: 'draft',
       created_by: user?.id ?? null,
@@ -855,17 +894,22 @@ export async function recalcDisbursement(id: string): Promise<Disbursement> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: current, error: fetchErr } = await (supabase as any)
     .from('disbursements')
-    .select('period_from, period_to, status')
+    .select('period_from, period_to, status, retention_pct, retention_amount')
     .eq('id', id)
     .single()
   if (fetchErr) throw fetchErr
   if (current.status === 'closed') throw new Error('لا يمكن إعادة الحساب — الدفعة مقفلة')
 
   const amounts = await calcDisbursementAmounts(current.period_from, current.period_to)
+  // إعادة حساب الحجوزات بنفس النسبة المحفوظة في السجل
+  const { retention_amount, net_payment } = calcRetention(
+    amounts.disbursed_amount,
+    Number(current.retention_pct ?? 10)
+  )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('disbursements')
-    .update(amounts)
+    .update({ ...amounts, retention_amount, net_payment })
     .eq('id', id)
     .select()
     .single()

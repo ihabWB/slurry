@@ -6,11 +6,12 @@ import {
   recalcDisbursement,
   closeDisbursement,
   deleteDisbursement,
+  getSettings,
 } from '@/lib/api'
 import type { Disbursement } from '@/lib/supabase/database.types'
 import {
   Plus, RefreshCw, Lock, Trash2, RotateCcw, AlertTriangle, CheckCircle,
-  ChevronLeft, Calendar, Banknote, FileText, X,
+  ChevronLeft, Calendar, Banknote, FileText, X, ShieldCheck, Percent,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { arSA } from 'date-fns/locale'
@@ -93,8 +94,19 @@ function CloseConfirmModal({
             <span className="font-semibold text-slate-800">{fmt(disb.total_factory_share)}</span>
           </div>
           <div className="border-t border-slate-200 pt-2.5 flex justify-between">
-            <span className="text-slate-700 font-semibold">المبلغ المصروف (التمويل)</span>
-            <span className="font-bold text-blue-700 text-base">{fmt(disb.disbursed_amount)}</span>
+            <span className="text-slate-600">مبلغ الدفعة قبل الحجز</span>
+            <span className="font-bold text-blue-700">{fmt(disb.disbursed_amount)}</span>
+          </div>
+          <div className="flex justify-between text-orange-700">
+            <span className="flex items-center gap-1">
+              <ShieldCheck size={12} />
+              حجز التأمينات ({disb.retention_pct}%)
+            </span>
+            <span className="font-semibold">− {fmt(disb.retention_amount)}</span>
+          </div>
+          <div className="border-t-2 border-emerald-200 pt-2.5 flex justify-between bg-emerald-50 rounded-lg px-3 py-2">
+            <span className="text-emerald-800 font-bold">صافي الدفعة (المصروف فعلياً)</span>
+            <span className="font-bold text-emerald-700 text-base">{fmt(disb.net_payment)}</span>
           </div>
         </div>
 
@@ -134,28 +146,38 @@ function NewDisbursementModal({
   onSubmit,
   onCancel,
   loading,
+  defaultRetentionPct,
 }: {
-  onSubmit: (from: string, to: string, notes: string) => void
+  onSubmit: (from: string, to: string, notes: string, retentionPct: number, retentionAmountOverride?: number) => void
   onCancel: () => void
   loading: boolean
+  defaultRetentionPct: number
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = today.slice(0, 7) + '-01'
   const [from, setFrom] = useState(firstOfMonth)
   const [to, setTo] = useState(today)
   const [notes, setNotes] = useState('')
+  const [retentionPct, setRetentionPct] = useState(String(defaultRetentionPct))
+  const [retentionAmountManual, setRetentionAmountManual] = useState('')
+  const [manualMode, setManualMode] = useState(false)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!from || !to) return
     if (from > to) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return }
-    onSubmit(from, to, notes)
+    const pct = parseFloat(retentionPct)
+    if (isNaN(pct) || pct < 0 || pct > 100) { alert('نسبة الحجز يجب أن تكون بين 0 و 100'); return }
+    const override = manualMode && retentionAmountManual !== ''
+      ? parseFloat(retentionAmountManual)
+      : undefined
+    onSubmit(from, to, notes, pct, override)
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -163,7 +185,7 @@ function NewDisbursementModal({
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">دفعة جديدة</h2>
-              <p className="text-sm text-slate-500">حدد الفترة الزمنية لحساب المبالغ تلقائياً</p>
+              <p className="text-sm text-slate-500">حدد الفترة ونسبة الحجز لحساب المبالغ تلقائياً</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
@@ -172,54 +194,86 @@ function NewDisbursementModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* التواريخ */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">من تاريخ</label>
-              <input
-                type="date"
-                value={from}
-                onChange={e => setFrom(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)} required
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">إلى تاريخ</label>
-              <input
-                type="date"
-                value={to}
-                onChange={e => setTo(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <input type="date" value={to} onChange={e => setTo(e.target.value)} required
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
 
+          {/* حجز التأمينات */}
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-orange-800 flex items-center gap-1.5">
+                <ShieldCheck size={14} /> حجز التأمينات
+              </label>
+              <button
+                type="button"
+                onClick={() => { setManualMode(!manualMode); setRetentionAmountManual('') }}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                  manualMode
+                    ? 'bg-orange-200 text-orange-800 border-orange-300'
+                    : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-100'
+                }`}
+              >
+                {manualMode ? '● مبلغ يدوي' : 'إدخال مبلغ يدوياً'}
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-1">
+                <label className="text-xs text-orange-700">النسبة (%)</label>
+                <input
+                  type="number" min={0} max={100} step={0.5}
+                  value={retentionPct}
+                  onChange={e => setRetentionPct(e.target.value)}
+                  className="w-full px-3 py-2 border border-orange-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                  dir="ltr"
+                />
+              </div>
+              {manualMode && (
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-orange-700">مبلغ الحجز (₪) — يدوي</label>
+                  <input
+                    type="number" min={0} step={0.01}
+                    value={retentionAmountManual}
+                    onChange={e => setRetentionAmountManual(e.target.value)}
+                    placeholder="سيحسب تلقائياً..."
+                    className="w-full px-3 py-2 border border-orange-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                    dir="ltr"
+                  />
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-orange-600">
+              سيتم حجز {retentionPct || 0}%
+              {manualMode && retentionAmountManual ? ` (مبلغ يدوي: ${parseFloat(retentionAmountManual).toLocaleString()} ₪)` : ''}
+              {' '}من مبلغ دعم التمويل بعد حساب النقلات.
+            </p>
+          </div>
+
+          {/* ملاحظات */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-slate-700">ملاحظات (اختياري)</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
               placeholder="أي ملاحظات إضافية..."
               rows={2}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-            />
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={loading}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50"
-            >
+            <button type="button" onClick={onCancel} disabled={loading}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50">
               إلغاء
             </button>
-            <button
-              type="submit"
-              disabled={loading || !from || !to}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            >
+            <button type="submit" disabled={loading || !from || !to}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
               {loading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
               إنشاء مسودة
             </button>
@@ -315,7 +369,7 @@ function DisbursementCard({
       )}
 
       {/* أرقام */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="bg-slate-50 rounded-xl p-3 text-center">
           <p className="text-[11px] text-slate-500 mb-1">عدد النقلات</p>
           <p className="text-lg font-bold text-slate-800">{disb.trips_count.toLocaleString('ar-SA')}</p>
@@ -328,13 +382,21 @@ function DisbursementCard({
           <p className="text-[11px] text-slate-500 mb-1">مساهمة المصانع</p>
           <p className="text-sm font-bold text-slate-800">{fmt(disb.total_factory_share)}</p>
         </div>
-        <div className={`rounded-xl p-3 text-center ${
-          disb.status === 'closed' ? 'bg-emerald-50 border border-emerald-200' : 'bg-blue-50 border border-blue-200'
-        }`}>
-          <p className="text-[11px] text-slate-500 mb-1">المبلغ المصروف</p>
-          <p className={`text-sm font-bold ${disb.status === 'closed' ? 'text-emerald-700' : 'text-blue-700'}`}>
-            {fmt(disb.disbursed_amount)}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+          <p className="text-[11px] text-slate-500 mb-1">قبل الحجز</p>
+          <p className="text-sm font-bold text-blue-700">{fmt(disb.disbursed_amount)}</p>
+        </div>
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+          <p className="text-[11px] text-orange-600 mb-1 flex items-center justify-center gap-0.5">
+            <ShieldCheck size={10} /> حجز {disb.retention_pct}%
           </p>
+          <p className="text-sm font-bold text-orange-700">− {fmt(disb.retention_amount)}</p>
+        </div>
+        <div className={`rounded-xl p-3 text-center ${
+          disb.status === 'closed' ? 'bg-emerald-50 border border-emerald-200' : 'bg-emerald-50 border border-emerald-200'
+        }`}>
+          <p className="text-[11px] text-emerald-700 mb-1 font-semibold">صافي الدفعة</p>
+          <p className="text-sm font-bold text-emerald-700">{fmt(disb.net_payment)}</p>
         </div>
       </div>
     </div>
@@ -350,16 +412,18 @@ export default function DisbursementsPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [closeTarget, setCloseTarget] = useState<Disbursement | null>(null)
+  const [defaultRetentionPct, setDefaultRetentionPct] = useState(10)
 
-  // إدارة الأدوار (نفترض admin = canEdit = true هنا؛ في الإنتاج استخدم useAuth)
   const isAdmin = true
 
   const load = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const data = await getDisbursements()
+      const [data, settingsData] = await Promise.all([getDisbursements(), getSettings()])
       setDisbursements(data)
+      const retPct = settingsData.find(s => s.key === 'retention_pct')?.value
+      if (retPct) setDefaultRetentionPct(parseFloat(retPct))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'حدث خطأ أثناء التحميل')
     } finally {
@@ -374,11 +438,11 @@ export default function DisbursementsPage() {
     setTimeout(() => setSuccess(null), 4000)
   }
 
-  async function handleCreate(from: string, to: string, notes: string) {
+  async function handleCreate(from: string, to: string, notes: string, retentionPct: number, retentionAmountOverride?: number) {
     try {
       setActionLoading(true)
       setError(null)
-      await createDisbursement(from, to, notes || undefined)
+      await createDisbursement(from, to, notes || undefined, retentionPct, retentionAmountOverride)
       setShowNew(false)
       showSuccessMsg('تم إنشاء المسودة بنجاح')
       await load()
@@ -437,7 +501,8 @@ export default function DisbursementsPage() {
   // ── ملخص إجمالي ──
   const closed = disbursements.filter(d => d.status === 'closed')
   const drafts  = disbursements.filter(d => d.status === 'draft')
-  const totalDisbursed = closed.reduce((s, d) => s + Number(d.disbursed_amount), 0)
+  const totalNetPaid   = closed.reduce((s, d) => s + Number(d.net_payment), 0)
+  const totalRetained  = closed.reduce((s, d) => s + Number(d.retention_amount), 0)
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -483,32 +548,41 @@ export default function DisbursementsPage() {
 
       {/* بطاقات الملخص */}
       {!loading && disbursements.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4">
-            <div className="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Banknote size={20} className="text-blue-600" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Banknote size={18} className="text-emerald-600" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">إجمالي المصروف (مقفلة)</p>
-              <p className="text-xl font-bold text-slate-900">{fmt(totalDisbursed)}</p>
+              <p className="text-[11px] text-slate-500">صافي المصروف</p>
+              <p className="text-lg font-bold text-slate-900">{fmt(totalNetPaid)}</p>
             </div>
           </div>
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4">
-            <div className="w-11 h-11 bg-emerald-50 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Lock size={20} className="text-emerald-600" />
+          <div className="bg-white border border-orange-200 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={18} className="text-orange-600" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">دفعات مقفلة</p>
-              <p className="text-xl font-bold text-slate-900">{closed.length}</p>
+              <p className="text-[11px] text-slate-500">إجمالي المحجوز</p>
+              <p className="text-lg font-bold text-orange-700">{fmt(totalRetained)}</p>
             </div>
           </div>
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4">
-            <div className="w-11 h-11 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0">
-              <FileText size={20} className="text-amber-600" />
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Lock size={18} className="text-slate-600" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">مسودات قيد المراجعة</p>
-              <p className="text-xl font-bold text-slate-900">{drafts.length}</p>
+              <p className="text-[11px] text-slate-500">دفعات مقفلة</p>
+              <p className="text-lg font-bold text-slate-900">{closed.length}</p>
+            </div>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <FileText size={18} className="text-amber-600" />
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-500">مسودات</p>
+              <p className="text-lg font-bold text-slate-900">{drafts.length}</p>
             </div>
           </div>
         </div>
@@ -568,6 +642,7 @@ export default function DisbursementsPage() {
           onSubmit={handleCreate}
           onCancel={() => setShowNew(false)}
           loading={actionLoading}
+          defaultRetentionPct={defaultRetentionPct}
         />
       )}
 
