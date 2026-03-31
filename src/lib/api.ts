@@ -627,27 +627,29 @@ export async function getDashboardStats() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalDebt = (overdueBalancesRes.data || []).reduce((s: number, f: any) => s + Number(f.balance), 0)
 
-  // ── ميزانية التمويل ───────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const settingsMap: Record<string, string> = Object.fromEntries(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (settingsRes.data || []).map((s: any) => [s.key, s.value])
-  )
-  const projectBudget     = Number(settingsMap['project_budget'] ?? 0)
-  // الصرف الفعلي من التمويل = Σ(subsidy_amount) — ما دفعه التمويل فعلياً لتغطية فارق التكلفة
-  const spentFromBudget   = totalSubsidy
-  // المتبقي من التمويل
-  const remainingBudget   = Math.max(0, projectBudget - spentFromBudget)
-  // نسبة الصرف من التمويل
-  const budgetSpentPct    = projectBudget > 0
-    ? Math.min(Math.round(spentFromBudget / projectBudget * 100), 100) : 0
-
   // ── الدفعات المقفلة ───────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const disbData: any[] = disbursementsRes.data || []
   const totalDisbursed           = disbData.reduce((s: number, d: any) => s + Number(d.net_payment), 0)
   const totalRetained            = disbData.reduce((s: number, d: any) => s + Number(d.retention_amount), 0)
   const closedDisbursementsCount = disbData.length
+  // مجموع disbursed_amount (قبل حجز التأمينات) من الدفعات المقفلة = الصرف الفعلي من التمويل
+  const totalDisbursedGross      = disbData.reduce((s: number, d: any) => s + Number(d.disbursed_amount), 0)
+
+  // ── ميزانية التمويل ───────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const settingsMap: Record<string, string> = Object.fromEntries(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (settingsRes.data || []).map((s: any) => [s.key, s.value])
+  )
+  const projectBudget = Number(settingsMap['project_budget'] ?? 0)
+  // الصرف الفعلي من التمويل = مجموع disbursed_amount من الدفعات المُقفلة فقط
+  const spentFromBudget = totalDisbursedGross
+  // المتبقي من التمويل
+  const remainingBudget = Math.max(0, projectBudget - spentFromBudget)
+  // نسبة الصرف من التمويل
+  const budgetSpentPct = projectBudget > 0
+    ? Math.min(Math.round(spentFromBudget / projectBudget * 100), 100) : 0
 
   // ── اليوم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
