@@ -26,6 +26,7 @@ interface Stats {
   monthTripsCount: number
   activeFactoriesThisMonth: number
   avgTripsPerFactory: number
+  tripsWithCostCount: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,6 +96,7 @@ export default function DashboardPage() {
     totalCollected: 0, totalDebt: 0,
     totalProjectCost: 0, totalFactoryShare: 0, totalSubsidy: 0,
     monthTripsCount: 0, activeFactoriesThisMonth: 0, avgTripsPerFactory: 0,
+    tripsWithCostCount: 0,
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
@@ -215,6 +217,20 @@ export default function DashboardPage() {
       {/* ── الصف الثاني: مالي / تمويل ──────────────────────── */}
       <div>
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-0.5">💰 الملخص المالي للمشروع</p>
+
+        {/* تحذير: نقلات بدون تسعيرة */}
+        {!loading && stats.totalTrips > 0 && stats.tripsWithCostCount < stats.totalTrips && (
+          <div className="mb-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠️</span>
+            <p className="text-xs text-amber-800 leading-relaxed">
+              <span className="font-semibold">{stats.totalTrips - stats.tripsWithCostCount} نقلة</span>
+              {' '}لا تحتوي بيانات تسعيرة — التكلفة الكلية غير مكتملة.
+              لتحديث الأرقام: شغّل{' '}
+              <code className="bg-amber-100 px-1 rounded font-mono">backfill_trip_costs.sql</code>
+              {' '}في Supabase SQL Editor.
+            </p>
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {loading ? [...Array(3)].map((_, i) => <SkeletonCard key={i} />) : <>
             {/* تكلفة المشروع */}

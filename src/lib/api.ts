@@ -555,12 +555,17 @@ export async function getDashboardStats() {
     (supabase as any).from('trips').select('trip_cost, factory_contribution, subsidy_amount'),
   ])
 
-  // ── مجاميع التكاليف (من النقلات التي لديها أسعار مسجّلة) ─
+  // ── مجاميع التكاليف ──────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const costData: any[] = costRes.data || []
-  const totalProjectCost  = costData.reduce((s: number, r: any) => s + Number(r.trip_cost          ?? 0), 0)
-  const totalFactoryShare = costData.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 0), 0)
-  const totalSubsidy      = costData.reduce((s: number, r: any) => s + Number(r.subsidy_amount      ?? 0), 0)
+  const tripsWithCost = costData.filter((r: any) => r.trip_cost != null)
+  const tripsWithCostCount = tripsWithCost.length
+  // trip_cost: مجموع ما هو محدد فقط (النقلات التي لها سعر من التسعيرة)
+  const totalProjectCost  = costData.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
+  // factory_contribution: للنقلات القديمة (null) نستخدم 50 كقيمة افتراضية
+  const totalFactoryShare = costData.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 50), 0)
+  // subsidy: فقط للنقلات التي لها trip_cost محدد
+  const totalSubsidy      = costData.reduce((s: number, r: any) => s + Number(r.subsidy_amount ?? 0), 0)
 
   // ── المحصّل = مساهمات النقلات المدفوعة + مدفوعات الذمم المُسجَّلة ─
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -612,6 +617,7 @@ export async function getDashboardStats() {
     totalProjectCost,
     totalFactoryShare,
     totalSubsidy,
+    tripsWithCostCount,
     // شهري
     monthTripsCount,
     activeFactoriesThisMonth,
