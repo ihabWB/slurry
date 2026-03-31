@@ -300,7 +300,13 @@ export default function NewTripPage() {
               <div className="grid grid-cols-2 gap-2">
                 {([['7', '≤ 7 كم'], ['9999', '> 7 كم']] as const).map(([val, lbl]) => (
                   <button key={val}
-                    onClick={() => { setDistanceKm(val); calcCost(wasteType, volumeM3, val, dumpSite) }}
+                    onClick={() => {
+                      setDistanceKm(val)
+                      // إذا اختار > 7 كم → يُحدد مكب سعير تلقائياً ويُلغى خيار عصارة الربو
+                      const newDump = val === '9999' ? 'municipal_dump' : dumpSite
+                      setDumpSite(newDump)
+                      calcCost(wasteType, volumeM3, val, newDump)
+                    }}
                     className={`py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
                       distanceKm === val ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-600'
                     }`}>
@@ -312,15 +318,28 @@ export default function NewTripPage() {
             <div>
               <p className="text-sm font-medium text-slate-700 mb-2">وجهة النقل *</p>
               <div className="space-y-2">
-                {([['municipal_dump', distanceKm === '7' ? 'مكب خلة الشرباتي' : distanceKm === '9999' ? 'مكب سعير' : 'مكب البلدية المعتمد'], ['central_press', 'عصارة الربو المركزية']] as [string, string][]).map(([val, lbl]) => (
-                  <button key={val}
-                    onClick={() => { setDumpSite(val); calcCost(wasteType, volumeM3, distanceKm, val) }}
-                    className={`w-full py-2 px-3 rounded-xl border-2 text-xs font-medium text-right transition-all ${
-                      dumpSite === val ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'
-                    }`}>
-                    {lbl}
-                  </button>
-                ))}
+                {/* مكب البلدية المعتمد — متاح دائماً */}
+                <button
+                  onClick={() => { setDumpSite('municipal_dump'); calcCost(wasteType, volumeM3, distanceKm, 'municipal_dump') }}
+                  className={`w-full py-2 px-3 rounded-xl border-2 text-xs font-medium text-right transition-all ${
+                    dumpSite === 'municipal_dump' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'
+                  }`}>
+                  {distanceKm === '9999' ? 'مكب سعير' : distanceKm === '7' ? 'مكب خلة الشرباتي' : 'مكب البلدية المعتمد'}
+                </button>
+                {/* عصارة الربو — متاحة فقط عند ≤ 7 كم */}
+                <button
+                  disabled={distanceKm === '9999'}
+                  onClick={() => { setDumpSite('central_press'); calcCost(wasteType, volumeM3, distanceKm, 'central_press') }}
+                  className={`w-full py-2 px-3 rounded-xl border-2 text-xs font-medium text-right transition-all ${
+                    distanceKm === '9999'
+                      ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                      : dumpSite === 'central_press'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-slate-200 text-slate-600'
+                  }`}>
+                  عصارة الربو المركزية
+                  {distanceKm === '9999' && <span className="mr-1 text-slate-300">(غير متاح)</span>}
+                </button>
               </div>
             </div>
           </div>
