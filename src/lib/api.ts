@@ -568,3 +568,80 @@ export async function getDashboardStats() {
     avgTripsPerFactory,
   }
 }
+
+// ─── PRICING RULES ────────────────────────────────────────────
+
+export interface PricingRule {
+  id: string
+  waste_type: 'liquid' | 'solid'
+  volume_m3: number
+  max_distance_km: number   // 7 = "≤7 كم"، 9999 = ">7 كم"
+  dump_site: 'municipal_dump' | 'central_press'
+  unit_price: number
+  label: string | null
+}
+
+export async function getPricingRules(): Promise<PricingRule[]> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('pricing_rules')
+    .select('*')
+    .order('waste_type').order('volume_m3').order('max_distance_km').order('dump_site')
+  if (error) throw error
+  return data as PricingRule[]
+}
+
+export async function updatePricingRule(id: string, unit_price: number): Promise<void> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('pricing_rules')
+    .update({ unit_price })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** حساب سعر النقلة من قاعدة البيانات */
+export async function calcTripCost(opts: {
+  waste_type: 'liquid' | 'solid'
+  volume_m3: number
+  distance_km: number
+  dump_site: 'municipal_dump' | 'central_press'
+}): Promise<number | null> {
+  const rules = await getPricingRules()
+  const maxDist = opts.distance_km <= 7 ? 7 : 9999
+  const match = rules.find(r =>
+    r.waste_type === opts.waste_type &&
+    r.volume_m3 === opts.volume_m3 &&
+    r.max_distance_km === maxDist &&
+    r.dump_site === opts.dump_site
+  )
+  return match ? match.unit_price : null
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────────
+
+export interface AppSetting {
+  key: string
+  value: string
+  label: string | null
+}
+
+export async function getSettings(): Promise<AppSetting[]> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).from('settings').select('*')
+  if (error) throw error
+  return data as AppSetting[]
+}
+
+export async function updateSetting(key: string, value: string): Promise<void> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('settings')
+    .update({ value, updated_at: new Date().toISOString() })
+    .eq('key', key)
+  if (error) throw error
+}

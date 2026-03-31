@@ -1,7 +1,7 @@
 ﻿'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Factory, Truck, Wallet, BarChart2, MapPin, Users, LogOut, Menu, X, Droplets, ChevronLeft, Languages } from 'lucide-react'
+import { LayoutDashboard, Factory, Truck, Wallet, BarChart2, MapPin, Users, LogOut, Menu, X, Droplets, ChevronLeft, Languages, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useLang } from '@/context/LangContext'
@@ -40,7 +40,8 @@ export default function Sidebar() {
       { href: '/map',     label: t(T.nav.map,     lang), icon: MapPin,    show: 'edit' },
     ]},
     { label: t(T.navGroups.admin, lang), items: [
-      { href: '/users', label: t(T.nav.users, lang), icon: Users, show: 'admin' },
+      { href: '/users',    label: t(T.nav.users,    lang), icon: Users,    show: 'admin' },
+      { href: '/settings', label: t(T.nav.settings, lang), icon: Settings, show: 'admin' },
     ]},
   ]
 

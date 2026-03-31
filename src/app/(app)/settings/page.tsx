@@ -1,0 +1,280 @@
+'use client'
+import { useEffect, useState, useCallback } from 'react'
+import { useAuth } from '@/context/AuthContext'
+import { useRouter } from 'next/navigation'
+import { Settings, DollarSign, Truck, Save, RefreshCw, Info } from 'lucide-react'
+import { getPricingRules, updatePricingRule, getSettings, updateSetting } from '@/lib/api'
+import type { PricingRule, AppSetting } from '@/lib/api'
+import { Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { showToast } from '@/components/ui/Toast'
+
+const WASTE_LABEL: Record<string, string> = { liquid: '💧 سائل', solid: '🪨 جاف' }
+const DUMP_LABEL: Record<string, string> = {
+  municipal_dump: 'مكب البلدية المعتمد',
+  central_press: 'عصارة الربو المركزية',
+}
+
+export default function SettingsPage() {
+  const { isAdmin, loading: authLoading } = useAuth()
+  const router = useRouter()
+
+  const [rules, setRules] = useState<PricingRule[]>([])
+  const [editedPrices, setEditedPrices] = useState<Record<string, string>>({})
+  const [savingRule, setSavingRule] = useState<string | null>(null)
+
+  const [settings, setSettings] = useState<AppSetting[]>([])
+  const [editedSettings, setEditedSettings] = useState<Record<string, string>>({})
+  const [savingSetting, setSavingSetting] = useState<string | null>(null)
+
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) router.push('/')
+  }, [authLoading, isAdmin, router])
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [rulesData, settingsData] = await Promise.all([getPricingRules(), getSettings()])
+      setRules(rulesData)
+      setSettings(settingsData)
+      // init edited values
+      const priceMap: Record<string, string> = {}
+      rulesData.forEach(r => { priceMap[r.id] = String(r.unit_price) })
+      setEditedPrices(priceMap)
+      const settMap: Record<string, string> = {}
+      settingsData.forEach(s => { settMap[s.key] = s.value })
+      setEditedSettings(settMap)
+    } catch (e) { console.error(e); showToast('error', 'فشل تحميل الإعدادات') }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    if (!authLoading && isAdmin) loadAll()
+  }, [authLoading, isAdmin, loadAll])
+
+  async function saveRule(rule: PricingRule) {
+    const newPrice = parseFloat(editedPrices[rule.id])
+    if (isNaN(newPrice) || newPrice <= 0) { showToast('error', 'السعر يجب أن يكون رقماً موجباً'); return }
+    setSavingRule(rule.id)
+    try {
+      await updatePricingRule(rule.id, newPrice)
+      setRules(prev => prev.map(r => r.id === rule.id ? { ...r, unit_price: newPrice } : r))
+      showToast('success', 'تم حفظ السعر ✓')
+    } catch { showToast('error', 'فشل الحفظ') }
+    finally { setSavingRule(null) }
+  }
+
+  async function saveSetting(key: string) {
+    const val = editedSettings[key]?.trim()
+    if (!val) { showToast('error', 'القيمة لا يمكن أن تكون فارغة'); return }
+    setSavingSetting(key)
+    try {
+      await updateSetting(key, val)
+      setSettings(prev => prev.map(s => s.key === key ? { ...s, value: val } : s))
+      showToast('success', 'تم حفظ الإعداد ✓')
+    } catch { showToast('error', 'فشل الحفظ') }
+    finally { setSavingSetting(null) }
+  }
+
+  if (authLoading || !isAdmin) return null
+
+  // Group rules by distance category
+  const nearRules  = rules.filter(r => r.max_distance_km <= 7)
+  const farRules   = rules.filter(r => r.max_distance_km > 7)
+
+  const factoryContrib = parseFloat(settings.find(s => s.key === 'factory_contribution')?.value ?? '50')
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Settings size={22} className="text-slate-600" /> إعدادات النظام
+          </h1>
+          <p className="text-slate-500 text-sm mt-0.5">تعديل جدول التسعيرة ومساهمة المصانع</p>
+        </div>
+        <button onClick={loadAll} disabled={loading}
+          className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {/* مساهمة المصنع */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <DollarSign size={16} className="text-emerald-600" /> مساهمة المصنع
+          </h2>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
+            <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-blue-700">
+              هذا المبلغ يُخصم من سعر الوحدة لكل نقلة ويُحتسب كمساهمة المصنع.
+              الباقي يُغطى من التمويل (دعم المشروع).
+            </p>
+          </div>
+          {settings.filter(s => s.key === 'factory_contribution').map(s => (
+            <div key={s.key} className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="text-sm font-medium text-slate-700 block mb-1">{s.label ?? s.key}</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={editedSettings[s.key] ?? s.value}
+                    onChange={e => setEditedSettings(prev => ({ ...prev, [s.key]: e.target.value }))}
+                    className="w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    dir="ltr"
+                  />
+                  <span className="text-slate-500 text-sm">₪ / نقلة</span>
+                </div>
+              </div>
+              <button
+                onClick={() => saveSetting(s.key)}
+                disabled={savingSetting === s.key}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 transition-colors">
+                <Save size={14} /> {savingSetting === s.key ? 'جارٍ الحفظ...' : 'حفظ'}
+              </button>
+            </div>
+          ))}
+        </CardBody>
+      </Card>
+
+      {/* جدول التسعيرة */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <Truck size={16} className="text-blue-600" /> جدول التسعيرة
+          </h2>
+        </CardHeader>
+
+        {loading ? (
+          <CardBody><p className="text-center text-slate-400 py-8">جارٍ التحميل...</p></CardBody>
+        ) : (
+          <>
+            {/* ≤ 7 كم */}
+            <div className="px-5 pt-4 pb-1">
+              <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full border border-emerald-100">
+                📍 مسافة النقل ≤ 7 كم
+              </span>
+            </div>
+            <PricingTable
+              rules={nearRules}
+              editedPrices={editedPrices}
+              savingRule={savingRule}
+              factoryContrib={factoryContrib}
+              onChange={(id, val) => setEditedPrices(prev => ({ ...prev, [id]: val }))}
+              onSave={saveRule}
+            />
+
+            {/* > 7 كم */}
+            <div className="px-5 pt-5 pb-1 border-t border-slate-100">
+              <span className="inline-flex items-center gap-1.5 bg-orange-50 text-orange-700 text-xs font-semibold px-3 py-1 rounded-full border border-orange-100">
+                📍 مسافة النقل &gt; 7 كم
+              </span>
+            </div>
+            <PricingTable
+              rules={farRules}
+              editedPrices={editedPrices}
+              savingRule={savingRule}
+              factoryContrib={factoryContrib}
+              onChange={(id, val) => setEditedPrices(prev => ({ ...prev, [id]: val }))}
+              onSave={saveRule}
+            />
+          </>
+        )}
+      </Card>
+
+      {/* معلومات */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-500 space-y-1">
+        <p>• <strong>سعر الوحدة</strong> = التكلفة الكاملة لكل نقلة</p>
+        <p>• <strong>مساهمة المصنع</strong> = المبلغ الذي يدفعه المصنع (حالياً {factoryContrib} ₪)</p>
+        <p>• <strong>دعم التمويل</strong> = سعر الوحدة − مساهمة المصنع</p>
+      </div>
+    </div>
+  )
+}
+
+// ── Sub-component: جدول التسعيرة ──────────────────────────────
+function PricingTable({
+  rules, editedPrices, savingRule, factoryContrib, onChange, onSave,
+}: {
+  rules: PricingRule[]
+  editedPrices: Record<string, string>
+  savingRule: string | null
+  factoryContrib: number
+  onChange: (id: string, val: string) => void
+  onSave: (rule: PricingRule) => void
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-slate-50 border-b border-slate-100">
+            <th className="text-right px-5 py-3 text-xs text-slate-500 font-semibold">نوع الربو</th>
+            <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">الحجم (م³)</th>
+            <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">وجهة النقل</th>
+            <th className="text-center px-4 py-3 text-xs text-blue-600 font-semibold">سعر الوحدة (₪)</th>
+            <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">مساهمة المصنع</th>
+            <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">دعم التمويل</th>
+            <th className="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rules.map(rule => {
+            const currentPrice = parseFloat(editedPrices[rule.id] ?? String(rule.unit_price))
+            const subsidy = isNaN(currentPrice) ? 0 : currentPrice - factoryContrib
+            const changed = editedPrices[rule.id] !== undefined &&
+              parseFloat(editedPrices[rule.id]) !== rule.unit_price
+            return (
+              <tr key={rule.id} className={`border-b border-slate-50 hover:bg-slate-50 ${changed ? 'bg-amber-50/40' : ''}`}>
+                <td className="px-5 py-3 font-medium text-slate-800">
+                  {WASTE_LABEL[rule.waste_type]}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg text-xs font-mono font-bold">
+                    {rule.volume_m3} م³
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-slate-600 text-xs">
+                  {DUMP_LABEL[rule.dump_site]}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <input
+                    type="number"
+                    min={1}
+                    value={editedPrices[rule.id] ?? rule.unit_price}
+                    onChange={e => onChange(rule.id, e.target.value)}
+                    className={`w-20 text-center border rounded-lg px-2 py-1 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-400
+                      ${changed ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 text-blue-700'}`}
+                    dir="ltr"
+                  />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="text-emerald-700 font-semibold text-sm">{factoryContrib} ₪</span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`font-semibold text-sm ${subsidy >= 0 ? 'text-violet-700' : 'text-red-500'}`}>
+                    {subsidy.toFixed(0)} ₪
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <button
+                    onClick={() => onSave(rule)}
+                    disabled={savingRule === rule.id || !changed}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors whitespace-nowrap">
+                    <Save size={12} />
+                    {savingRule === rule.id ? 'حفظ...' : 'حفظ'}
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}

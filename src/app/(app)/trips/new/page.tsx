@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, CheckSquare, Truck } from 'lucide-react'
 import Link from 'next/link'
-import { getFactories, createTrip, createBulkTrips, checkCouponExists } from '@/lib/api'
+import { getFactories, createTrip, createBulkTrips, checkCouponExists, getPricingRules, getSettings } from '@/lib/api'
+import type { PricingRule } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
@@ -32,11 +33,21 @@ export default function NewTripPage() {
   const [vehicleType, setVehicleType] = useState<'tank' | 'truck' | ''>('')
   const [vehicleAutoSet, setVehicleAutoSet] = useState(false)
   const [distanceKm, setDistanceKm] = useState('')
-  const [dumpSite, setDumpSite] = useState('')
+  const [dumpSite, setDumpSite] = useState<'municipal_dump' | 'central_press' | ''>('')
   const [transferZone, setTransferZone] = useState('')
+
+  // Pricing
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
+  const [factoryContrib, setFactoryContrib] = useState(50)
+  const [tripCost, setTripCost] = useState<number | null>(null)
 
   useEffect(() => {
     getFactories().then(setFactories).catch(console.error)
+    Promise.all([getPricingRules(), getSettings()]).then(([rules, setts]) => {
+      setPricingRules(rules)
+      const contrib = setts.find(s => s.key === 'factory_contribution')
+      if (contrib) setFactoryContrib(parseFloat(contrib.value) || 50)
+    }).catch(console.error)
   }, [])
 
   const filteredFactories = factories.filter(f =>
@@ -58,6 +69,18 @@ export default function NewTripPage() {
     if (type === 'liquid') { setVehicleType('tank'); setVehicleAutoSet(true) }
     else if (type === 'solid') { setVehicleType('truck'); setVehicleAutoSet(true) }
     else { setVehicleAutoSet(false) }
+    calcCost(type, volumeM3, distanceKm, dumpSite)
+  }
+  const calcCost = (wt: string, vol: string, dist: string, ds: string) => {
+    if (!wt || !vol || !dist || !ds) { setTripCost(null); return }
+    const maxDist = parseFloat(dist) <= 7 ? 7 : 9999
+    const match = pricingRules.find(r =>
+      r.waste_type === wt &&
+      r.volume_m3 === parseFloat(vol) &&
+      r.max_distance_km === maxDist &&
+      r.dump_site === ds
+    )
+    setTripCost(match ? match.unit_price : null)
   }
 
   const handleVehicleTypeChange = (type: 'tank' | 'truck' | '') => {
@@ -110,6 +133,9 @@ export default function NewTripPage() {
       distance_km: distanceKm ? Number(distanceKm) : null,
       dump_site: dumpSite || null,
       transfer_zone: transferZone || null,
+      trip_cost: tripCost ?? null,
+      factory_contribution: tripCost !== null ? factoryContrib : null,
+      subsidy_amount: tripCost !== null ? tripCost - factoryContrib : null,
     }
 
     setLoading(true)
@@ -260,6 +286,7 @@ export default function NewTripPage() {
                 <p className="text-xs text-emerald-500 mt-1">✔ رقم متاح</p>
               )}
             </div>
+          <div className="grid grid-cols-2 gap-4">
             <Input
               label="المسافة (كم) *"
               type="number"
@@ -267,35 +294,57 @@ export default function NewTripPage() {
               step="0.1"
               placeholder="مثال: 12.5"
               value={distanceKm}
-              onChange={e => setDistanceKm(e.target.value)}
+              onChange={e => { setDistanceKm(e.target.value); calcCost(wasteType, volumeM3, e.target.value, dumpSite) }}
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <Input
               label="اسم السائق"
               placeholder="اسم السائق"
               value={driverName}
               onChange={e => setDriverName(e.target.value)}
             />
-            <Input
-              label="اسم المكب"
-              placeholder="موقع التفريغ"
-              value={dumpSite}
-              onChange={e => setDumpSite(e.target.value)}
-            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="حجم النقلة (م³)"
+              label="المسافة (كم) *"
               type="number"
               min="0"
-              step="0.5"
-              placeholder="مثال: 5"
-              value={volumeM3}
-              onChange={e => setVolumeM3(e.target.value)}
+              step="0.1"
+              placeholder="مثال: 12.5"
+              value={distanceKm}
+              onChange={e => { setDistanceKm(e.target.value); calcCost(wasteType, volumeM3, e.target.value, dumpSite) }}
             />
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">وجهة النقل *</p>
+              <div className="space-y-2">
+                {([['municipal_dump', 'مكب البلدية المعتمد'], ['central_press', 'عصارة الربو المركزية']] as const).map(([val, lbl]) => (
+                  <button key={val}
+                    onClick={() => { setDumpSite(val); calcCost(wasteType, volumeM3, distanceKm, val) }}
+                    className={`w-full py-2 px-3 rounded-xl border-2 text-xs font-medium text-right transition-all ${
+                      dumpSite === val ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'
+                    }`}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">حجم وسيلة النقل *</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['10', '15'] as const).map(v => (
+                  <button key={v}
+                    onClick={() => { setVolumeM3(v); calcCost(wasteType, v, distanceKm, dumpSite) }}
+                    className={`py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                      volumeM3 === v ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-slate-200 text-slate-600'
+                    }`}>
+                    {v} م³
+                  </button>
+                ))}
+              </div>
+            </div>
             <Input
               label="منطقة النقل"
               placeholder="المنطقة الجغرافية للنقل"
@@ -402,14 +451,29 @@ export default function NewTripPage() {
 
       {/* Summary */}
       {(mode === 'single' && selectedFactory) || (mode === 'bulk' && selectedFactories.length > 0) ? (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardBody>
-            <p className="text-sm font-medium text-blue-800">
-              {mode === 'single' ? '1 نقلة' : `${selectedFactories.length} نقلة`} × 50 ₪ ={' '}
-              <span className="text-lg font-bold">
-                {mode === 'single' ? 50 : selectedFactories.length * 50} ₪
-              </span>
+        <Card className={`border-2 ${tripCost !== null ? 'border-violet-200 bg-violet-50' : 'border-blue-200 bg-blue-50'}`}>
+          <CardBody className="space-y-2">
+            <p className="text-sm font-medium text-slate-700">
+              {mode === 'single' ? '1 نقلة' : `${selectedFactories.length} نقلة`}
             </p>
+            {tripCost !== null ? (
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-lg font-bold text-violet-700">{tripCost} ₪</p>
+                  <p className="text-xs text-slate-500">سعر الوحدة</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-emerald-600">{factoryContrib} ₪</p>
+                  <p className="text-xs text-slate-500">مساهمة المصنع</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-blue-600">{tripCost - factoryContrib} ₪</p>
+                  <p className="text-xs text-slate-500">دعم التمويل</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-blue-600">أدخل نوع الربو والحجم والمسافة والوجهة لحساب التكلفة</p>
+            )}
           </CardBody>
         </Card>
       ) : null}

@@ -10,6 +10,7 @@ export const translations = {
     reports:    { ar: 'التقارير',    en: 'Reports' },
     map:        { ar: 'الخريطة',     en: 'Map' },
     users:      { ar: 'المستخدمون',  en: 'Users' },
+    settings:   { ar: 'الإعدادات',   en: 'Settings' },
     signOut:    { ar: 'تسجيل الخروج', en: 'Sign Out' },
   },
   navGroups: {
