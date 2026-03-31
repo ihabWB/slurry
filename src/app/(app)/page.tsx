@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout, PiggyBank, BadgePercent } from 'lucide-react'
+import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout, Banknote, BadgePercent } from 'lucide-react'
 import { getDashboardStats, getTrips } from '@/lib/api'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -278,7 +278,7 @@ export default function DashboardPage() {
               label="المتبقي من التمويل"
               value={Math.round(stats.remainingBudget)}
               suffix="₪"
-              icon={PiggyBank}
+              icon={Banknote}
               bg="bg-violet-50" text="text-violet-600" border="border-violet-100"
               sub={`من أصل ${stats.projectBudget > 0 ? stats.projectBudget.toLocaleString() : '—'} ₪`}
             />
