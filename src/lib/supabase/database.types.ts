@@ -69,6 +69,9 @@ export interface Database {
           distance_km: number | null
           dump_site: string | null
           transfer_zone: string | null
+          trip_cost: number | null
+          factory_contribution: number | null
+          subsidy_amount: number | null
           created_at: string
           created_by: string | null
         }
@@ -88,6 +91,9 @@ export interface Database {
           distance_km?: number | null
           dump_site?: string | null
           transfer_zone?: string | null
+          trip_cost?: number | null
+          factory_contribution?: number | null
+          subsidy_amount?: number | null
           created_at?: string
           created_by?: string | null
         }

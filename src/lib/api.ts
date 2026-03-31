@@ -187,6 +187,9 @@ export async function importTrips(rows: ImportTripRow[]): Promise<ImportResult> 
       dump_site: row.dump_site ?? null,
       transfer_zone: row.transfer_zone ?? null,
       notes: row.notes ?? null,
+      trip_cost: row.trip_cost ?? null,
+      factory_contribution: row.factory_contribution ?? null,
+      subsidy_amount: row.subsidy_amount ?? null,
     })
   })
 
@@ -240,6 +243,9 @@ export async function createTrip(trip: TripInsert) {
       distance_km: trip.distance_km ?? null,
       dump_site: trip.dump_site ?? null,
       transfer_zone: trip.transfer_zone ?? null,
+      trip_cost: trip.trip_cost ?? null,
+      factory_contribution: trip.factory_contribution ?? null,
+      subsidy_amount: trip.subsidy_amount ?? null,
     })
     .select()
     .single()
@@ -279,6 +285,9 @@ export interface BulkTripExtra {
   distance_km?: number | null
   dump_site?: string | null
   transfer_zone?: string | null
+  trip_cost?: number | null
+  factory_contribution?: number | null
+  subsidy_amount?: number | null
 }
 
 export async function createBulkTrips(factoryIds: string[], payment_status: 'paid' | 'credit', trip_date: string, extra?: BulkTripExtra) {
@@ -299,6 +308,9 @@ export async function createBulkTrips(factoryIds: string[], payment_status: 'pai
     distance_km: extra?.distance_km ?? null,
     dump_site: extra?.dump_site ?? null,
     transfer_zone: extra?.transfer_zone ?? null,
+    trip_cost: extra?.trip_cost ?? null,
+    factory_contribution: extra?.factory_contribution ?? null,
+    subsidy_amount: extra?.subsidy_amount ?? null,
   }))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('trips').insert(trips).select()

@@ -3,7 +3,7 @@ import { useState, useCallback, useRef } from 'react'
 import { ArrowRight, Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle, Download } from 'lucide-react'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
-import { getFactories, importTrips, getPricingRules } from '@/lib/api'
+import { getFactories, importTrips, getPricingRules, getSettings } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { showToast } from '@/components/ui/Toast'
@@ -138,6 +138,7 @@ export default function ImportTripsPage() {
 
   const [factories, setFactories] = useState<Factory[]>([])
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
+  const [factoryContrib, setFactoryContrib] = useState(50)
   const [factoriesLoaded, setFactoriesLoaded] = useState(false)
 
   const [fileName, setFileName] = useState('')
@@ -148,17 +149,20 @@ export default function ImportTripsPage() {
 
   // Load factories + pricing rules lazily on first file pick
   const ensureFactories = async () => {
-    if (factoriesLoaded) return { factories, pricingRules }
-    const [list, rules] = await Promise.all([getFactories(), getPricingRules()])
+    if (factoriesLoaded) return { factories, pricingRules, factoryContrib }
+    const [list, rules, setts] = await Promise.all([getFactories(), getPricingRules(), getSettings()])
     setFactories(list)
     setPricingRules(rules)
+    const contrib = setts.find(s => s.key === 'factory_contribution')
+    const contribVal = contrib ? parseFloat(contrib.value) || 50 : 50
+    setFactoryContrib(contribVal)
     setFactoriesLoaded(true)
-    return { factories: list, pricingRules: rules }
+    return { factories: list, pricingRules: rules, factoryContrib: contribVal }
   }
 
   const handleFile = useCallback(async (file: File) => {
     setFileName(file.name)
-    const { factories: flist, pricingRules: rules } = await ensureFactories()
+    const { factories: flist, pricingRules: rules, factoryContrib: contrib } = await ensureFactories()
     const factoryByName = new Map(flist.map(f => [f.name.trim().toLowerCase(), f]))
     const factoryByTag = new Map(
       flist.filter(f => f.tag_number).map(f => [String(f.tag_number!).trim().toLowerCase(), f])
@@ -272,7 +276,7 @@ export default function ImportTripsPage() {
         )
         if (matched) {
           trip_cost = matched.unit_price
-          factory_contribution = 50  // من جدول الإعدادات
+          factory_contribution = contrib  // من جدول الإعدادات
           subsidy_amount = trip_cost - factory_contribution
         }
       }
