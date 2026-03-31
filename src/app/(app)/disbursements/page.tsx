@@ -94,8 +94,15 @@ function CloseConfirmModal({
             <span className="font-semibold text-slate-800">{fmt(disb.total_factory_share)}</span>
           </div>
           <div className="border-t border-slate-200 pt-2.5 flex justify-between">
-            <span className="text-slate-600">مبلغ الدفعة قبل الحجز</span>
+            <span className="text-slate-600">مبلغ الدفعة قبل التعديلات</span>
             <span className="font-bold text-blue-700">{fmt(disb.disbursed_amount)}</span>
+          </div>
+          <div className="flex justify-between text-violet-700">
+            <span className="flex items-center gap-1">
+              <Banknote size={12} />
+              بلدية الخليل (14%)
+            </span>
+            <span className="font-semibold">+ {fmt(disb.municipality_amount)}</span>
           </div>
           <div className="flex justify-between text-orange-700">
             <span className="flex items-center gap-1">
@@ -369,7 +376,7 @@ function DisbursementCard({
       )}
 
       {/* أرقام */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-slate-50 rounded-xl p-3 text-center">
           <p className="text-[11px] text-slate-500 mb-1">عدد النقلات</p>
           <p className="text-lg font-bold text-slate-800">{disb.trips_count.toLocaleString('ar-SA')}</p>
@@ -383,8 +390,14 @@ function DisbursementCard({
           <p className="text-sm font-bold text-slate-800">{fmt(disb.total_factory_share)}</p>
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-          <p className="text-[11px] text-slate-500 mb-1">قبل الحجز</p>
+          <p className="text-[11px] text-slate-500 mb-1">قبل التعديلات</p>
           <p className="text-sm font-bold text-blue-700">{fmt(disb.disbursed_amount)}</p>
+        </div>
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-center">
+          <p className="text-[11px] text-violet-600 mb-1 flex items-center justify-center gap-0.5">
+            <Banknote size={10} /> بلدية 14%
+          </p>
+          <p className="text-sm font-bold text-violet-700">+ {fmt(disb.municipality_amount)}</p>
         </div>
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
           <p className="text-[11px] text-orange-600 mb-1 flex items-center justify-center gap-0.5">
@@ -392,11 +405,9 @@ function DisbursementCard({
           </p>
           <p className="text-sm font-bold text-orange-700">− {fmt(disb.retention_amount)}</p>
         </div>
-        <div className={`rounded-xl p-3 text-center ${
-          disb.status === 'closed' ? 'bg-emerald-50 border border-emerald-200' : 'bg-emerald-50 border border-emerald-200'
-        }`}>
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center sm:col-span-2">
           <p className="text-[11px] text-emerald-700 mb-1 font-semibold">صافي الدفعة</p>
-          <p className="text-sm font-bold text-emerald-700">{fmt(disb.net_payment)}</p>
+          <p className="text-base font-bold text-emerald-700">{fmt(disb.net_payment)}</p>
         </div>
       </div>
     </div>
@@ -501,8 +512,9 @@ export default function DisbursementsPage() {
   // ── ملخص إجمالي ──
   const closed = disbursements.filter(d => d.status === 'closed')
   const drafts  = disbursements.filter(d => d.status === 'draft')
-  const totalNetPaid   = closed.reduce((s, d) => s + Number(d.net_payment), 0)
-  const totalRetained  = closed.reduce((s, d) => s + Number(d.retention_amount), 0)
+  const totalNetPaid      = closed.reduce((s, d) => s + Number(d.net_payment), 0)
+  const totalRetained     = closed.reduce((s, d) => s + Number(d.retention_amount), 0)
+  const totalMunicipality = closed.reduce((s, d) => s + Number(d.municipality_amount), 0)
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -558,6 +570,15 @@ export default function DisbursementsPage() {
               <p className="text-lg font-bold text-slate-900">{fmt(totalNetPaid)}</p>
             </div>
           </div>
+          <div className="bg-white border border-violet-200 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Banknote size={18} className="text-violet-600" />
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-500">بلدية الخليل (14%)</p>
+              <p className="text-lg font-bold text-violet-700">{fmt(totalMunicipality)}</p>
+            </div>
+          </div>
           <div className="bg-white border border-orange-200 rounded-2xl p-4 flex items-center gap-3">
             <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center flex-shrink-0">
               <ShieldCheck size={18} className="text-orange-600" />
@@ -572,17 +593,8 @@ export default function DisbursementsPage() {
               <Lock size={18} className="text-slate-600" />
             </div>
             <div>
-              <p className="text-[11px] text-slate-500">دفعات مقفلة</p>
-              <p className="text-lg font-bold text-slate-900">{closed.length}</p>
-            </div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
-            <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0">
-              <FileText size={18} className="text-amber-600" />
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-500">مسودات</p>
-              <p className="text-lg font-bold text-slate-900">{drafts.length}</p>
+              <p className="text-[11px] text-slate-500">مقفلة / مسودة</p>
+              <p className="text-lg font-bold text-slate-900">{closed.length} / {drafts.length}</p>
             </div>
           </div>
         </div>

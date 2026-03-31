@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useRouter } from 'next/navigation'
-import { Settings, DollarSign, Truck, Save, RefreshCw, Info, PiggyBank, ShieldCheck } from 'lucide-react'
+import { Settings, DollarSign, Truck, Save, RefreshCw, Info, PiggyBank, ShieldCheck, Banknote } from 'lucide-react'
 import { getPricingRules, updatePricingRule, getSettings, updateSetting } from '@/lib/api'
 import type { PricingRule, AppSetting } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -260,6 +260,34 @@ export default function SettingsPage() {
               {' '}في Supabase SQL Editor أولاً.
             </p>
           )}
+        </CardBody>
+      </Card>
+
+      {/* نسبة بلدية الخليل */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <Banknote size={16} className="text-violet-600" /> مبلغ بلدية الخليل
+          </h2>
+        </CardHeader>
+        <CardBody>
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 flex items-start gap-3 mb-4">
+            <Info size={16} className="text-violet-500 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-violet-700">
+              نسبة ثابتة تُضاف إلى صافي كل دفعة لصالح بلدية الخليل. تُحسب من المبلغ
+              الأساسي للدفعة قبل خصم حجز التأمينات، وتزيد المبلغ الإجمالي المحوَّل.
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 bg-violet-100 border border-violet-200 rounded-xl px-5 py-3">
+              <Banknote size={20} className="text-violet-600" />
+              <span className="text-2xl font-bold text-violet-800">14%</span>
+              <span className="text-sm text-violet-600">من مبلغ الدفعة</span>
+            </div>
+            <p className="text-xs text-slate-500">
+              هذه النسبة ثابتة في النظام ولا تقبل التعديل.
+            </p>
+          </div>
         </CardBody>
       </Card>
 
