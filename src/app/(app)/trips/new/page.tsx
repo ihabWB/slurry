@@ -312,7 +312,7 @@ export default function NewTripPage() {
             <div>
               <p className="text-sm font-medium text-slate-700 mb-2">وجهة النقل *</p>
               <div className="space-y-2">
-                {([['municipal_dump', 'مكب البلدية المعتمد'], ['central_press', 'عصارة الربو المركزية']] as const).map(([val, lbl]) => (
+                {([['municipal_dump', distanceKm === '7' ? 'مكب خلة الشرباتي' : distanceKm === '9999' ? 'مكب سعير' : 'مكب البلدية المعتمد'], ['central_press', 'عصارة الربو المركزية']] as [string, string][]).map(([val, lbl]) => (
                   <button key={val}
                     onClick={() => { setDumpSite(val); calcCost(wasteType, volumeM3, distanceKm, val) }}
                     className={`w-full py-2 px-3 rounded-xl border-2 text-xs font-medium text-right transition-all ${

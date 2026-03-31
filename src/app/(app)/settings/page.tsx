@@ -9,9 +9,15 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { showToast } from '@/components/ui/Toast'
 
 const WASTE_LABEL: Record<string, string> = { liquid: '💧 سائل', solid: '🪨 جاف' }
-const DUMP_LABEL: Record<string, string> = {
-  municipal_dump: 'مكب البلدية المعتمد',
-  central_press: 'عصارة الربو المركزية',
+
+// اسم مكب البلدية يختلف حسب المسافة:
+//   ≤ 7 كم → مكب خلة الشرباتي
+//   > 7 كم → مكب سعير
+function getDumpLabel(dump_site: string, max_distance_km: number): string {
+  if (dump_site === 'municipal_dump') {
+    return max_distance_km <= 7 ? 'مكب خلة الشرباتي' : 'مكب سعير'
+  }
+  return 'عصارة الربو المركزية'
 }
 
 export default function SettingsPage() {
@@ -240,7 +246,7 @@ function PricingTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600 text-xs">
-                  {DUMP_LABEL[rule.dump_site]}
+                  {getDumpLabel(rule.dump_site, rule.max_distance_km)}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <input
