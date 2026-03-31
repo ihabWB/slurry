@@ -500,7 +500,7 @@ export async function getDashboardStats() {
   const supabase = createClient()
 
   const now = new Date()
-  const todayStr  = now.toISOString().slice(0, 10)
+  const todayStr   = now.toISOString().slice(0, 10)
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
   const [
@@ -509,31 +509,27 @@ export async function getDashboardStats() {
     overdueFactoriesRes,
     overdueBalancesRes,
     allPaymentsRes,
-    paidTripsRes,
+    paidTripsRes,       // نقلات مدفوعة — نأخذ factory_contribution منها
     creditTripsRes,
     todayTripsRes,
     monthTripsRes,
-    costRes,          // Σ trip_cost, factory_contribution, subsidy_amount
+    costRes,            // كل النقلات: trip_cost + subsidy_amount
   ] = await Promise.all([
-    // عدد كل النقلات
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
-    // إجمالي المصانع
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('*', { count: 'exact', head: true }),
-    // مصانع لديها رصيد > 0
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('*', { count: 'exact', head: true }).gt('balance', 0),
-    // أرصدة الذمم
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('balance').gt('balance', 0),
-    // كل المدفوعات
+    // كل المدفوعات (تسديد ذمم)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('amount_paid'),
-    // نقلات مدفوعة
+    // النقلات المدفوعة — نحتاج factory_contribution لكل منها
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
-    // نقلات ذمة
+    (supabase as any).from('trips').select('factory_contribution').eq('payment_status', 'paid'),
+    // عدد نقلات الذمة فقط
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'credit'),
     // نقلات اليوم
@@ -542,34 +538,29 @@ export async function getDashboardStats() {
     // نقلات هذا الشهر
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart),
-    // مجاميع التكاليف والتمويل
+    // كل النقلات: مجاميع التكاليف والتمويل
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('trip_cost, factory_contribution, subsidy_amount'),
   ])
 
-  // ── مجاميع التكاليف ──────────────────────────────────────
+  // ── مجاميع التكاليف (من النقلات التي لديها أسعار مسجّلة) ─
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const costData: any[] = costRes.data || []
-  const totalProjectCost    = costData.reduce((s: number, r: any) => s + Number(r.trip_cost          ?? 0), 0)
-  const totalFactoryShare   = costData.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 0), 0)
-  const totalSubsidy        = costData.reduce((s: number, r: any) => s + Number(r.subsidy_amount      ?? 0), 0)
+  const totalProjectCost  = costData.reduce((s: number, r: any) => s + Number(r.trip_cost          ?? 0), 0)
+  const totalFactoryShare = costData.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 0), 0)
+  const totalSubsidy      = costData.reduce((s: number, r: any) => s + Number(r.subsidy_amount      ?? 0), 0)
 
-  // ── المحصّل = مساهمات المدفوع + مدفوعات الذمم ───────────
+  // ── المحصّل = مساهمات النقلات المدفوعة + مدفوعات الذمم المُسجَّلة ─
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const paidTripsData: any[] = paidTripsRes.data || []
+  // كل نقلة مدفوعة: إن كان لديها factory_contribution نستخدمه، وإلا 50 كقيمة افتراضية
+  const collectedFromPaidTrips = paidTripsData.reduce(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (s: number, r: any) => s + Number(r.factory_contribution ?? 50), 0
+  )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paymentsTotal = (allPaymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const paidTripsContrib = costData
-    .filter((_: any, i: number) => {
-      // نحتاج النقلات المدفوعة فقط — نحسبها عبر paid count
-      return false // placeholder — سنحسب بطريقة أخرى
-    })
-    // نقدر نحسب المحصّل = مساهمات كل النقلات المدفوعة + المدفوعات المُسجَّلة
-  const paidCount = paidTripsRes.count ?? 0
-  // متوسط factory_contribution = totalFactoryShare / total trips (تقريب)
-  const totalTrips = allTripsRes.count ?? 0
-  const avgContrib = totalTrips > 0 ? totalFactoryShare / totalTrips : 50
-  const collectedFromPaid = paidCount * avgContrib
-  const totalCollected    = collectedFromPaid + paymentsTotal
+  const totalCollected = collectedFromPaidTrips + paymentsTotal
 
   // ── الذمم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -577,18 +568,20 @@ export async function getDashboardStats() {
 
   // ── اليوم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const todayData: any[]  = todayTripsRes.data  || []
-  const todayTripsCount   = todayData.length
-  const todayPaidCount    = todayData.filter((t: any) => t.payment_status === 'paid').length
-  const todayCreditCount  = todayData.filter((t: any) => t.payment_status === 'credit').length
+  const todayData: any[] = todayTripsRes.data || []
+  const todayTripsCount  = todayData.length
+  const todayPaidCount   = todayData.filter((t: any) => t.payment_status === 'paid').length
+  const todayCreditCount = todayData.filter((t: any) => t.payment_status === 'credit').length
 
   // ── الشهر ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const monthData: any[]  = monthTripsRes.data  || []
-  const monthTripsCount   = monthData.length
+  const monthData: any[] = monthTripsRes.data || []
+  const monthTripsCount  = monthData.length
   const activeFactoriesThisMonth = new Set(monthData.map((t: any) => t.factory_id)).size
   const avgTripsPerFactory = activeFactoriesThisMonth > 0
     ? Math.round(monthTripsCount / activeFactoriesThisMonth * 10) / 10 : 0
+
+  const totalTrips = allTripsRes.count ?? 0
 
   return {
     // تشغيلي
@@ -596,7 +589,7 @@ export async function getDashboardStats() {
     todayTripsCount,
     todayPaidCount,
     todayCreditCount,
-    paidTripsCount:   paidTripsRes.count   ?? 0,
+    paidTripsCount:   paidTripsData.length,
     creditTripsCount: creditTripsRes.count ?? 0,
     totalFactories:   totalFactoriesRes.count ?? 0,
     overdueFactories: overdueFactoriesRes.count ?? 0,
