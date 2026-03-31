@@ -295,15 +295,20 @@ export default function NewTripPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="المسافة (كم) *"
-              type="number"
-              min="0"
-              step="0.1"
-              placeholder="مثال: 12.5"
-              value={distanceKm}
-              onChange={e => { setDistanceKm(e.target.value); calcCost(wasteType, volumeM3, e.target.value, dumpSite) }}
-            />
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">المسافة *</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([['7', '≤ 7 كم'], ['9999', '> 7 كم']] as const).map(([val, lbl]) => (
+                  <button key={val}
+                    onClick={() => { setDistanceKm(val); calcCost(wasteType, volumeM3, val, dumpSite) }}
+                    className={`py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                      distanceKm === val ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-600'
+                    }`}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div>
               <p className="text-sm font-medium text-slate-700 mb-2">وجهة النقل *</p>
               <div className="space-y-2">
@@ -344,16 +349,8 @@ export default function NewTripPage() {
           </div>
 
           <div>
-            <p className="text-sm font-medium text-slate-700 mb-2">نوع الربو</p>
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                onClick={() => handleWasteTypeChange('')}
-                className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
-                  wasteType === '' ? 'border-slate-500 bg-slate-50 text-slate-700' : 'border-slate-200 text-slate-500'
-                }`}
-              >
-                غير محدد
-              </button>
+            <p className="text-sm font-medium text-slate-700 mb-2">نوع الربو *</p>
+            <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => handleWasteTypeChange('liquid')}
                 className={`py-3 rounded-xl border-2 text-sm font-medium transition-all ${
