@@ -810,6 +810,25 @@ async function calcDisbursementAmounts(from: string, to: string) {
 /** إنشاء دفعة جديدة (مسودة) وحساب مجاميعها تلقائياً */
 export async function createDisbursement(period_from: string, period_to: string, notes?: string): Promise<Disbursement> {
   const supabase = createClient()
+
+  // ── تحقق من التسلسل: يجب إغلاق كل الفترات السابقة أولاً ──
+  // أي دفعة (مسودة أو مقفلة) فترتها تبدأ قبل بداية الفترة الجديدة
+  // ولا تزال مسودة → يجب إغلاقها أولاً
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: olderDrafts, error: seqErr } = await (supabase as any)
+    .from('disbursements')
+    .select('id, period_from, period_to')
+    .eq('status', 'draft')
+    .lt('period_from', period_from)
+    .limit(1)
+  if (seqErr) throw seqErr
+  if (olderDrafts && olderDrafts.length > 0) {
+    const d = olderDrafts[0]
+    throw new Error(
+      `يوجد مسودة غير مغلقة لفترة سابقة (${d.period_from} → ${d.period_to}) — يجب إغلاقها أولاً قبل إنشاء دفعة جديدة`
+    )
+  }
+
   const amounts = await calcDisbursementAmounts(period_from, period_to)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: { user } } = await (supabase as any).auth.getUser()
@@ -862,11 +881,28 @@ export async function closeDisbursement(id: string): Promise<Disbursement> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: current, error: fetchErr } = await (supabase as any)
     .from('disbursements')
-    .select('status')
+    .select('status, period_from, period_to')
     .eq('id', id)
     .single()
   if (fetchErr) throw fetchErr
   if (current.status === 'closed') throw new Error('الدفعة مقفلة مسبقاً')
+
+  // ── تحقق من التسلسل: يجب إغلاق الفترات الأقدم أولاً ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: olderDrafts, error: seqErr } = await (supabase as any)
+    .from('disbursements')
+    .select('id, period_from, period_to')
+    .eq('status', 'draft')
+    .lt('period_from', current.period_from)
+    .neq('id', id)
+    .limit(1)
+  if (seqErr) throw seqErr
+  if (olderDrafts && olderDrafts.length > 0) {
+    const d = olderDrafts[0]
+    throw new Error(
+      `يوجد مسودة غير مغلقة لفترة سابقة (${d.period_from} → ${d.period_to}) — يجب إغلاقها أولاً`
+    )
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
