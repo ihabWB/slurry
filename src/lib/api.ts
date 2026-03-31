@@ -126,6 +126,9 @@ export interface ImportTripRow {
   dump_site?: string | null
   transfer_zone?: string | null
   notes?: string | null
+  trip_cost?: number | null
+  factory_contribution?: number | null
+  subsidy_amount?: number | null
 }
 
 export interface ImportResult {

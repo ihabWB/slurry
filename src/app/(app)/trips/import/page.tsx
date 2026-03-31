@@ -3,13 +3,13 @@ import { useState, useCallback, useRef } from 'react'
 import { ArrowRight, Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle, Download } from 'lucide-react'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
-import { getFactories, importTrips } from '@/lib/api'
+import { getFactories, importTrips, getPricingRules } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { showToast } from '@/components/ui/Toast'
 import { useRouter } from 'next/navigation'
 import type { Factory } from '@/lib/supabase/database.types'
-import type { ImportTripRow } from '@/lib/api'
+import type { ImportTripRow, PricingRule } from '@/lib/api'
 
 // ────────────────────────────────────────────────────────────
 // Column aliases — maps any header name to our internal key
@@ -34,12 +34,15 @@ const COLUMN_MAP: Record<string, string> = {
   'vehicle_type': 'vehicle_type', 'نوع المركبة': 'vehicle_type', 'المركبة': 'vehicle_type',
   // distance
   'distance_km': 'distance_km', 'المسافة': 'distance_km', 'المسافة كم': 'distance_km', 'distance': 'distance_km',
+  'المسافة (≤7 / >7)': 'distance_km',
   // volume
   'volume_m3': 'volume_m3', 'حجم النقلة': 'volume_m3', 'الحجم': 'volume_m3', 'volume': 'volume_m3',
+  'حجم النقلة (م³)': 'volume_m3',
   // waste type
   'waste_type': 'waste_type', 'نوع الربو': 'waste_type', 'نوع النفايات': 'waste_type',
   // dump site
   'dump_site': 'dump_site', 'اسم المكب': 'dump_site', 'المكب': 'dump_site',
+  'وجهة النقل': 'dump_site', 'الوجهة': 'dump_site',
   // transfer zone
   'transfer_zone': 'transfer_zone', 'منطقة النقل': 'transfer_zone', 'المنطقة': 'transfer_zone',
   // notes
@@ -93,6 +96,35 @@ function normalizeWaste(val: unknown): 'liquid' | 'solid' | null {
   return null
 }
 
+// ≤7 كم → '7'  |  >7 كم → '9999'  |  غير معروف → null
+function normalizeDistance(val: unknown): string | null {
+  if (val === '' || val === undefined || val === null) return null
+  const s = String(val).trim()
+  // صريح
+  if (['≤7', '<=7', '7', 'اقل من 7', 'أقل من 7', 'اقل او تساوي 7', '≤ 7', '≤7 كم', '<=7كم'].includes(s)) return '7'
+  if (['>7', '>= 8', 'اكثر من 7', 'أكثر من 7', 'اكثر من 7 كم', '>7 كم', '9999'].includes(s)) return '9999'
+  // رقم مباشر
+  const n = parseFloat(s)
+  if (!isNaN(n)) return n <= 7 ? '7' : '9999'
+  return null
+}
+
+// يحوّل أي نص لـ dump_site الصحيح
+function normalizeDumpSite(val: unknown): 'municipal_dump' | 'central_press' | null {
+  const s = String(val ?? '').trim().toLowerCase()
+  if (!s) return null
+  if (
+    s.includes('municipal') || s.includes('municipal_dump') ||
+    s.includes('خلة') || s.includes('شرباتي') ||
+    s.includes('سعير') || s.includes('بلدي') || s.includes('بلدية')
+  ) return 'municipal_dump'
+  if (
+    s.includes('central') || s.includes('central_press') ||
+    s.includes('عصارة') || s.includes('ربو') || s.includes('مركزي')
+  ) return 'central_press'
+  return null
+}
+
 interface PreviewRow extends ImportTripRow {
   _rowNum: number
   _factoryName?: string
@@ -105,6 +137,7 @@ export default function ImportTripsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [factories, setFactories] = useState<Factory[]>([])
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
   const [factoriesLoaded, setFactoriesLoaded] = useState(false)
 
   const [fileName, setFileName] = useState('')
@@ -113,23 +146,24 @@ export default function ImportTripsPage() {
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<{ inserted: number; skipped: number; errors: { row: number; reason: string }[] } | null>(null)
 
-  // Load factories lazily on first file pick
+  // Load factories + pricing rules lazily on first file pick
   const ensureFactories = async () => {
-    if (factoriesLoaded) return factories
-    const list = await getFactories()
+    if (factoriesLoaded) return { factories, pricingRules }
+    const [list, rules] = await Promise.all([getFactories(), getPricingRules()])
     setFactories(list)
+    setPricingRules(rules)
     setFactoriesLoaded(true)
-    return list
+    return { factories: list, pricingRules: rules }
   }
 
   const handleFile = useCallback(async (file: File) => {
     setFileName(file.name)
-    const flist = await ensureFactories()
+    const { factories: flist, pricingRules: rules } = await ensureFactories()
     const factoryByName = new Map(flist.map(f => [f.name.trim().toLowerCase(), f]))
     const factoryByTag = new Map(
       flist.filter(f => f.tag_number).map(f => [String(f.tag_number!).trim().toLowerCase(), f])
     )
-    showToast('info', `تم تحميل ${flist.length} مصنع — منهم ${factoryByTag.size} لديهم TAG`)
+    showToast('info', `تم تحميل ${flist.length} مصنع — ${rules.length} قاعدة تسعيرة`)
 
     const buf = await file.arrayBuffer()
     const wb = XLSX.read(buf, { type: 'array', cellDates: false })
@@ -202,9 +236,46 @@ export default function ImportTripsPage() {
       const coupon_raw = String(get('coupon_number') ?? '').trim()
       if (!coupon_raw) errors.push('رقم الكوبون مفقود')
 
-      const distance_raw = get('distance_km')
-      const distance_km = distance_raw !== '' && distance_raw !== undefined ? Number(distance_raw) : null
-      if (distance_km === null) errors.push('المسافة مفقودة')
+      // المسافة: ≤7 → '7'  |  >7 → '9999'
+      const distance_km = normalizeDistance(get('distance_km'))
+      if (!distance_km) errors.push('المسافة مفقودة أو غير صحيحة (القيم المقبولة: ≤7 أو >7)')
+
+      // الحجم: 10 أو 15 فقط
+      const vol_raw = get('volume_m3')
+      const volume_m3 = vol_raw !== '' && vol_raw !== undefined ? Number(vol_raw) : null
+      if (volume_m3 !== null && volume_m3 !== 10 && volume_m3 !== 15) {
+        errors.push(`حجم غير صحيح: ${volume_m3} — القيم المقبولة: 10 أو 15`)
+      }
+
+      // نوع الربو
+      const waste_type = normalizeWaste(get('waste_type'))
+
+      // وجهة النقل
+      const dump_site = normalizeDumpSite(get('dump_site'))
+
+      // validation: عصارة الربو لا تُقبل مع >7 كم
+      if (distance_km === '9999' && dump_site === 'central_press') {
+        errors.push('عصارة الربو المركزية غير متاحة للمسافات > 7 كم')
+      }
+
+      // حساب trip_cost من جدول التسعيرة
+      let trip_cost: number | null = null
+      let factory_contribution: number | null = null
+      let subsidy_amount: number | null = null
+      if (waste_type && volume_m3 && distance_km && dump_site) {
+        const maxDist = parseFloat(distance_km)
+        const matched = rules.find(r =>
+          r.waste_type === waste_type &&
+          r.volume_m3 === volume_m3 &&
+          r.max_distance_km === maxDist &&
+          r.dump_site === dump_site
+        )
+        if (matched) {
+          trip_cost = matched.unit_price
+          factory_contribution = 50  // من جدول الإعدادات
+          subsidy_amount = trip_cost - factory_contribution
+        }
+      }
 
       return {
         _rowNum: i + 2,
@@ -216,12 +287,15 @@ export default function ImportTripsPage() {
         coupon_number: coupon_raw || null,
         driver_name: String(get('driver_name') ?? '').trim() || null,
         vehicle_type: normalizeVehicle(get('vehicle_type')),
-        distance_km,
-        volume_m3: get('volume_m3') !== '' && get('volume_m3') !== undefined ? Number(get('volume_m3')) : null,
-        waste_type: normalizeWaste(get('waste_type')),
-        dump_site: String(get('dump_site') ?? '').trim() || null,
+        distance_km: distance_km ? parseFloat(distance_km) : null,
+        volume_m3,
+        waste_type,
+        dump_site,
         transfer_zone: String(get('transfer_zone') ?? '').trim() || null,
         notes: String(get('notes') ?? '').trim() || null,
+        trip_cost,
+        factory_contribution,
+        subsidy_amount,
       }
     })
 
@@ -256,12 +330,14 @@ export default function ImportTripsPage() {
 
   // Download template
   const downloadTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['رقم TAG', 'رقم الكوبون', 'تاريخ النقلة', 'حالة الدفع', 'المسافة كم', 'اسم السائق', 'نوع المركبة', 'حجم النقلة', 'نوع الربو', 'اسم المكب', 'منطقة النقل', 'ملاحظات'],
-      ['T-001', 'K-001', '2026-01-15', 'مدفوع', '12.5', 'أحمد محمود', 'تنك', '5', 'سائل', 'مكب أ', 'منطقة شمال', ''],
-      ['T-002', 'K-002', '2026-01-16', 'ذمة', '8', 'محمد علي', 'شاحنة', '3', 'جاف', 'مكب ب', 'منطقة جنوب', ''],
-    ])
-    ws['!cols'] = Array(12).fill({ wch: 20 })
+    const headers = ['رقم TAG', 'رقم الكوبون', 'تاريخ النقلة', 'حالة الدفع', 'المسافة', 'وجهة النقل', 'نوع الربو', 'حجم النقلة (م³)', 'اسم السائق', 'نوع المركبة', 'منطقة النقل', 'ملاحظات']
+    const sample1 = ['7',   'K-001', '15/01/2026', 'مدفوع', '≤7', 'مكب خلة الشرباتي',    'سائل', '10', 'أحمد محمود', 'تنك',    'رام الله', '']
+    const sample2 = ['13',  'K-002', '16/01/2026', 'ذمة',   '>7', 'مكب سعير',              'جاف',  '15', 'محمد علي',  'شاحنة',  'البيرة',   '']
+    const sample3 = ['21',  'K-003', '17/01/2026', 'مدفوع', '≤7', 'عصارة الربو المركزية', 'سائل', '15', 'خالد سعيد', 'تنك',    'بيتونيا',  '']
+    const guide   = ['', '', '', 'مدفوع / ذمة', '≤7 أو >7', 'مكب خلة الشرباتي / مكب سعير / عصارة الربو المركزية', 'سائل / جاف', '10 أو 15', '', 'تنك / شاحنة', '', '']
+    const ws = XLSX.utils.aoa_to_sheet([headers, sample1, sample2, sample3, [], guide])
+    // تنسيق العناوين
+    ws['!cols'] = [14, 14, 14, 12, 10, 26, 10, 16, 16, 12, 14, 14].map(wch => ({ wch }))
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'النقلات')
     XLSX.writeFile(wb, 'template_trips.xlsx')
@@ -329,15 +405,19 @@ export default function ImportTripsPage() {
               <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-xs text-slate-600">
                 <div className="flex gap-2"><span className="font-mono bg-blue-50 border border-blue-200 px-1.5 rounded text-blue-800">رقم TAG</span><span className="text-red-500">*الأساسي — رقم TAG المصنع</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">رقم الكوبون</span><span className="text-red-500">*إجباري</span></div>
-                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">تاريخ النقلة</span><span className="text-red-500">*إجباري</span></div>
-                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">المسافة كم</span><span className="text-red-500">*إجباري</span></div>
-                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">حالة الدفع</span><span className="text-slate-400">مدفوع / ذمة</span></div>
+                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">تاريخ النقلة</span><span className="text-red-500">*إجباري — DD/MM/YYYY</span></div>
+                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">المسافة</span><span className="text-red-500">*إجباري — <span className="font-bold">≤7</span> أو <span className="font-bold">&gt;7</span></span></div>
+                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">وجهة النقل</span><span className="text-slate-500">مكب خلة الشرباتي / مكب سعير / عصارة الربو المركزية</span></div>
+                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">نوع الربو</span><span className="text-slate-500">سائل / جاف</span></div>
+                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">حجم النقلة (م³)</span><span className="text-slate-500">10 أو 15 فقط</span></div>
+                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">حالة الدفع</span><span className="text-slate-500">مدفوع / ذمة</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">اسم السائق</span><span className="text-slate-400">اختياري</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">نوع المركبة</span><span className="text-slate-400">تنك / شاحنة</span></div>
-                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">نوع الربو</span><span className="text-slate-400">سائل / جاف</span></div>
-                <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">اسم المكب</span><span className="text-slate-400">اختياري</span></div>
                 <div className="flex gap-2"><span className="font-mono bg-slate-100 px-1.5 rounded text-slate-800">منطقة النقل</span><span className="text-slate-400">اختياري</span></div>
               </div>
+              <p className="text-xs text-violet-600 mt-3 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+                💡 سعر الوحدة يُحسب تلقائياً من جدول التسعيرة عند تعبئة: المسافة + الوجهة + نوع الربو + الحجم
+              </p>
             </CardBody>
           </Card>
         </div>
