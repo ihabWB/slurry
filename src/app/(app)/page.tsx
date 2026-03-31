@@ -238,9 +238,9 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {loading ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />) : <>
 
-            {/* تكلفة المشروع الكلية */}
+            {/* إجمالي تكلفة النقلات */}
             <KpiCard
-              label="تكلفة المشروع الكلية"
+              label="إجمالي تكلفة النقلات"
               value={Math.round(stats.totalProjectCost)}
               suffix="₪"
               icon={TrendingUp}
