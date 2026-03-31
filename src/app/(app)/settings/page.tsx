@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useRouter } from 'next/navigation'
-import { Settings, DollarSign, Truck, Save, RefreshCw, Info } from 'lucide-react'
+import { Settings, DollarSign, Truck, Save, RefreshCw, Info, PiggyBank } from 'lucide-react'
 import { getPricingRules, updatePricingRule, getSettings, updateSetting } from '@/lib/api'
 import type { PricingRule, AppSetting } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -90,6 +90,7 @@ export default function SettingsPage() {
   const farRules   = rules.filter(r => r.max_distance_km > 7)
 
   const factoryContrib = parseFloat(settings.find(s => s.key === 'factory_contribution')?.value ?? '50')
+  const projectBudget  = parseFloat(settings.find(s => s.key === 'project_budget')?.value ?? '0')
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -149,6 +150,62 @@ export default function SettingsPage() {
         </CardBody>
       </Card>
 
+      {/* إجمالي التمويل */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <PiggyBank size={16} className="text-violet-600" /> إجمالي التمويل المخصص للمشروع
+          </h2>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 flex items-start gap-3">
+            <Info size={16} className="text-violet-500 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-violet-700">
+              المبلغ الإجمالي المخصص لتمويل المشروع. يُستخدم لحساب نسبة الصرف والمتبقي من التمويل
+              في لوحة التحكم.
+            </p>
+          </div>
+          {settings.filter(s => s.key === 'project_budget').map(s => (
+            <div key={s.key} className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="text-sm font-medium text-slate-700 block mb-1">
+                  {s.label ?? 'إجمالي التمويل'}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={editedSettings[s.key] ?? s.value}
+                    onChange={e => setEditedSettings(prev => ({ ...prev, [s.key]: e.target.value }))}
+                    className="w-44 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    dir="ltr"
+                  />
+                  <span className="text-slate-500 text-sm">₪</span>
+                  {projectBudget > 0 && (
+                    <span className="text-violet-600 text-xs font-semibold bg-violet-50 border border-violet-100 px-2 py-1 rounded-lg">
+                      {projectBudget.toLocaleString()} ₪
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => saveSetting(s.key)}
+                disabled={savingSetting === s.key}
+                className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-xl text-sm font-medium hover:bg-violet-700 disabled:opacity-60 transition-colors">
+                <Save size={14} /> {savingSetting === s.key ? 'جارٍ الحفظ...' : 'حفظ'}
+              </button>
+            </div>
+          ))}
+          {settings.filter(s => s.key === 'project_budget').length === 0 && !loading && (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              ⚠️ المفتاح غير موجود في قاعدة البيانات — شغّل ملف{' '}
+              <code className="bg-amber-100 px-1 rounded font-mono text-xs">add_project_budget.sql</code>
+              {' '}في Supabase SQL Editor أولاً.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+
       {/* جدول التسعيرة */}
       <Card>
         <CardHeader>
@@ -199,6 +256,8 @@ export default function SettingsPage() {
         <p>• <strong>سعر الوحدة</strong> = التكلفة الكاملة لكل نقلة</p>
         <p>• <strong>مساهمة المصنع</strong> = المبلغ الذي يدفعه المصنع (حالياً {factoryContrib} ₪)</p>
         <p>• <strong>دعم التمويل</strong> = سعر الوحدة − مساهمة المصنع</p>
+        <p>• <strong>إجمالي التمويل</strong> = الميزانية الكلية للمشروع ({projectBudget > 0 ? projectBudget.toLocaleString() + ' ₪' : 'غير محدد'})</p>
+        <p>• <strong>المتبقي من التمويل</strong> = إجمالي التمويل − Σ(دعم التمويل لكل النقلات)</p>
       </div>
     </div>
   )

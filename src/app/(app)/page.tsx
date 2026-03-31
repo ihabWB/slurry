@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout } from 'lucide-react'
+import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout, PiggyBank, BadgePercent } from 'lucide-react'
 import { getDashboardStats, getTrips } from '@/lib/api'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -27,6 +27,10 @@ interface Stats {
   activeFactoriesThisMonth: number
   avgTripsPerFactory: number
   tripsWithCostCount: number
+  projectBudget: number
+  spentFromBudget: number
+  remainingBudget: number
+  budgetSpentPct: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,6 +101,7 @@ export default function DashboardPage() {
     totalProjectCost: 0, totalFactoryShare: 0, totalSubsidy: 0,
     monthTripsCount: 0, activeFactoriesThisMonth: 0, avgTripsPerFactory: 0,
     tripsWithCostCount: 0,
+    projectBudget: 0, spentFromBudget: 0, remainingBudget: 0, budgetSpentPct: 0,
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
@@ -124,9 +129,6 @@ export default function DashboardPage() {
 
   const collectPct = stats.totalFactoryShare > 0
     ? Math.min(Math.round(stats.totalCollected / stats.totalFactoryShare * 100), 100) : 0
-
-  const subsidyPct = stats.totalProjectCost > 0
-    ? Math.round(stats.totalSubsidy / stats.totalProjectCost * 100) : 0
 
   const quickActions = [
     { href: '/trips/new',    label: t(T.dashboard.newTrip, lang),     sub: t(T.dashboard.newTripSub, lang),    icon: Truck,      bg: 'bg-blue-600',    shadow: 'shadow-blue-200' },
@@ -225,51 +227,71 @@ export default function DashboardPage() {
             <p className="text-xs text-amber-800 leading-relaxed">
               <span className="font-semibold">{stats.totalTrips - stats.tripsWithCostCount} نقلة</span>
               {' '}لا تحتوي بيانات تسعيرة — التكلفة الكلية غير مكتملة.
-              لتحديث الأرقام: شغّل{' '}
+              شغّل{' '}
               <code className="bg-amber-100 px-1 rounded font-mono">backfill_trip_costs.sql</code>
-              {' '}في Supabase SQL Editor.
+              {' '}في Supabase SQL Editor لتحديث الأرقام.
             </p>
           </div>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {loading ? [...Array(3)].map((_, i) => <SkeletonCard key={i} />) : <>
-            {/* تكلفة المشروع */}
+
+        {/* 4 بطاقات مالية */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {loading ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />) : <>
+
+            {/* تكلفة المشروع الكلية */}
             <KpiCard
               label="تكلفة المشروع الكلية"
               value={Math.round(stats.totalProjectCost)}
               suffix="₪"
               icon={TrendingUp}
               bg="bg-slate-100" text="text-slate-600" border="border-slate-200"
-              sub={`${stats.totalTrips} نقلة — متوسط ${stats.totalTrips > 0 ? Math.round(stats.totalProjectCost / stats.totalTrips) : 0} ₪/نقلة`}
+              sub={`${stats.tripsWithCostCount} نقلة مسعّرة من ${stats.totalTrips}`}
             />
-            {/* مساهمات المصانع */}
+
+            {/* مساهمات المصانع المطلوبة */}
             <KpiCard
-              label="مساهمات المصانع المطلوبة"
+              label="مساهمات المصانع"
               value={Math.round(stats.totalFactoryShare)}
               suffix="₪"
               icon={ShieldCheck}
               bg="bg-blue-50" text="text-blue-600" border="border-blue-100"
-              sub={`${stats.totalProjectCost > 0 ? Math.round(stats.totalFactoryShare / stats.totalProjectCost * 100) : 0}% من تكلفة المشروع`}
+              sub={`${collectPct}% تم تحصيله`}
+              badge={
+                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-lg">
+                  ✓ {Math.round(stats.totalCollected).toLocaleString()} ₪
+                </span>
+              }
             />
-            {/* دعم التمويل */}
+
+            {/* الصرف الفعلي من التمويل */}
             <KpiCard
-              label="دعم التمويل (المنحة)"
-              value={Math.round(stats.totalSubsidy)}
+              label="الصرف من التمويل"
+              value={Math.round(stats.spentFromBudget)}
               suffix="₪"
               icon={Sprout}
               bg="bg-teal-50" text="text-teal-600" border="border-teal-100"
-              sub={`${subsidyPct}% من التكلفة يغطيها التمويل`}
+              sub={`${stats.budgetSpentPct}% من إجمالي التمويل`}
+            />
+
+            {/* المتبقي من التمويل */}
+            <KpiCard
+              label="المتبقي من التمويل"
+              value={Math.round(stats.remainingBudget)}
+              suffix="₪"
+              icon={PiggyBank}
+              bg="bg-violet-50" text="text-violet-600" border="border-violet-100"
+              sub={`من أصل ${stats.projectBudget > 0 ? stats.projectBudget.toLocaleString() : '—'} ₪`}
             />
           </>}
         </div>
       </div>
 
-      {/* ── شريط التحصيل والتمويل ──────────────────────────── */}
-      {!loading && stats.totalProjectCost > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
+      {/* ── أشرطة التقدم المالي ────────────────────────────── */}
+      {!loading && (stats.totalProjectCost > 0 || stats.projectBudget > 0) && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-5">
           <p className="text-sm font-semibold text-slate-700">📊 نسب المشروع</p>
 
-          {/* نسبة تحصيل مساهمات المصانع */}
+          {/* 1. نسبة تحصيل مساهمات المصانع */}
           <div>
             <div className="flex justify-between text-xs text-slate-500 mb-1.5">
               <span>تحصيل مساهمات المصانع</span>
@@ -284,24 +306,52 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* توزيع التكلفة */}
-          <div>
-            <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-              <span>توزيع تكلفة المشروع</span>
-              <span className="font-semibold text-slate-600">{stats.totalProjectCost.toLocaleString()} ₪</span>
+          {/* 2. توزيع تكلفة المشروع (مصانع vs تمويل) */}
+          {stats.totalProjectCost > 0 && (
+            <div>
+              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                <span>توزيع تكلفة المشروع</span>
+                <span className="font-semibold text-slate-600">{Math.round(stats.totalProjectCost).toLocaleString()} ₪</span>
+              </div>
+              <div className="h-2.5 bg-teal-100 rounded-full overflow-hidden flex">
+                <div
+                  className="h-full bg-blue-500 transition-all"
+                  style={{ width: `${stats.totalProjectCost > 0 ? Math.round(stats.totalFactoryShare / stats.totalProjectCost * 100) : 0}%` }}
+                  title="مساهمة المصانع"
+                />
+              </div>
+              <div className="flex justify-between text-[11px] mt-1">
+                <span className="text-blue-500">مصانع: {Math.round(stats.totalFactoryShare).toLocaleString()} ₪</span>
+                <span className="text-teal-600">تمويل: {Math.round(stats.spentFromBudget).toLocaleString()} ₪</span>
+              </div>
             </div>
-            <div className="h-2.5 bg-teal-100 rounded-full overflow-hidden flex">
-              <div
-                className="h-full bg-blue-500 rounded-r-full transition-all"
-                style={{ width: `${stats.totalProjectCost > 0 ? Math.round(stats.totalFactoryShare / stats.totalProjectCost * 100) : 0}%` }}
-                title="مساهمة المصانع"
-              />
+          )}
+
+          {/* 3. نسبة الصرف من إجمالي التمويل */}
+          {stats.projectBudget > 0 && (
+            <div>
+              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                <span className="flex items-center gap-1">
+                  <BadgePercent size={12} className="text-violet-500" />
+                  نسبة الصرف من إجمالي التمويل
+                </span>
+                <span className="font-semibold text-violet-600">{stats.budgetSpentPct}%</span>
+              </div>
+              <div className="h-2.5 bg-violet-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-violet-500 rounded-full transition-all"
+                  style={{ width: `${stats.budgetSpentPct}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[11px] mt-1">
+                <span className="text-violet-600">مُصرف: {Math.round(stats.spentFromBudget).toLocaleString()} ₪</span>
+                <span className="text-slate-400">
+                  متبقٍ: <span className="text-violet-700 font-semibold">{Math.round(stats.remainingBudget).toLocaleString()} ₪</span>
+                  {' '}من {stats.projectBudget.toLocaleString()} ₪
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between text-[11px] mt-1">
-              <span className="text-blue-500">مصانع: {Math.round(stats.totalFactoryShare).toLocaleString()} ₪</span>
-              <span className="text-teal-600">تمويل: {Math.round(stats.totalSubsidy).toLocaleString()} ₪</span>
-            </div>
-          </div>
+          )}
         </div>
       )}
 

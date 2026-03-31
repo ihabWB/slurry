@@ -526,6 +526,7 @@ export async function getDashboardStats() {
     todayTripsRes,
     monthTripsRes,
     costRes,            // كل النقلات: trip_cost + subsidy_amount
+    settingsRes,        // الإعدادات: project_budget + factory_contribution
   ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
@@ -553,6 +554,9 @@ export async function getDashboardStats() {
     // كل النقلات: مجاميع التكاليف والتمويل
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('trip_cost, factory_contribution, subsidy_amount'),
+    // الإعدادات العامة
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('settings').select('key, value').in('key', ['project_budget', 'factory_contribution']),
   ])
 
   // ── مجاميع التكاليف ──────────────────────────────────────
@@ -582,6 +586,21 @@ export async function getDashboardStats() {
   // ── الذمم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalDebt = (overdueBalancesRes.data || []).reduce((s: number, f: any) => s + Number(f.balance), 0)
+
+  // ── ميزانية التمويل ───────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const settingsMap: Record<string, string> = Object.fromEntries(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (settingsRes.data || []).map((s: any) => [s.key, s.value])
+  )
+  const projectBudget     = Number(settingsMap['project_budget'] ?? 0)
+  // الصرف الفعلي من التمويل = Σ(subsidy_amount) — ما دفعه التمويل فعلياً لتغطية فارق التكلفة
+  const spentFromBudget   = totalSubsidy
+  // المتبقي من التمويل
+  const remainingBudget   = Math.max(0, projectBudget - spentFromBudget)
+  // نسبة الصرف من التمويل
+  const budgetSpentPct    = projectBudget > 0
+    ? Math.min(Math.round(spentFromBudget / projectBudget * 100), 100) : 0
 
   // ── اليوم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -618,6 +637,11 @@ export async function getDashboardStats() {
     totalFactoryShare,
     totalSubsidy,
     tripsWithCostCount,
+    // ميزانية التمويل
+    projectBudget,
+    spentFromBudget,
+    remainingBudget,
+    budgetSpentPct,
     // شهري
     monthTripsCount,
     activeFactoriesThisMonth,
