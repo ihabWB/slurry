@@ -368,15 +368,21 @@ function PricingTable({
             <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">الحجم (م³)</th>
             <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">وجهة النقل</th>
             <th className="text-center px-4 py-3 text-xs text-blue-600 font-semibold">سعر الوحدة (₪)</th>
-            <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">مساهمة المصنع</th>
-            <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">دعم التمويل</th>
+            <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">
+              مساهمة المصنع
+              <span className="block text-[10px] font-normal text-emerald-500">(إيراد مستقل)</span>
+            </th>
+            <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">
+              إجمالي الإيراد / نقلة
+              <span className="block text-[10px] font-normal text-violet-400">(سعر + مساهمة)</span>
+            </th>
             <th className="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           {rules.map(rule => {
             const currentPrice = parseFloat(editedPrices[rule.id] ?? String(rule.unit_price))
-            const subsidy = isNaN(currentPrice) ? 0 : currentPrice - factoryContrib
+            const totalRevenue = isNaN(currentPrice) ? 0 : currentPrice + factoryContrib
             const changed = editedPrices[rule.id] !== undefined &&
               parseFloat(editedPrices[rule.id]) !== rule.unit_price
             return (
@@ -404,12 +410,18 @@ function PricingTable({
                   />
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className="text-emerald-700 font-semibold text-sm">{factoryContrib} ₪</span>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span className="text-emerald-700 font-semibold text-sm">{factoryContrib} ₪</span>
+                    <span className="text-[10px] text-emerald-500 bg-emerald-50 px-1.5 rounded">منفصل</span>
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className={`font-semibold text-sm ${subsidy >= 0 ? 'text-violet-700' : 'text-red-500'}`}>
-                    {subsidy.toFixed(0)} ₪
-                  </span>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span className="font-bold text-sm text-violet-700">
+                      {totalRevenue.toFixed(0)} ₪
+                    </span>
+                    <span className="text-[10px] text-slate-400">{currentPrice.toFixed(0)} + {factoryContrib}</span>
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-center">
                   <button
