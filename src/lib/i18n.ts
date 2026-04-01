@@ -6,7 +6,7 @@ export const translations = {
     dashboard:  { ar: 'لوحة التحكم', en: 'Dashboard' },
     factories:  { ar: 'المصانع',     en: 'Factories' },
     trips:      { ar: 'النقلات',     en: 'Trips' },
-    payments:   { ar: 'المدفوعات',   en: 'Payments' },
+    payments:   { ar: 'مدفوعات المصانع', en: 'Factory Payments' },
     reports:    { ar: 'التقارير',    en: 'Reports' },
     map:        { ar: 'الخريطة',     en: 'Map' },
     users:         { ar: 'المستخدمون',  en: 'Users' },

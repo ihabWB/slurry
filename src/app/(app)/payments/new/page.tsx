@@ -59,7 +59,7 @@ export default function NewPaymentPage() {
         <Link href="/payments">
           <Button variant="ghost" size="sm"><ArrowRight size={16} /> رجوع</Button>
         </Link>
-        <h1 className="text-xl font-bold text-slate-800">تسجيل دفعة جديدة</h1>
+        <h1 className="text-xl font-bold text-slate-800">تسجيل دفعة مصنع جديدة</h1>
       </div>
 
       <Card>
