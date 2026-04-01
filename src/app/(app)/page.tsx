@@ -22,7 +22,6 @@ interface Stats {
   totalDebt: number
   totalProjectCost: number
   totalFactoryShare: number
-  totalSubsidy: number
   monthTripsCount: number
   activeFactoriesThisMonth: number
   avgTripsPerFactory: number
@@ -101,7 +100,7 @@ export default function DashboardPage() {
     totalTrips: 0, todayTripsCount: 0, todayPaidCount: 0, todayCreditCount: 0,
     paidTripsCount: 0, creditTripsCount: 0, totalFactories: 0, overdueFactories: 0,
     totalCollected: 0, totalDebt: 0,
-    totalProjectCost: 0, totalFactoryShare: 0, totalSubsidy: 0,
+    totalProjectCost: 0, totalFactoryShare: 0,
     monthTripsCount: 0, activeFactoriesThisMonth: 0, avgTripsPerFactory: 0,
     tripsWithCostCount: 0,
     projectBudget: 0, spentFromBudget: 0, remainingBudget: 0, budgetSpentPct: 0,

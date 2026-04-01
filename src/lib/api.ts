@@ -588,9 +588,9 @@ export async function getDashboardStats() {
     // نقلات هذا الشهر
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart),
-    // كل النقلات: مجاميع التكاليف والتمويل
+    // كل النقلات: مجاميع التكاليف
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('trip_cost, factory_contribution, subsidy_amount'),
+    (supabase as any).from('trips').select('trip_cost'),
     // الإعدادات العامة
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('settings').select('key, value').in('key', ['project_budget', 'factory_contribution']),
@@ -599,17 +599,15 @@ export async function getDashboardStats() {
     (supabase as any).from('disbursements').select('disbursed_amount, retention_amount, net_payment').eq('status', 'closed'),
   ])
 
-  // ── مجاميع التكاليف ──────────────────────────────────────
+  // إجمالي تكاليف النقلات من جدول التسعيرة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const costData: any[] = costRes.data || []
   const tripsWithCost = costData.filter((r: any) => r.trip_cost != null)
   const tripsWithCostCount = tripsWithCost.length
-  // trip_cost: مجموع ما هو محدد فقط (النقلات التي لها سعر من التسعيرة)
-  const totalProjectCost  = costData.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
-  // factory_contribution: للنقلات القديمة (null) نستخدم 50 كقيمة افتراضية
-  const totalFactoryShare = costData.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 50), 0)
-  // subsidy: فقط للنقلات التي لها trip_cost محدد
-  const totalSubsidy      = costData.reduce((s: number, r: any) => s + Number(r.subsidy_amount ?? 0), 0)
+  const totalProjectCost = costData.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
+
+  // رصيد مساهمات المصانع المتراكم (مستقل عن التمويل)
+  // يُحسب لاحقاً بعد قراءة settingsMap لمعرفة factory_contribution
 
   // ── المحصّل = مساهمات النقلات المدفوعة + مدفوعات الذمم المُسجَّلة ─
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -633,8 +631,6 @@ export async function getDashboardStats() {
   const totalDisbursed           = disbData.reduce((s: number, d: any) => s + Number(d.net_payment), 0)
   const totalRetained            = disbData.reduce((s: number, d: any) => s + Number(d.retention_amount), 0)
   const closedDisbursementsCount = disbData.length
-  // مجموع disbursed_amount (قبل حجز التأمينات) من الدفعات المقفلة = الصرف الفعلي من التمويل
-  const totalDisbursedGross      = disbData.reduce((s: number, d: any) => s + Number(d.disbursed_amount), 0)
 
   // ── ميزانية التمويل ───────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -643,12 +639,13 @@ export async function getDashboardStats() {
     (settingsRes.data || []).map((s: any) => [s.key, s.value])
   )
   const projectBudget = Number(settingsMap['project_budget'] ?? 0)
-  // الصرف الفعلي من التمويل = مجموع disbursed_amount من الدفعات المُقفلة فقط
-  const spentFromBudget = totalDisbursedGross
-  // المتبقي من التمويل
+  const contributionPerTrip = Number(settingsMap['factory_contribution'] ?? 50)
+  // رصيد مساهمات المصانع المتراكم = عدد جميع النقلات × مساهمة المصنع لكل نقلة
+  const totalFactoryShare = costData.length * contributionPerTrip
+  // الصرف الفعلي من التمويل = مجموع net_payment من الدفعات المُقفلة
+  const spentFromBudget = totalDisbursed
   const remainingBudget = Math.max(0, projectBudget - spentFromBudget)
-  // نسبة الصرف من التمويل
-  const budgetSpentPct = projectBudget > 0
+  const budgetSpentPct  = projectBudget > 0
     ? Math.min(Math.round(spentFromBudget / projectBudget * 100), 100) : 0
 
   // ── اليوم ─────────────────────────────────────────────────
@@ -684,7 +681,6 @@ export async function getDashboardStats() {
     // مالي — تمويل المشروع
     totalProjectCost,
     totalFactoryShare,
-    totalSubsidy,
     tripsWithCostCount,
     // ميزانية التمويل
     projectBudget,
@@ -837,19 +833,30 @@ export async function getDisbursements(): Promise<Disbursement[]> {
 /** حساب مجاميع النقلات لفترة معينة */
 async function calcDisbursementAmounts(from: string, to: string) {
   const supabase = createClient()
+
+  // جلب نسبة مساهمة المصانع من الإعدادات
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: setting } = await (supabase as any)
+    .from('settings').select('value').eq('key', 'factory_contribution').single()
+  const contributionPerTrip = Number(setting?.value ?? 50)
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('trips')
-    .select('trip_cost, factory_contribution, subsidy_amount')
+    .select('trip_cost')
     .gte('trip_date', from)
     .lte('trip_date', to)
   if (error) throw error
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows: any[] = data ?? []
   const trips_count         = rows.length
+  // تكلفة النقلات من جدول التسعيرة
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const total_trips_cost    = rows.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
-  const total_factory_share = rows.reduce((s: number, r: any) => s + Number(r.factory_contribution ?? 0), 0)
-  const disbursed_amount    = rows.reduce((s: number, r: any) => s + Number(r.subsidy_amount ?? 0), 0)
+  // مساهمة المصانع: رصيد مستقل للمشروع (لا تُخصم من التكلفة)
+  const total_factory_share = trips_count * contributionPerTrip
+  // مبلغ التمويل المطلوب = تكلفة النقلات كاملة
+  const disbursed_amount    = total_trips_cost
   return { trips_count, total_trips_cost, total_factory_share, disbursed_amount }
 }
 
@@ -857,9 +864,12 @@ const MUNICIPALITY_PCT = 14 // نسبة ثابتة لبلدية الخليل
 
 /**
  * حساب حقول الدفعة الكاملة:
+ *   المبلغ الأساسي (disbursed_amount) = تكلفة النقلات كاملة
  *   municipality_amount = disbursed_amount × 14%  (يُضاف)
  *   retention_amount    = disbursed_amount × retention_pct%  (يُخصم)
  *   net_payment         = disbursed_amount + municipality_amount - retention_amount
+ *
+ *   total_factory_share = رصيد مستقل للمشروع (لا يدخل في حساب net_payment)
  */
 function calcRetention(disbursed_amount: number, retention_pct: number) {
   const municipality_amount = Math.round(disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100
@@ -1027,14 +1037,20 @@ export async function updateDisbursement(
   // نحسب المبالغ من الفترة الجديدة
   const { data: trips } = await (supabase as any)
     .from('trips')
-    .select('cost, factory_share')
+    .select('trip_cost')
     .gte('trip_date', newFrom)
     .lte('trip_date', newTo)
 
-  const tripsList = (trips ?? []) as { cost: number; factory_share: number }[]
-  const total_trips_cost    = tripsList.reduce((s: number, t: { cost: number }) => s + Number(t.cost), 0)
-  const total_factory_share = tripsList.reduce((s: number, t: { factory_share: number }) => s + Number(t.factory_share), 0)
-  const disbursed_amount    = total_trips_cost - total_factory_share
+  // جلب قيمة مساهمة المصنع من الإعدادات
+  const { data: contribSetting } = await (supabase as any)
+    .from('settings').select('value').eq('key', 'factory_contribution').single()
+  const contributionPerTrip = Number(contribSetting?.value ?? 50)
+
+  const tripsList = (trips ?? []) as { trip_cost: number }[]
+  const total_trips_cost    = tripsList.reduce((s: number, t: { trip_cost: number }) => s + Number(t.trip_cost ?? 0), 0)
+  const total_factory_share = tripsList.length * contributionPerTrip
+  // disbursed_amount = تكلفة النقلات كاملة
+  const disbursed_amount    = total_trips_cost
   const municipality_amount = disbursed_amount * 0.14
   const retention_amount    = fields.retention_amount_override !== undefined
     ? fields.retention_amount_override

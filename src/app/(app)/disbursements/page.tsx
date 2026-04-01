@@ -669,13 +669,15 @@ function DisbursementCard({
           <p className="text-[11px] text-slate-500 mb-1">إجمالي التكلفة</p>
           <p className="text-sm font-bold text-slate-800">{fmt(disb.total_trips_cost)}</p>
         </div>
-        <div className="bg-slate-50 rounded-xl p-3 text-center">
-          <p className="text-[11px] text-slate-500 mb-1">مساهمة المصانع</p>
-          <p className="text-sm font-bold text-slate-800">{fmt(disb.total_factory_share)}</p>
+        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+          <p className="text-[11px] text-emerald-600 mb-1 font-medium">إيرادات المصانع 🏭</p>
+          <p className="text-sm font-bold text-emerald-700">+ {fmt(disb.total_factory_share)}</p>
+          <p className="text-[10px] text-emerald-500 mt-0.5">رصيد مستقل للمشروع</p>
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-          <p className="text-[11px] text-slate-500 mb-1">قبل التعديلات</p>
+          <p className="text-[11px] text-slate-500 mb-1">المطالبة من التمويل</p>
           <p className="text-sm font-bold text-blue-700">{fmt(disb.disbursed_amount)}</p>
+          <p className="text-[10px] text-blue-400 mt-0.5">= إجمالي التكلفة</p>
         </div>
         <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-center">
           <p className="text-[11px] text-violet-600 mb-1 flex items-center justify-center gap-0.5">
