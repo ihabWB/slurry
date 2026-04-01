@@ -26,7 +26,7 @@ const APPROVAL_LABELS: Record<ApprovalStatus, { label: string; color: string; ic
 }
 
 // ─── Modal تسجيل نقلة جديدة ────────────────────────────────
-function NewTripModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+function NewTripModal({ onClose, onSuccess, isAdmin }: { onClose: () => void; onSuccess: () => void; isAdmin: boolean }) {
   const [factories, setFactories]         = useState<Factory[]>([])
   const [selectedFactory, setSelectedFactory] = useState('')
   const [paymentStatus, setPaymentStatus] = useState<'paid' | 'credit'>('credit')
@@ -116,8 +116,9 @@ function NewTripModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
         trip_cost: tripCost ?? null,
         factory_contribution: tripCost !== null ? factoryContrib : null,
         subsidy_amount: tripCost !== null ? tripCost - factoryContrib : null,
+        approval_status: isAdmin ? 'approved' : 'draft',
       })
-      showToast('success', 'تم تسجيل النقلة بنجاح ✓')
+      showToast('success', isAdmin ? 'تم تسجيل النقلة واعتمادها ✓' : 'تم تسجيل النقلة — بانتظار الاعتماد')
       onSuccess()
     } catch (e: unknown) {
       showToast('error', e instanceof Error ? e.message : 'حدث خطأ')
@@ -744,7 +745,7 @@ export default function TripsPage() {
 
       {/* ── New Trip Modal ── */}
       {showNew && (
-        <NewTripModal onClose={() => setShowNew(false)} onSuccess={() => { setShowNew(false); load(); loadStats() }} />
+        <NewTripModal onClose={() => setShowNew(false)} onSuccess={() => { setShowNew(false); load(); loadStats() }} isAdmin={isAdmin} />
       )}
     </div>
   )
