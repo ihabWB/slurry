@@ -117,11 +117,11 @@ export default function SettingsPage() {
           </h2>
         </CardHeader>
         <CardBody className="space-y-4">
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
-            <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-blue-700">
-              هذا المبلغ يُخصم من سعر الوحدة لكل نقلة ويُحتسب كمساهمة المصنع.
-              الباقي يُغطى من التمويل (دعم المشروع).
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-start gap-3">
+            <Info size={16} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-emerald-700">
+              مساهمة المصنع هي <strong>إيراد مستقل للمشروع</strong> يُدفع عن كل نقلة.
+              لا تُخصم من سعر الوحدة — بل تُضاف كرصيد منفصل يُساهم في تمويل المشروع.
             </p>
           </div>
           {settings.filter(s => s.key === 'factory_contribution').map(s => (
@@ -338,11 +338,10 @@ export default function SettingsPage() {
 
       {/* معلومات */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-500 space-y-1">
-        <p>• <strong>سعر الوحدة</strong> = التكلفة الكاملة لكل نقلة</p>
-        <p>• <strong>مساهمة المصنع</strong> = المبلغ الذي يدفعه المصنع (حالياً {factoryContrib} ₪)</p>
-        <p>• <strong>دعم التمويل</strong> = سعر الوحدة − مساهمة المصنع</p>
+        <p>• <strong>سعر الوحدة</strong> = التكلفة الكاملة لكل نقلة (يُموَّل بالكامل من ميزانية المشروع)</p>
+        <p>• <strong>مساهمة المصنع</strong> = إيراد مستقل للمشروع بقيمة {factoryContrib} ₪ عن كل نقلة — لا تُخصم من سعر الوحدة</p>
+        <p>• <strong>إجمالي مساهمات المصانع</strong> = {factoryContrib} ₪ × عدد النقلات (رصيد منفصل)</p>
         <p>• <strong>إجمالي التمويل</strong> = الميزانية الكلية للمشروع ({projectBudget > 0 ? projectBudget.toLocaleString() + ' ₪' : 'غير محدد'})</p>
-        <p>• <strong>المتبقي من التمويل</strong> = إجمالي التمويل − Σ(دعم التمويل لكل النقلات)</p>
         <p>• <strong>حجز التأمينات (Retention)</strong> = نسبة تُحجز من كل دفعة حتى نهاية المشروع</p>
       </div>
     </div>
