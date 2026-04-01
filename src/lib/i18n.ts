@@ -11,7 +11,7 @@ export const translations = {
     map:        { ar: 'الخريطة',     en: 'Map' },
     users:         { ar: 'المستخدمون',  en: 'Users' },
     settings:      { ar: 'الإعدادات',   en: 'Settings' },
-    disbursements: { ar: 'الدفعات',      en: 'Disbursements' },
+    disbursements: { ar: 'المطالبات المالية',      en: 'Claims' },
     signOut:       { ar: 'تسجيل الخروج', en: 'Sign Out' },
   },
   navGroups: {

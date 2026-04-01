@@ -191,7 +191,7 @@ function NewDisbursementModal({
               <Plus size={20} className="text-blue-600" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">دفعة جديدة</h2>
+              <h2 className="text-lg font-bold text-slate-900">مطالبة مالية جديدة</h2>
               <p className="text-sm text-slate-500">حدد الفترة ونسبة الحجز لحساب المبالغ تلقائياً</p>
             </div>
           </div>
@@ -282,7 +282,7 @@ function NewDisbursementModal({
             <button type="submit" disabled={loading || !from || !to}
               className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
               {loading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-              إنشاء مسودة
+              إنشاء مطالبة (مسودة)
             </button>
           </div>
         </form>
@@ -455,7 +455,7 @@ export default function DisbursementsPage() {
       setError(null)
       await createDisbursement(from, to, notes || undefined, retentionPct, retentionAmountOverride)
       setShowNew(false)
-      showSuccessMsg('تم إنشاء المسودة بنجاح')
+      showSuccessMsg('تم إنشاء المطالبة (مسودة) بنجاح')
       await load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'حدث خطأ')
@@ -485,7 +485,7 @@ export default function DisbursementsPage() {
       setError(null)
       await closeDisbursement(closeTarget.id)
       setCloseTarget(null)
-      showSuccessMsg('تم الإغلاق النهائي للدفعة بنجاح 🔒')
+      showSuccessMsg('تم إغلاق المطالبة المالية بنجاح 🔒')
       await load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'حدث خطأ')
@@ -495,12 +495,12 @@ export default function DisbursementsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('هل أنت متأكد من حذف هذه المسودة؟')) return
+    if (!confirm('هل أنت متأكد من حذف هذه المطالبة (المسودة)؟')) return
     try {
       setActionLoading(true)
       setError(null)
       await deleteDisbursement(id)
-      showSuccessMsg('تم حذف المسودة')
+      showSuccessMsg('تم حذف المطالبة (المسودة)')
       await load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'حدث خطأ')
@@ -521,8 +521,8 @@ export default function DisbursementsPage() {
       {/* رأس الصفحة */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">الدفعات الدورية</h1>
-          <p className="text-sm text-slate-500 mt-1">إدارة صرف التمويل الحكومي للفترات الزمنية المختلفة</p>
+          <h1 className="text-2xl font-bold text-slate-900">المطالبات المالية</h1>
+          <p className="text-sm text-slate-500 mt-1">إدارة صرف الدفعات والتمويل الحكومي للفترات الزمنية المختلفة</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -536,7 +536,7 @@ export default function DisbursementsPage() {
             onClick={() => setShowNew(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-colors"
           >
-            <Plus size={16} /> دفعة جديدة
+            <Plus size={16} /> مطالبة جديدة
           </button>
         </div>
       </div>
@@ -623,13 +623,13 @@ export default function DisbursementsPage() {
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Banknote size={28} className="text-slate-400" />
           </div>
-          <p className="text-slate-700 font-semibold mb-1">لا توجد دفعات بعد</p>
-          <p className="text-sm text-slate-400 mb-5">أنشئ دفعة جديدة لتتبع صرف التمويل</p>
+          <p className="text-slate-700 font-semibold mb-1">لا توجد مطالبات مالية بعد</p>
+          <p className="text-sm text-slate-400 mb-5">أنشئ مطالبة جديدة لتتبع صرف الدفعات والتمويل</p>
           <button
             onClick={() => setShowNew(true)}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-colors"
           >
-            <Plus size={15} /> إنشاء أول دفعة
+            <Plus size={15} /> إنشاء أول مطالبة
           </button>
         </div>
       ) : (

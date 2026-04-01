@@ -304,8 +304,8 @@ export default function DashboardPage() {
                   </p>
                 </div>
               </div>
-              <Link href="/disbursements" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1">
-                <Receipt size={11} /> عرض الدفعات
+                <Link href="/disbursements" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1">
+                <Receipt size={11} /> عرض المطالبات المالية
               </Link>
             </div>
             {stats.totalRetained > 0 && (
