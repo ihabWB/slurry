@@ -372,17 +372,12 @@ function PricingTable({
               مساهمة المصنع
               <span className="block text-[10px] font-normal text-emerald-500">(إيراد مستقل)</span>
             </th>
-            <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">
-              إجمالي الإيراد / نقلة
-              <span className="block text-[10px] font-normal text-violet-400">(سعر + مساهمة)</span>
-            </th>
             <th className="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           {rules.map(rule => {
             const currentPrice = parseFloat(editedPrices[rule.id] ?? String(rule.unit_price))
-            const totalRevenue = isNaN(currentPrice) ? 0 : currentPrice + factoryContrib
             const changed = editedPrices[rule.id] !== undefined &&
               parseFloat(editedPrices[rule.id]) !== rule.unit_price
             return (
@@ -413,14 +408,6 @@ function PricingTable({
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-emerald-700 font-semibold text-sm">{factoryContrib} ₪</span>
                     <span className="text-[10px] text-emerald-500 bg-emerald-50 px-1.5 rounded">منفصل</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <div className="flex flex-col items-center gap-0.5">
-                    <span className="font-bold text-sm text-violet-700">
-                      {totalRevenue.toFixed(0)} ₪
-                    </span>
-                    <span className="text-[10px] text-slate-400">{currentPrice.toFixed(0)} + {factoryContrib}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-center">
