@@ -22,6 +22,8 @@ interface Stats {
   totalDebt: number
   totalProjectCost: number
   totalFactoryShare: number
+  factoryShareCollected: number
+  factoryShareUncollected: number
   monthTripsCount: number
   activeFactoriesThisMonth: number
   avgTripsPerFactory: number
@@ -100,7 +102,7 @@ export default function DashboardPage() {
     totalTrips: 0, todayTripsCount: 0, todayPaidCount: 0, todayCreditCount: 0,
     paidTripsCount: 0, creditTripsCount: 0, totalFactories: 0, overdueFactories: 0,
     totalCollected: 0, totalDebt: 0,
-    totalProjectCost: 0, totalFactoryShare: 0,
+    totalProjectCost: 0, totalFactoryShare: 0, factoryShareCollected: 0, factoryShareUncollected: 0,
     monthTripsCount: 0, activeFactoriesThisMonth: 0, avgTripsPerFactory: 0,
     tripsWithCostCount: 0,
     projectBudget: 0, spentFromBudget: 0, remainingBudget: 0, budgetSpentPct: 0,
@@ -131,7 +133,12 @@ export default function DashboardPage() {
   useEffect(() => { load() }, [])
 
   const collectPct = stats.totalFactoryShare > 0
-    ? Math.min(Math.round(stats.totalCollected / stats.totalFactoryShare * 100), 100) : 0
+    ? Math.min(Math.round(stats.factoryShareCollected / stats.totalFactoryShare * 100), 100) : 0
+  const uncollectedPct = stats.totalFactoryShare > 0
+    ? Math.min(Math.round(stats.factoryShareUncollected / stats.totalFactoryShare * 100), 100) : 0
+  // قيمة مساهمة المصنع للنقلة الواحدة (مشتقة من إجمالي ÷ عدد النقلات)
+  const contributionPerTrip = stats.totalTrips > 0
+    ? Math.round(stats.totalFactoryShare / stats.totalTrips) : 50
 
   const quickActions = [
     { href: '/trips/new',    label: t(T.dashboard.newTrip, lang),     sub: t(T.dashboard.newTripSub, lang),    icon: Truck,      bg: 'bg-blue-600',    shadow: 'shadow-blue-200' },
@@ -251,20 +258,46 @@ export default function DashboardPage() {
               sub={`${stats.tripsWithCostCount} نقلة مسعّرة من ${stats.totalTrips}`}
             />
 
-            {/* مساهمات المصانع المطلوبة */}
-            <KpiCard
-              label="مساهمات المصانع"
-              value={Math.round(stats.totalFactoryShare)}
-              suffix="₪"
-              icon={ShieldCheck}
-              bg="bg-blue-50" text="text-blue-600" border="border-blue-100"
-              sub={`${collectPct}% تم تحصيله`}
-              badge={
-                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-lg">
-                  ✓ {Math.round(stats.totalCollected).toLocaleString()} ₪
+            {/* إيرادات مساهمات المصانع */}
+            <div className="bg-white rounded-2xl border border-blue-100 p-4 hover:shadow-md transition-shadow col-span-2 lg:col-span-2">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <Factory size={18} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">إيرادات مساهمات المصانع</p>
+                    <p className="text-lg font-bold text-slate-800">
+                      {Math.round(stats.totalFactoryShare).toLocaleString()}
+                      <span className="text-xs font-normal text-slate-400 ms-1">₪ إجمالي</span>
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">
+                  {contributionPerTrip}₪ / نقلة
                 </span>
-              }
-            />
+              </div>
+              {/* شريط المحصّل */}
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{ width: `${collectPct}%` }}
+                />
+              </div>
+              {/* صفان: محصّل / غير محصّل */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-emerald-600 font-medium mb-0.5">✅ محصّل (مدفوع)</p>
+                  <p className="text-sm font-bold text-emerald-700">{Math.round(stats.factoryShareCollected).toLocaleString()} ₪</p>
+                  <p className="text-[10px] text-emerald-500">{stats.paidTripsCount} نقلة × {contributionPerTrip}₪</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-amber-600 font-medium mb-0.5">⏳ غير محصّل (ذمة)</p>
+                  <p className="text-sm font-bold text-amber-700">{Math.round(stats.factoryShareUncollected).toLocaleString()} ₪</p>
+                  <p className="text-[10px] text-amber-500">{stats.creditTripsCount} نقلة × {contributionPerTrip}₪</p>
+                </div>
+              </div>
+            </div>
 
             {/* الصرف الفعلي من التمويل */}
             <KpiCard
@@ -329,20 +362,24 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-5">
           <p className="text-sm font-semibold text-slate-700">📊 نسب المشروع</p>
 
-          {/* 1. نسبة تحصيل مساهمات المصانع */}
-          <div>
-            <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-              <span>تحصيل مساهمات المصانع</span>
-              <span className="font-semibold text-emerald-600">{collectPct}%</span>
+          {/* 1. إيرادات مساهمات المصانع: محصّل / غير محصّل */}
+          {stats.totalFactoryShare > 0 && (
+            <div>
+              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                <span className="flex items-center gap-1"><Factory size={12} className="text-blue-500" /> إيرادات مساهمات المصانع</span>
+                <span className="font-semibold text-blue-600">{Math.round(stats.totalFactoryShare).toLocaleString()} ₪</span>
+              </div>
+              {/* شريط ثلاثي: محصّل (أخضر) + غير محصّل (برتقالي) + الباقي (رمادي) */}
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
+                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${collectPct}%` }} title="محصّل" />
+                <div className="h-full bg-amber-400 transition-all" style={{ width: `${uncollectedPct}%` }} title="ذمة غير محصّلة" />
+              </div>
+              <div className="flex justify-between text-[11px] mt-1">
+                <span className="text-emerald-600">✅ محصّل: {Math.round(stats.factoryShareCollected).toLocaleString()} ₪ ({collectPct}%)</span>
+                <span className="text-amber-600">⏳ ذمة: {Math.round(stats.factoryShareUncollected).toLocaleString()} ₪ ({uncollectedPct}%)</span>
+              </div>
             </div>
-            <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${collectPct}%` }} />
-            </div>
-            <div className="flex justify-between text-[11px] text-slate-400 mt-1">
-              <span>محصّل: {Math.round(stats.totalCollected).toLocaleString()} ₪</span>
-              <span>مطلوب: {Math.round(stats.totalFactoryShare).toLocaleString()} ₪</span>
-            </div>
-          </div>
+          )}
 
           {/* 2. توزيع تكلفة المشروع (مصانع vs تمويل) */}
           {stats.totalProjectCost > 0 && (

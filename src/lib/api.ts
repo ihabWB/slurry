@@ -642,6 +642,10 @@ export async function getDashboardStats() {
   const contributionPerTrip = Number(settingsMap['factory_contribution'] ?? 50)
   // رصيد مساهمات المصانع المتراكم = عدد جميع النقلات × مساهمة المصنع لكل نقلة
   const totalFactoryShare = costData.length * contributionPerTrip
+  // المحصّل من مساهمات المصانع = نقلات مدفوعة × contributionPerTrip
+  const factoryShareCollected   = paidTripsData.length * contributionPerTrip
+  // غير المحصّل = نقلات ذمة × contributionPerTrip
+  const factoryShareUncollected = (creditTripsRes.count ?? 0) * contributionPerTrip
   // الصرف الفعلي من التمويل = مجموع net_payment من الدفعات المُقفلة
   const spentFromBudget = totalDisbursed
   const remainingBudget = Math.max(0, projectBudget - spentFromBudget)
@@ -681,6 +685,8 @@ export async function getDashboardStats() {
     // مالي — تمويل المشروع
     totalProjectCost,
     totalFactoryShare,
+    factoryShareCollected,
+    factoryShareUncollected,
     tripsWithCostCount,
     // ميزانية التمويل
     projectBudget,
