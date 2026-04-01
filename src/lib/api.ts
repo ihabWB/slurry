@@ -93,21 +93,37 @@ export async function getTrips(filters?: {
   from?: string
   to?: string
   payment_status?: 'paid' | 'credit'
+  approval_status?: 'draft' | 'pending_approval' | 'approved' | 'rejected'
+  coupon_number?: string
+  search?: string // بحث بالاسم (factory name)
 }) {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query: any = (supabase as any)
     .from('trips')
     .select('*, factories(name, region)')
-    .order('created_at', { ascending: false })
+    .order('trip_date', { ascending: false })
 
   if (filters?.factory_id) query = query.eq('factory_id', filters.factory_id)
   if (filters?.payment_status) query = query.eq('payment_status', filters.payment_status)
+  if (filters?.approval_status) query = query.eq('approval_status', filters.approval_status)
   if (filters?.from) query = query.gte('trip_date', filters.from.substring(0, 10))
   if (filters?.to) query = query.lte('trip_date', filters.to.substring(0, 10))
+  if (filters?.coupon_number) query = query.ilike('coupon_number', `%${filters.coupon_number}%`)
 
   const { data, error } = await query
   if (error) throw error
+
+  // فلتر اسم المصنع (client-side لأن Supabase لا يدعم filter على join مباشرة)
+  if (filters?.search) {
+    const s = filters.search.toLowerCase()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (data ?? []).filter((t: any) =>
+      t.factories?.name?.toLowerCase().includes(s) ||
+      t.factories?.region?.toLowerCase().includes(s)
+    )
+  }
+
   return data
 }
 
@@ -273,6 +289,7 @@ export async function createTrip(trip: TripInsert) {
       ...trip,
       amount: 50,
       payment_method,
+      approval_status: 'draft',
       coupon_number: trip.coupon_number ?? null,
       driver_name: trip.driver_name ?? null,
       vehicle_type: trip.vehicle_type ?? null,
@@ -302,6 +319,112 @@ export async function deleteTrip(id: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('trips').delete().eq('id', id)
   if (error) throw error
+}
+
+// ─── TRIP APPROVAL ───────────────────────────────────────────
+
+/** المدير: رفع كل النقلات draft للاعتماد دفعة وحدة */
+export async function submitAllDraftTrips(): Promise<number> {
+  const supabase = createClient()
+  const now = new Date().toISOString()
+  const { data: { user } } = await supabase.auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .update({ approval_status: 'pending_approval', submitted_at: now, submitted_by: user?.id ?? null })
+    .eq('approval_status', 'draft')
+    .select('id')
+  if (error) throw error
+  return (data ?? []).length
+}
+
+/** الأدمن: اعتماد نقلة واحدة */
+export async function approveTrip(id: string): Promise<void> {
+  const supabase = createClient()
+  const now = new Date().toISOString()
+  const { data: { user } } = await supabase.auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('trips')
+    .update({ approval_status: 'approved', approved_at: now, approved_by: user?.id ?? null, rejection_note: null })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** الأدمن: رفض نقلة مع سبب */
+export async function rejectTrip(id: string, note: string): Promise<void> {
+  const supabase = createClient()
+  const now = new Date().toISOString()
+  const { data: { user } } = await supabase.auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('trips')
+    .update({ approval_status: 'rejected', rejected_at: now, rejected_by: user?.id ?? null, rejection_note: note })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** الأدمن: اعتماد كل النقلات pending دفعة وحدة */
+export async function approveAllPendingTrips(): Promise<number> {
+  const supabase = createClient()
+  const now = new Date().toISOString()
+  const { data: { user } } = await supabase.auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .update({ approval_status: 'approved', approved_at: now, approved_by: user?.id ?? null, rejection_note: null })
+    .eq('approval_status', 'pending_approval')
+    .select('id')
+  if (error) throw error
+  return (data ?? []).length
+}
+
+/** الأدمن: تعديل نقلة pending ثم اعتمادها مباشرة */
+export async function editAndApproveTrip(id: string, updates: {
+  volume_m3?: number | null
+  waste_type?: 'liquid' | 'solid' | null
+  notes?: string | null
+  payment_status?: 'paid' | 'credit'
+  trip_date?: string
+  trip_cost?: number | null
+  factory_contribution?: number | null
+  subsidy_amount?: number | null
+  coupon_number?: string | null
+  driver_name?: string | null
+  distance_km?: number | null
+  dump_site?: string | null
+  transfer_zone?: string | null
+}): Promise<void> {
+  const supabase = createClient()
+  const now = new Date().toISOString()
+  const { data: { user } } = await supabase.auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('trips')
+    .update({ ...updates, approval_status: 'approved', approved_at: now, approved_by: user?.id ?? null, rejection_note: null })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/** إحصائيات الاعتماد للشريط العلوي */
+export async function getTripApprovalStats(): Promise<{
+  draft: number
+  pending_approval: number
+  approved: number
+  rejected: number
+}> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .select('approval_status')
+  if (error) throw error
+  const stats = { draft: 0, pending_approval: 0, approved: 0, rejected: 0 }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(data ?? []).forEach((r: any) => {
+    if (r.approval_status in stats) stats[r.approval_status as keyof typeof stats]++
+  })
+  return stats
 }
 
 export async function deletePayment(id: string) {

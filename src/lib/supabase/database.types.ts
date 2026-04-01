@@ -74,6 +74,14 @@ export interface Database {
           subsidy_amount: number | null
           created_at: string
           created_by: string | null
+          approval_status: 'draft' | 'pending_approval' | 'approved' | 'rejected'
+          rejection_note: string | null
+          submitted_at: string | null
+          submitted_by: string | null
+          approved_at: string | null
+          approved_by: string | null
+          rejected_at: string | null
+          rejected_by: string | null
         }
         Insert: {
           id?: string
@@ -96,6 +104,14 @@ export interface Database {
           subsidy_amount?: number | null
           created_at?: string
           created_by?: string | null
+          approval_status?: 'draft' | 'pending_approval' | 'approved' | 'rejected'
+          rejection_note?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
         }
         Update: {
           payment_status?: 'paid' | 'credit'
@@ -110,6 +126,17 @@ export interface Database {
           distance_km?: number | null
           dump_site?: string | null
           transfer_zone?: string | null
+          trip_cost?: number | null
+          factory_contribution?: number | null
+          subsidy_amount?: number | null
+          approval_status?: 'draft' | 'pending_approval' | 'approved' | 'rejected'
+          rejection_note?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
         }
       }
       payments: {
