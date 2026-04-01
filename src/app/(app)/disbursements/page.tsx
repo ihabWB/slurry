@@ -4,17 +4,21 @@ import {
   getDisbursements,
   createDisbursement,
   recalcDisbursement,
-  closeDisbursement,
   deleteDisbursement,
   getSettings,
+  submitDisbursement,
+  approveDisbursement,
+  returnDisbursement,
 } from '@/lib/api'
 import type { Disbursement } from '@/lib/supabase/database.types'
 import {
   Plus, RefreshCw, Lock, Trash2, RotateCcw, AlertTriangle, CheckCircle,
-  ChevronLeft, Calendar, Banknote, FileText, X, ShieldCheck, Percent,
+  Calendar, Banknote, FileText, X, ShieldCheck,
+  Send, ThumbsUp, ThumbsDown, MessageSquare, Clock, CornerDownLeft,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { arSA } from 'date-fns/locale'
+import { useAuth } from '@/context/AuthContext'
 
 // ─── أدوات مساعدة ────────────────────────────────────────────
 function fmt(n: number) {
@@ -27,24 +31,42 @@ function fmtDateTime(d: string) {
   try { return format(new Date(d), 'dd/MM/yyyy HH:mm', { locale: arSA }) } catch { return d }
 }
 
+// ─── ترتيب الحالات ───────────────────────────────────────────
+const statusOrder: Record<string, number> = { returned: 0, pending: 1, draft: 2, closed: 3 }
+
 // ─── شارة الحالة ─────────────────────────────────────────────
-function StatusBadge({ status }: { status: 'draft' | 'closed' }) {
-  if (status === 'closed') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-        <Lock size={10} /> مقفلة
-      </span>
-    )
+function StatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'closed':
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <Lock size={10} /> مُعتمدة ومقفلة
+        </span>
+      )
+    case 'pending':
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+          بانتظار الاعتماد
+        </span>
+      )
+    case 'returned':
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+          <CornerDownLeft size={10} /> مُرجعة للتعديل
+        </span>
+      )
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+          <FileText size={10} /> مسودة
+        </span>
+      )
   }
-  return (
-    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-      <FileText size={10} /> مسودة
-    </span>
-  )
 }
 
-// ─── مودال تأكيد الإغلاق ─────────────────────────────────────
-function CloseConfirmModal({
+// ─── مودال تقديم للاعتماد ────────────────────────────────────
+function SubmitConfirmModal({
   disb,
   onConfirm,
   onCancel,
@@ -59,15 +81,81 @@ function CloseConfirmModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
-        {/* رأس */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Lock size={20} className="text-red-600" />
+            <div className="w-11 h-11 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Send size={20} className="text-blue-600" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">تأكيد الإغلاق النهائي</h2>
-              <p className="text-sm text-slate-500">هذا الإجراء لا يمكن التراجع عنه</p>
+              <h2 className="text-lg font-bold text-slate-900">تقديم للاعتماد</h2>
+              <p className="text-sm text-slate-500">سيتم إرسال المطالبة لمراجعة المدير</p>
+            </div>
+          </div>
+          <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm space-y-2">
+          <div className="flex justify-between">
+            <span className="text-slate-500">الفترة</span>
+            <span className="font-semibold">{fmtDate(disb.period_from)} — {fmtDate(disb.period_to)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">صافي الدفعة</span>
+            <span className="font-bold text-emerald-700">{fmt(disb.net_payment)}</span>
+          </div>
+        </div>
+
+        <p className="text-sm text-slate-600 bg-amber-50 border border-amber-200 rounded-xl p-3">
+          بعد التقديم، لن تستطيع تعديل المطالبة حتى يراجعها المدير. إذا أُرجعت، يمكنك إعادة تقديمها.
+        </p>
+
+        <div className="flex gap-3">
+          <button onClick={onCancel} disabled={loading}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50">
+            إلغاء
+          </button>
+          <button onClick={onConfirm} disabled={loading}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {loading ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+            تقديم للاعتماد
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── مودال مراجعة الادمن ─────────────────────────────────────
+function AdminReviewModal({
+  disb,
+  onApprove,
+  onReturn,
+  onCancel,
+  loading,
+}: {
+  disb: Disbursement
+  onApprove: () => void
+  onReturn: (notes: string) => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  const [returnNotes, setReturnNotes] = useState('')
+  const [mode, setMode] = useState<'choose' | 'return'>('choose')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={20} className="text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">مراجعة المطالبة</h2>
+              <p className="text-sm text-slate-500">اعتمد أو أرجع للتعديل</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
@@ -76,73 +164,76 @@ function CloseConfirmModal({
         </div>
 
         {/* ملخص */}
-        <div className="bg-slate-50 rounded-xl p-4 space-y-2.5 text-sm">
+        <div className="bg-slate-50 rounded-xl p-4 text-sm space-y-2">
           <div className="flex justify-between">
             <span className="text-slate-500">الفترة</span>
-            <span className="font-semibold text-slate-800">{fmtDate(disb.period_from)} — {fmtDate(disb.period_to)}</span>
+            <span className="font-semibold">{fmtDate(disb.period_from)} — {fmtDate(disb.period_to)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">عدد النقلات</span>
-            <span className="font-semibold text-slate-800">{disb.trips_count.toLocaleString('ar-SA')} نقلة</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">إجمالي تكلفة النقلات</span>
-            <span className="font-semibold text-slate-800">{fmt(disb.total_trips_cost)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">مساهمة المصانع</span>
-            <span className="font-semibold text-slate-800">{fmt(disb.total_factory_share)}</span>
-          </div>
-          <div className="border-t border-slate-200 pt-2.5 flex justify-between">
-            <span className="text-slate-600">مبلغ الدفعة قبل التعديلات</span>
-            <span className="font-bold text-blue-700">{fmt(disb.disbursed_amount)}</span>
+            <span className="font-semibold">{disb.trips_count.toLocaleString('ar-SA')} نقلة</span>
           </div>
           <div className="flex justify-between text-violet-700">
-            <span className="flex items-center gap-1">
-              <Banknote size={12} />
-              بلدية الخليل (14%)
-            </span>
+            <span>بلدية 14%</span>
             <span className="font-semibold">+ {fmt(disb.municipality_amount)}</span>
           </div>
           <div className="flex justify-between text-orange-700">
-            <span className="flex items-center gap-1">
-              <ShieldCheck size={12} />
-              حجز التأمينات ({disb.retention_pct}%)
-            </span>
+            <span>حجز {disb.retention_pct}%</span>
             <span className="font-semibold">− {fmt(disb.retention_amount)}</span>
           </div>
-          <div className="border-t-2 border-emerald-200 pt-2.5 flex justify-between bg-emerald-50 rounded-lg px-3 py-2">
-            <span className="text-emerald-800 font-bold">صافي الدفعة (المصروف فعلياً)</span>
-            <span className="font-bold text-emerald-700 text-base">{fmt(disb.net_payment)}</span>
+          <div className="border-t border-slate-200 pt-2 flex justify-between">
+            <span className="font-semibold text-emerald-800">صافي الدفعة</span>
+            <span className="font-bold text-emerald-700">{fmt(disb.net_payment)}</span>
           </div>
         </div>
 
-        {/* تحذير */}
-        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl p-3.5 text-sm text-red-700">
-          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>
-            بعد الإغلاق، لن تتمكن من إضافة أو تعديل نقلات ضمن هذه الفترة. تأكد من مراجعة البيانات قبل المتابعة.
-          </span>
-        </div>
-
-        {/* أزرار */}
-        <div className="flex gap-3 pt-1">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50"
-          >
-            إلغاء
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={loading}
-            className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading ? <RefreshCw size={14} className="animate-spin" /> : <Lock size={14} />}
-            تأكيد الإغلاق
-          </button>
-        </div>
+        {mode === 'choose' ? (
+          <div className="flex gap-3">
+            <button onClick={onCancel} disabled={loading}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50">
+              إلغاء
+            </button>
+            <button onClick={() => setMode('return')} disabled={loading}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              <ThumbsDown size={14} /> إرجاع للتعديل
+            </button>
+            <button onClick={onApprove} disabled={loading}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
+              اعتماد
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-red-700 flex items-center gap-1.5">
+                <MessageSquare size={14} /> سبب الإرجاع (مطلوب)
+              </label>
+              <textarea
+                value={returnNotes}
+                onChange={e => setReturnNotes(e.target.value)}
+                placeholder="اكتب ملاحظاتك وسبب إرجاع المطالبة..."
+                rows={3}
+                className="w-full px-3 py-2 border border-red-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setMode('choose')} disabled={loading}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50">
+                رجوع
+              </button>
+              <button
+                onClick={() => { if (returnNotes.trim()) onReturn(returnNotes) }}
+                disabled={loading || !returnNotes.trim()}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading ? <RefreshCw size={14} className="animate-spin" /> : <CornerDownLeft size={14} />}
+                إرجاع المطالبة
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -201,7 +292,6 @@ function NewDisbursementModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* التواريخ */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">من تاريخ</label>
@@ -215,7 +305,6 @@ function NewDisbursementModal({
             </div>
           </div>
 
-          {/* حجز التأمينات */}
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-orange-800 flex items-center gap-1.5">
@@ -265,7 +354,6 @@ function NewDisbursementModal({
             </p>
           </div>
 
-          {/* ملاحظات */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-slate-700">ملاحظات (اختياري)</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)}
@@ -295,30 +383,50 @@ function NewDisbursementModal({
 function DisbursementCard({
   disb,
   onRecalc,
-  onClose,
+  onSubmit,
+  onReview,
   onDelete,
   isAdmin,
+  isManager,
 }: {
   disb: Disbursement
   onRecalc: (id: string) => void
-  onClose: (disb: Disbursement) => void
+  onSubmit: (disb: Disbursement) => void
+  onReview: (disb: Disbursement) => void
   onDelete: (id: string) => void
   isAdmin: boolean
+  isManager: boolean
 }) {
+  const canAct = isAdmin || isManager
+
+  const cardClass: Record<string, string> = {
+    closed: 'border-emerald-200 bg-emerald-50/20',
+    pending: 'border-blue-200 bg-blue-50/20',
+    returned: 'border-red-200 bg-red-50/20',
+    draft: 'border-slate-200',
+  }
+
+  const iconMap: Record<string, React.ReactNode> = {
+    closed: <Lock size={18} className="text-emerald-700" />,
+    pending: <Clock size={18} className="text-blue-600" />,
+    returned: <CornerDownLeft size={18} className="text-red-600" />,
+    draft: <FileText size={18} className="text-amber-700" />,
+  }
+
+  const iconBgMap: Record<string, string> = {
+    closed: 'bg-emerald-100',
+    pending: 'bg-blue-100',
+    returned: 'bg-red-100',
+    draft: 'bg-amber-100',
+  }
+
   return (
-    <div className={`bg-white rounded-2xl border p-5 space-y-4 hover:shadow-md transition-shadow ${
-      disb.status === 'closed' ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200'
-    }`}>
+    <div className={`bg-white rounded-2xl border p-5 space-y-4 hover:shadow-md transition-shadow ${cardClass[disb.status] ?? 'border-slate-200'}`}>
       {/* رأس البطاقة */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            disb.status === 'closed' ? 'bg-emerald-100' : 'bg-amber-100'
-          }`}>
-            {disb.status === 'closed'
-              ? <Lock size={18} className="text-emerald-700" />
-              : <FileText size={18} className="text-amber-700" />
-            }
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBgMap[disb.status] ?? 'bg-amber-100'}`}>
+            {iconMap[disb.status] ?? <FileText size={18} className="text-amber-700" />}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -331,42 +439,61 @@ function DisbursementCard({
               <Calendar size={11} />
               أُنشئت {fmtDateTime(disb.created_at)}
               {disb.status === 'closed' && disb.closed_at && (
-                <> · أُغلقت {fmtDateTime(disb.closed_at)}</>
+                <> · اعتُمدت {fmtDateTime(disb.closed_at)}</>
+              )}
+              {disb.status === 'pending' && disb.submitted_at && (
+                <> · قُدِّمت {fmtDateTime(disb.submitted_at)}</>
               )}
             </p>
           </div>
         </div>
-        {/* إجراءات */}
+
+        {/* أزرار الإجراءات */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {disb.status === 'draft' && (
+          {(disb.status === 'draft' || disb.status === 'returned') && canAct && (
             <>
-              <button
-                onClick={() => onRecalc(disb.id)}
-                title="إعادة الحساب"
-                className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-              >
+              <button onClick={() => onRecalc(disb.id)} title="إعادة الحساب"
+                className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                 <RotateCcw size={15} />
               </button>
-              <button
-                onClick={() => onClose(disb)}
-                title="إغلاق نهائي"
-                className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-              >
-                <Lock size={15} />
+              <button onClick={() => onSubmit(disb)} title="تقديم للاعتماد"
+                className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                <Send size={15} />
               </button>
               {isAdmin && (
-                <button
-                  onClick={() => onDelete(disb.id)}
-                  title="حذف"
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                >
+                <button onClick={() => onDelete(disb.id)} title="حذف"
+                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
                   <Trash2 size={15} />
                 </button>
               )}
             </>
           )}
+
+          {disb.status === 'pending' && isAdmin && (
+            <button onClick={() => onReview(disb)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors">
+              <ShieldCheck size={13} /> مراجعة
+            </button>
+          )}
+
+          {disb.status === 'pending' && !isAdmin && (
+            <span className="text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
+              في انتظار الاعتماد
+            </span>
+          )}
         </div>
       </div>
+
+      {/* ملاحظة الإرجاع */}
+      {disb.status === 'returned' && disb.review_notes && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 text-sm text-red-800">
+          <MessageSquare size={14} className="flex-shrink-0 mt-0.5 text-red-500" />
+          <div>
+            <p className="font-semibold text-xs text-red-600 mb-0.5">ملاحظة الإرجاع:</p>
+            <p>{disb.review_notes}</p>
+          </div>
+        </div>
+      )}
 
       {/* ملاحظات */}
       {disb.notes && (
@@ -416,16 +543,17 @@ function DisbursementCard({
 
 // ─── الصفحة الرئيسية ─────────────────────────────────────────
 export default function DisbursementsPage() {
+  const { isAdmin, isManager } = useAuth()
+
   const [disbursements, setDisbursements] = useState<Disbursement[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
-  const [closeTarget, setCloseTarget] = useState<Disbursement | null>(null)
+  const [submitTarget, setSubmitTarget] = useState<Disbursement | null>(null)
+  const [reviewTarget, setReviewTarget] = useState<Disbursement | null>(null)
   const [defaultRetentionPct, setDefaultRetentionPct] = useState(10)
-
-  const isAdmin = true
 
   const load = useCallback(async () => {
     try {
@@ -478,14 +606,46 @@ export default function DisbursementsPage() {
     }
   }
 
-  async function handleConfirmClose() {
-    if (!closeTarget) return
+  async function handleConfirmSubmit() {
+    if (!submitTarget) return
     try {
       setActionLoading(true)
       setError(null)
-      await closeDisbursement(closeTarget.id)
-      setCloseTarget(null)
-      showSuccessMsg('تم إغلاق المطالبة المالية بنجاح 🔒')
+      await submitDisbursement(submitTarget.id)
+      setSubmitTarget(null)
+      showSuccessMsg('تم تقديم المطالبة للاعتماد ✈️')
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'حدث خطأ')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleApprove() {
+    if (!reviewTarget) return
+    try {
+      setActionLoading(true)
+      setError(null)
+      await approveDisbursement(reviewTarget.id)
+      setReviewTarget(null)
+      showSuccessMsg('تم اعتماد المطالبة المالية بنجاح ✅')
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'حدث خطأ')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleReturn(notes: string) {
+    if (!reviewTarget) return
+    try {
+      setActionLoading(true)
+      setError(null)
+      await returnDisbursement(reviewTarget.id, notes)
+      setReviewTarget(null)
+      showSuccessMsg('تم إرجاع المطالبة للتعديل')
       await load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'حدث خطأ')
@@ -495,12 +655,12 @@ export default function DisbursementsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('هل أنت متأكد من حذف هذه المطالبة (المسودة)؟')) return
+    if (!confirm('هل أنت متأكد من حذف هذه المطالبة؟')) return
     try {
       setActionLoading(true)
       setError(null)
       await deleteDisbursement(id)
-      showSuccessMsg('تم حذف المطالبة (المسودة)')
+      showSuccessMsg('تم حذف المطالبة')
       await load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'حدث خطأ')
@@ -509,9 +669,16 @@ export default function DisbursementsPage() {
     }
   }
 
-  // ── ملخص إجمالي ──
-  const closed = disbursements.filter(d => d.status === 'closed')
-  const drafts  = disbursements.filter(d => d.status === 'draft')
+  // ── ترتيب وتصنيف ──
+  const sorted = [...disbursements].sort((a, b) =>
+    (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99)
+  )
+
+  const closed   = disbursements.filter(d => d.status === 'closed')
+  const pending  = disbursements.filter(d => d.status === 'pending')
+  const drafts   = disbursements.filter(d => d.status === 'draft')
+  const returned = disbursements.filter(d => d.status === 'returned')
+
   const totalNetPaid      = closed.reduce((s, d) => s + Number(d.net_payment), 0)
   const totalRetained     = closed.reduce((s, d) => s + Number(d.retention_amount), 0)
   const totalMunicipality = closed.reduce((s, d) => s + Number(d.municipality_amount), 0)
@@ -532,16 +699,18 @@ export default function DisbursementsPage() {
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
-          <button
-            onClick={() => setShowNew(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-colors"
-          >
-            <Plus size={16} /> مطالبة جديدة
-          </button>
+          {(isAdmin || isManager) && (
+            <button
+              onClick={() => setShowNew(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-colors"
+            >
+              <Plus size={16} /> مطالبة جديدة
+            </button>
+          )}
         </div>
       </div>
 
-      {/* رسائل النجاح والخطأ */}
+      {/* رسائل */}
       {success && (
         <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm">
           <CheckCircle size={16} className="flex-shrink-0" />
@@ -593,14 +762,18 @@ export default function DisbursementsPage() {
               <Lock size={18} className="text-slate-600" />
             </div>
             <div>
-              <p className="text-[11px] text-slate-500">مقفلة / مسودة</p>
-              <p className="text-lg font-bold text-slate-900">{closed.length} / {drafts.length}</p>
+              <p className="text-[11px] text-slate-500">مُعتمدة / انتظار / مسودة</p>
+              <p className="text-base font-bold text-slate-900">
+                {closed.length}
+                {pending.length > 0 && <span className="text-blue-600"> / {pending.length}</span>}
+                {' '}/ {drafts.length + returned.length}
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* قائمة الدفعات */}
+      {/* قائمة */}
       {loading ? (
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
@@ -625,30 +798,33 @@ export default function DisbursementsPage() {
           </div>
           <p className="text-slate-700 font-semibold mb-1">لا توجد مطالبات مالية بعد</p>
           <p className="text-sm text-slate-400 mb-5">أنشئ مطالبة جديدة لتتبع صرف الدفعات والتمويل</p>
-          <button
-            onClick={() => setShowNew(true)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-colors"
-          >
-            <Plus size={15} /> إنشاء أول مطالبة
-          </button>
+          {(isAdmin || isManager) && (
+            <button
+              onClick={() => setShowNew(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-colors"
+            >
+              <Plus size={15} /> إنشاء أول مطالبة
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
-          {/* المسودات أولاً ثم المقفلة */}
-          {[...drafts, ...closed].map(disb => (
+          {sorted.map(disb => (
             <DisbursementCard
               key={disb.id}
               disb={disb}
               onRecalc={handleRecalc}
-              onClose={setCloseTarget}
+              onSubmit={setSubmitTarget}
+              onReview={setReviewTarget}
               onDelete={handleDelete}
               isAdmin={isAdmin}
+              isManager={isManager}
             />
           ))}
         </div>
       )}
 
-      {/* مودال دفعة جديدة */}
+      {/* مودالات */}
       {showNew && (
         <NewDisbursementModal
           onSubmit={handleCreate}
@@ -657,13 +833,20 @@ export default function DisbursementsPage() {
           defaultRetentionPct={defaultRetentionPct}
         />
       )}
-
-      {/* مودال تأكيد الإغلاق */}
-      {closeTarget && (
-        <CloseConfirmModal
-          disb={closeTarget}
-          onConfirm={handleConfirmClose}
-          onCancel={() => setCloseTarget(null)}
+      {submitTarget && (
+        <SubmitConfirmModal
+          disb={submitTarget}
+          onConfirm={handleConfirmSubmit}
+          onCancel={() => setSubmitTarget(null)}
+          loading={actionLoading}
+        />
+      )}
+      {reviewTarget && (
+        <AdminReviewModal
+          disb={reviewTarget}
+          onApprove={handleApprove}
+          onReturn={handleReturn}
+          onCancel={() => setReviewTarget(null)}
           loading={actionLoading}
         />
       )}

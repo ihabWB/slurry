@@ -943,24 +943,8 @@ export async function closeDisbursement(id: string): Promise<Disbursement> {
     .eq('id', id)
     .single()
   if (fetchErr) throw fetchErr
-  if (current.status === 'closed') throw new Error('الدفعة مقفلة مسبقاً')
-
-  // ── تحقق من التسلسل: يجب إغلاق الفترات الأقدم أولاً ──
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: olderDrafts, error: seqErr } = await (supabase as any)
-    .from('disbursements')
-    .select('id, period_from, period_to')
-    .eq('status', 'draft')
-    .lt('period_from', current.period_from)
-    .neq('id', id)
-    .limit(1)
-  if (seqErr) throw seqErr
-  if (olderDrafts && olderDrafts.length > 0) {
-    const d = olderDrafts[0]
-    throw new Error(
-      `يوجد مسودة غير مغلقة لفترة سابقة (${d.period_from} → ${d.period_to}) — يجب إغلاقها أولاً`
-    )
-  }
+  if (current.status === 'closed') throw new Error('المطالبة مقفلة مسبقاً')
+  if (current.status !== 'pending') throw new Error('يجب تقديم المطالبة للاعتماد أولاً قبل الإغلاق')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
@@ -977,7 +961,7 @@ export async function closeDisbursement(id: string): Promise<Disbursement> {
   return data as Disbursement
 }
 
-/** حذف دفعة (فقط المسودات) */
+/** حذف مطالبة (فقط المسودات والمرجعة) */
 export async function deleteDisbursement(id: string): Promise<void> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -987,9 +971,80 @@ export async function deleteDisbursement(id: string): Promise<void> {
     .eq('id', id)
     .single()
   if (fetchErr) throw fetchErr
-  if (current.status === 'closed') throw new Error('لا يمكن حذف دفعة مقفلة')
+  if (current.status === 'closed') throw new Error('لا يمكن حذف مطالبة مغلقة')
+  if (current.status === 'pending') throw new Error('لا يمكن حذف مطالبة مقدمة للاعتماد — اسحبها أولاً')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('disbursements').delete().eq('id', id)
   if (error) throw error
+}
+
+/** تقديم مطالبة للاعتماد (من draft إلى pending) */
+export async function submitDisbursement(id: string): Promise<Disbursement> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: { user } } = await (supabase as any).auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: current, error: fetchErr } = await (supabase as any)
+    .from('disbursements').select('status').eq('id', id).single()
+  if (fetchErr) throw fetchErr
+  if (current.status !== 'draft' && current.status !== 'returned')
+    throw new Error('يمكن تقديم المسودات فقط')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .update({ status: 'pending', submitted_at: new Date().toISOString(), submitted_by: user?.id ?? null, review_notes: null })
+    .eq('id', id).select().single()
+  if (error) throw error
+  return data as Disbursement
+}
+
+/** اعتماد المطالبة نهائياً (من طرف الادمن) */
+export async function approveDisbursement(id: string): Promise<Disbursement> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: { user } } = await (supabase as any).auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: current, error: fetchErr } = await (supabase as any)
+    .from('disbursements').select('status').eq('id', id).single()
+  if (fetchErr) throw fetchErr
+  if (current.status !== 'pending') throw new Error('يمكن اعتماد المطالبات المقدمة فقط')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .update({
+      status: 'closed',
+      closed_at: new Date().toISOString(),
+      closed_by: user?.id ?? null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user?.id ?? null,
+    })
+    .eq('id', id).select().single()
+  if (error) throw error
+  return data as Disbursement
+}
+
+/** إرجاع المطالبة للتعديل (من طرف الادمن مع ملاحظة) */
+export async function returnDisbursement(id: string, review_notes: string): Promise<Disbursement> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: { user } } = await (supabase as any).auth.getUser()
+  if (!review_notes.trim()) throw new Error('يجب كتابة ملاحظة سبب الإرجاع')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: current, error: fetchErr } = await (supabase as any)
+    .from('disbursements').select('status').eq('id', id).single()
+  if (fetchErr) throw fetchErr
+  if (current.status !== 'pending') throw new Error('يمكن إرجاع المطالبات المقدمة فقط')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .update({
+      status: 'returned',
+      review_notes,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user?.id ?? null,
+    })
+    .eq('id', id).select().single()
+  if (error) throw error
+  return data as Disbursement
 }

@@ -176,7 +176,12 @@ export interface Database {
           municipality_amount: number
           net_payment: number
           notes: string | null
-          status: 'draft' | 'closed'
+          status: 'draft' | 'pending' | 'closed' | 'returned'
+          submitted_at: string | null
+          submitted_by: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          review_notes: string | null
           closed_at: string | null
           closed_by: string | null
           created_at: string
@@ -196,7 +201,12 @@ export interface Database {
           municipality_amount?: number
           net_payment?: number
           notes?: string | null
-          status?: 'draft' | 'closed'
+          status?: 'draft' | 'pending' | 'closed' | 'returned'
+          submitted_at?: string | null
+          submitted_by?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          review_notes?: string | null
           closed_at?: string | null
           closed_by?: string | null
           created_at?: string
@@ -213,7 +223,12 @@ export interface Database {
           municipality_amount?: number
           net_payment?: number
           notes?: string | null
-          status?: 'draft' | 'closed'
+          status?: 'draft' | 'pending' | 'closed' | 'returned'
+          submitted_at?: string | null
+          submitted_by?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          review_notes?: string | null
           closed_at?: string | null
           closed_by?: string | null
         }

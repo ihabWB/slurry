@@ -2,10 +2,11 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutDashboard, Factory, Truck, Wallet, BarChart2, MapPin, Users, LogOut, Menu, X, Droplets, ChevronLeft, Languages, Settings, Receipt } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useLang } from '@/context/LangContext'
 import { translations as T, t } from '@/lib/i18n'
+import { getDisbursements } from '@/lib/api'
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -13,6 +14,14 @@ export default function Sidebar() {
   const [open, setOpen] = useState(false)
   const { user, signOut, isAdmin, canEdit } = useAuth()
   const { lang, setLang, dir } = useLang()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    if (!isAdmin) return
+    getDisbursements()
+      .then(data => setPendingCount(data.filter(d => d.status === 'pending').length))
+      .catch(() => {})
+  }, [isAdmin])
 
   async function handleSignOut() {
     await signOut()
@@ -81,7 +90,14 @@ export default function Sidebar() {
                       }`}>
                       <Icon size={16} />
                       <span>{label}</span>
-                      {active && <ChevronLeft size={14} className={`${dir === 'rtl' ? 'mr-auto' : 'ml-auto rotate-180'} opacity-60`} />}
+                      {href === '/disbursements' && isAdmin && pendingCount > 0 && (
+                        <span className="mr-auto min-w-[18px] h-[18px] bg-orange-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                          {pendingCount}
+                        </span>
+                      )}
+                      {active && !(href === '/disbursements' && isAdmin && pendingCount > 0) && (
+                        <ChevronLeft size={14} className={`${dir === 'rtl' ? 'mr-auto' : 'ml-auto rotate-180'} opacity-60`} />
+                      )}
                     </Link>
                   )
                 })}
