@@ -203,25 +203,6 @@ export default function DashboardPage() {
                 : <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-lg">✓ منتظمة</span>
               }
             />
-            {/* المحصّل */}
-            <KpiCard
-              label="إجمالي المحصّل"
-              value={Math.round(stats.totalCollected)}
-              suffix="₪"
-              icon={Wallet}
-              bg="bg-emerald-50" text="text-emerald-600" border="border-emerald-100"
-              sub={`${collectPct}% من مساهمات المصانع`}
-            />
-            {/* الذمم */}
-            <KpiCard
-              label="ذمم المصانع"
-              value={Math.round(stats.totalDebt)}
-              suffix="₪"
-              icon={AlertTriangle}
-              bg="bg-red-50" text="text-red-500" border="border-red-100"
-              warn={true}
-              sub={`${stats.overdueFactories} مصنع لديه رصيد مستحق`}
-            />
           </>}
         </div>
       </div>

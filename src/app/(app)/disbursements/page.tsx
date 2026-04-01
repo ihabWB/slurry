@@ -669,10 +669,33 @@ function DisbursementCard({
           <p className="text-[11px] text-slate-500 mb-1">إجمالي التكلفة</p>
           <p className="text-sm font-bold text-slate-800">{fmt(disb.total_trips_cost)}</p>
         </div>
-        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center col-span-2">
           <p className="text-[11px] text-emerald-600 mb-1 font-medium">إيرادات المصانع 🏭</p>
-          <p className="text-sm font-bold text-emerald-700">+ {fmt(disb.total_factory_share)}</p>
-          <p className="text-[10px] text-emerald-500 mt-0.5">رصيد مستقل للمشروع</p>
+          {/* شريط محصّل / غير محصّل */}
+          {(() => {
+            const total = Number(disb.total_factory_share)
+            const collected = Number(disb.factory_share_collected)
+            const uncollected = total - collected
+            const pct = total > 0 ? Math.round(collected / total * 100) : 0
+            return (
+              <>
+                <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2 mx-1">
+                  <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="text-center">
+                    <p className="text-[10px] text-emerald-500">✅ محصّل</p>
+                    <p className="text-sm font-bold text-emerald-700">{fmt(collected)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-amber-500">⏳ ذمة</p>
+                    <p className="text-sm font-bold text-amber-600">{fmt(uncollected)}</p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-emerald-400 mt-1">إجمالي: {fmt(total)} — رصيد مستقل</p>
+              </>
+            )
+          })()}
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
           <p className="text-[11px] text-slate-500 mb-1">المطالبة من التمويل</p>

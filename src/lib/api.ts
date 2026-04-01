@@ -846,24 +846,28 @@ async function calcDisbursementAmounts(from: string, to: string) {
     .from('settings').select('value').eq('key', 'factory_contribution').single()
   const contributionPerTrip = Number(setting?.value ?? 50)
 
+  // جلب كل النقلات في الفترة مع حالة الدفع
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('trips')
-    .select('trip_cost')
+    .select('trip_cost, payment_status')
     .gte('trip_date', from)
     .lte('trip_date', to)
   if (error) throw error
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows: any[] = data ?? []
-  const trips_count         = rows.length
+  const trips_count              = rows.length
+  const paid_count               = rows.filter((r: any) => r.payment_status === 'paid').length
   // تكلفة النقلات من جدول التسعيرة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const total_trips_cost    = rows.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
-  // مساهمة المصانع: رصيد مستقل للمشروع (لا تُخصم من التكلفة)
-  const total_factory_share = trips_count * contributionPerTrip
+  const total_trips_cost         = rows.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
+  // إجمالي مساهمات المصانع (كل النقلات) — رصيد مستقل للمشروع
+  const total_factory_share      = trips_count * contributionPerTrip
+  // المحصّل فعلياً (النقلات المدفوعة فقط) — الإيراد الفعلي
+  const factory_share_collected  = paid_count  * contributionPerTrip
   // مبلغ التمويل المطلوب = تكلفة النقلات كاملة
-  const disbursed_amount    = total_trips_cost
-  return { trips_count, total_trips_cost, total_factory_share, disbursed_amount }
+  const disbursed_amount         = total_trips_cost
+  return { trips_count, total_trips_cost, total_factory_share, factory_share_collected, disbursed_amount }
 }
 
 const MUNICIPALITY_PCT = 14 // نسبة ثابتة لبلدية الخليل
@@ -1043,7 +1047,7 @@ export async function updateDisbursement(
   // نحسب المبالغ من الفترة الجديدة
   const { data: trips } = await (supabase as any)
     .from('trips')
-    .select('trip_cost')
+    .select('trip_cost, payment_status')
     .gte('trip_date', newFrom)
     .lte('trip_date', newTo)
 
@@ -1052,9 +1056,11 @@ export async function updateDisbursement(
     .from('settings').select('value').eq('key', 'factory_contribution').single()
   const contributionPerTrip = Number(contribSetting?.value ?? 50)
 
-  const tripsList = (trips ?? []) as { trip_cost: number }[]
-  const total_trips_cost    = tripsList.reduce((s: number, t: { trip_cost: number }) => s + Number(t.trip_cost ?? 0), 0)
-  const total_factory_share = tripsList.length * contributionPerTrip
+  const tripsList = (trips ?? []) as { trip_cost: number; payment_status: string }[]
+  const paid_count              = tripsList.filter(t => t.payment_status === 'paid').length
+  const total_trips_cost        = tripsList.reduce((s: number, t) => s + Number(t.trip_cost ?? 0), 0)
+  const total_factory_share     = tripsList.length * contributionPerTrip
+  const factory_share_collected = paid_count * contributionPerTrip
   // disbursed_amount = تكلفة النقلات كاملة
   const disbursed_amount    = total_trips_cost
   const municipality_amount = disbursed_amount * 0.14
@@ -1074,6 +1080,7 @@ export async function updateDisbursement(
       trips_count: tripsList.length,
       total_trips_cost,
       total_factory_share,
+      factory_share_collected,
       disbursed_amount,
       municipality_amount,
       retention_amount,

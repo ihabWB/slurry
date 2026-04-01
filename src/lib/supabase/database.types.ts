@@ -169,6 +169,7 @@ export interface Database {
           trips_count: number
           total_trips_cost: number
           total_factory_share: number
+          factory_share_collected: number
           disbursed_amount: number
           retention_pct: number
           retention_amount: number
@@ -194,6 +195,7 @@ export interface Database {
           trips_count?: number
           total_trips_cost?: number
           total_factory_share?: number
+          factory_share_collected?: number
           disbursed_amount?: number
           retention_pct?: number
           retention_amount?: number
@@ -209,13 +211,12 @@ export interface Database {
           review_notes?: string | null
           closed_at?: string | null
           closed_by?: string | null
-          created_at?: string
-          created_by?: string | null
         }
         Update: {
           trips_count?: number
           total_trips_cost?: number
           total_factory_share?: number
+          factory_share_collected?: number
           disbursed_amount?: number
           retention_pct?: number
           retention_amount?: number
