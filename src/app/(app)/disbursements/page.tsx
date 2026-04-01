@@ -10,12 +10,13 @@ import {
   submitDisbursement,
   approveDisbursement,
   returnDisbursement,
+  getUncoveredTripsInfo,
 } from '@/lib/api'
 import type { Disbursement } from '@/lib/supabase/database.types'
 import {
   Plus, RefreshCw, Lock, Trash2, RotateCcw, AlertTriangle, CheckCircle,
   Calendar, Banknote, FileText, X, ShieldCheck,
-  Send, ThumbsUp, ThumbsDown, MessageSquare, Clock, CornerDownLeft, Pencil,
+  Send, ThumbsUp, ThumbsDown, MessageSquare, Clock, CornerDownLeft, Pencil, Zap, TrendingUp,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { arSA } from 'date-fns/locale'
@@ -368,16 +369,22 @@ function NewDisbursementModal({
   onCancel,
   loading,
   defaultRetentionPct,
+  suggestedFrom,
+  suggestedTo,
+  uncoveredCount,
 }: {
   onSubmit: (from: string, to: string, notes: string, retentionPct: number, retentionAmountOverride?: number) => void
   onCancel: () => void
   loading: boolean
   defaultRetentionPct: number
+  suggestedFrom?: string
+  suggestedTo?: string
+  uncoveredCount?: number
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = today.slice(0, 7) + '-01'
-  const [from, setFrom] = useState(firstOfMonth)
-  const [to, setTo] = useState(today)
+  const [from, setFrom] = useState(suggestedFrom ?? firstOfMonth)
+  const [to, setTo] = useState(suggestedTo ?? today)
   const [notes, setNotes] = useState('')
   const [retentionPct, setRetentionPct] = useState(String(defaultRetentionPct))
   const [retentionAmountManual, setRetentionAmountManual] = useState('')
@@ -413,6 +420,27 @@ function NewDisbursementModal({
             <X size={18} />
           </button>
         </div>
+
+        {suggestedFrom && uncoveredCount && uncoveredCount > 0 && (
+          <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-3 text-sm">
+            <Zap size={15} className="text-blue-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-blue-800">
+                {uncoveredCount.toLocaleString('ar-SA')} نقلة غير مشمولة
+              </p>
+              <p className="text-blue-600 text-xs mt-0.5">
+                أقدم نقلة بتاريخ {fmtDate(suggestedFrom)} — تم تعبئة الفترة تلقائياً
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setFrom(suggestedFrom); setTo(suggestedTo ?? today) }}
+              className="text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition-colors flex-shrink-0"
+            >
+              تطبيق
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -684,13 +712,15 @@ export default function DisbursementsPage() {
   const [reviewTarget, setReviewTarget] = useState<Disbursement | null>(null)
   const [editTarget, setEditTarget] = useState<Disbursement | null>(null)
   const [defaultRetentionPct, setDefaultRetentionPct] = useState(10)
+  const [uncoveredInfo, setUncoveredInfo] = useState<{ earliestDate: string | null; latestDate: string | null; count: number } | null>(null)
 
   const load = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const [data, settingsData] = await Promise.all([getDisbursements(), getSettings()])
+      const [data, settingsData, uncovered] = await Promise.all([getDisbursements(), getSettings(), getUncoveredTripsInfo()])
       setDisbursements(data)
+      setUncoveredInfo(uncovered)
       const retPct = settingsData.find(s => s.key === 'retention_pct')?.value
       if (retPct) setDefaultRetentionPct(parseFloat(retPct))
     } catch (e: unknown) {
@@ -873,6 +903,29 @@ export default function DisbursementsPage() {
         </div>
       )}
 
+      {/* بانر النقلات غير المشمولة */}
+      {!loading && (isAdmin || isManager) && uncoveredInfo && uncoveredInfo.count > 0 && (
+        <div className="flex items-center gap-3 bg-gradient-to-l from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-4 py-3.5">
+          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+            <TrendingUp size={18} className="text-blue-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-blue-900 text-sm">
+              {uncoveredInfo.count.toLocaleString('ar-SA')} نقلة غير مشمولة بأي مطالبة
+            </p>
+            <p className="text-xs text-blue-600 mt-0.5">
+              من {fmtDate(uncoveredInfo.earliestDate!)} حتى {fmtDate(uncoveredInfo.latestDate!)}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowNew(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-colors flex-shrink-0"
+          >
+            <Zap size={13} /> إنشاء مطالبة لهذه الفترة
+          </button>
+        </div>
+      )}
+
       {/* بطاقات الملخص */}
       {!loading && disbursements.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -978,6 +1031,9 @@ export default function DisbursementsPage() {
           onCancel={() => setShowNew(false)}
           loading={actionLoading}
           defaultRetentionPct={defaultRetentionPct}
+          suggestedFrom={uncoveredInfo?.earliestDate ?? undefined}
+          suggestedTo={uncoveredInfo?.latestDate ?? undefined}
+          uncoveredCount={uncoveredInfo?.count}
         />
       )}
       {editTarget && (

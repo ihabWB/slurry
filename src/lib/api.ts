@@ -781,6 +781,48 @@ export async function updateSetting(key: string, value: string): Promise<void> {
 
 // ─── DISBURSEMENTS ────────────────────────────────────────────
 
+/**
+ * جلب معلومات النقلات غير المشمولة بأي مطالبة (draft/pending/closed).
+ * تُعيد: أقدم تاريخ نقلة غير مشمولة، وأحدث تاريخ، وعدد النقلات.
+ */
+export async function getUncoveredTripsInfo(): Promise<{
+  earliestDate: string | null
+  latestDate: string | null
+  count: number
+}> {
+  const supabase = createClient()
+
+  // جلب كل المطالبات (بغض النظر عن الحالة)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: disbursements } = await (supabase as any)
+    .from('disbursements')
+    .select('period_from, period_to')
+
+  // جلب كل النقلات (trip_date فقط)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: trips, error } = await (supabase as any)
+    .from('trips')
+    .select('trip_date')
+    .order('trip_date', { ascending: true })
+  if (error) throw error
+
+  const covered = (disbursements ?? []) as { period_from: string; period_to: string }[]
+
+  // فلترة النقلات غير المشمولة بأي مطالبة
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const uncovered = ((trips ?? []) as { trip_date: string }[]).filter(t =>
+    !covered.some(d => t.trip_date >= d.period_from && t.trip_date <= d.period_to)
+  )
+
+  if (uncovered.length === 0) return { earliestDate: null, latestDate: null, count: 0 }
+
+  return {
+    earliestDate: uncovered[0].trip_date,
+    latestDate: uncovered[uncovered.length - 1].trip_date,
+    count: uncovered.length,
+  }
+}
+
 export async function getDisbursements(): Promise<Disbursement[]> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
