@@ -961,6 +961,67 @@ export async function closeDisbursement(id: string): Promise<Disbursement> {
   return data as Disbursement
 }
 
+/** تعديل بيانات مطالبة (draft أو returned فقط) */
+export async function updateDisbursement(
+  id: string,
+  fields: { period_from?: string; period_to?: string; notes?: string; retention_pct?: number; retention_amount_override?: number }
+): Promise<Disbursement> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: current, error: fetchErr } = await (supabase as any)
+    .from('disbursements')
+    .select('status, period_from, period_to, retention_pct, disbursed_amount')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw fetchErr
+  if (current.status !== 'draft' && current.status !== 'returned')
+    throw new Error('لا يمكن تعديل مطالبة مقدمة أو مُعتمدة')
+
+  // إعادة الحساب إذا تغيرت الفترة أو النسبة
+  const newFrom = fields.period_from ?? current.period_from
+  const newTo   = fields.period_to   ?? current.period_to
+  const newPct  = fields.retention_pct ?? Number(current.retention_pct ?? 10)
+
+  // نحسب المبالغ من الفترة الجديدة
+  const { data: trips } = await (supabase as any)
+    .from('trips')
+    .select('cost, factory_share')
+    .gte('trip_date', newFrom)
+    .lte('trip_date', newTo)
+
+  const tripsList = (trips ?? []) as { cost: number; factory_share: number }[]
+  const total_trips_cost    = tripsList.reduce((s: number, t: { cost: number }) => s + Number(t.cost), 0)
+  const total_factory_share = tripsList.reduce((s: number, t: { factory_share: number }) => s + Number(t.factory_share), 0)
+  const disbursed_amount    = total_trips_cost - total_factory_share
+  const municipality_amount = disbursed_amount * 0.14
+  const retention_amount    = fields.retention_amount_override !== undefined
+    ? fields.retention_amount_override
+    : disbursed_amount * (newPct / 100)
+  const net_payment = disbursed_amount + municipality_amount - retention_amount
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('disbursements')
+    .update({
+      period_from: newFrom,
+      period_to: newTo,
+      notes: fields.notes !== undefined ? fields.notes : undefined,
+      retention_pct: newPct,
+      trips_count: tripsList.length,
+      total_trips_cost,
+      total_factory_share,
+      disbursed_amount,
+      municipality_amount,
+      retention_amount,
+      net_payment,
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data as Disbursement
+}
+
 /** حذف مطالبة (فقط المسودات والمرجعة) */
 export async function deleteDisbursement(id: string): Promise<void> {
   const supabase = createClient()

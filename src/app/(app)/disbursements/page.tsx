@@ -5,6 +5,7 @@ import {
   createDisbursement,
   recalcDisbursement,
   deleteDisbursement,
+  updateDisbursement,
   getSettings,
   submitDisbursement,
   approveDisbursement,
@@ -14,7 +15,7 @@ import type { Disbursement } from '@/lib/supabase/database.types'
 import {
   Plus, RefreshCw, Lock, Trash2, RotateCcw, AlertTriangle, CheckCircle,
   Calendar, Banknote, FileText, X, ShieldCheck,
-  Send, ThumbsUp, ThumbsDown, MessageSquare, Clock, CornerDownLeft,
+  Send, ThumbsUp, ThumbsDown, MessageSquare, Clock, CornerDownLeft, Pencil,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { arSA } from 'date-fns/locale'
@@ -122,6 +123,128 @@ function SubmitConfirmModal({
             تقديم للاعتماد
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── مودال تعديل المطالبة ───────────────────────────────────
+function EditDisbursementModal({
+  disb,
+  onSave,
+  onCancel,
+  loading,
+}: {
+  disb: Disbursement
+  onSave: (fields: { period_from: string; period_to: string; notes: string; retention_pct: number; retention_amount_override?: number }) => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  const [from, setFrom] = useState(disb.period_from)
+  const [to, setTo] = useState(disb.period_to)
+  const [notes, setNotes] = useState(disb.notes ?? '')
+  const [retentionPct, setRetentionPct] = useState(String(disb.retention_pct ?? 10))
+  const [retentionAmountManual, setRetentionAmountManual] = useState('')
+  const [manualMode, setManualMode] = useState(false)
+
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!from || !to) return
+    if (from > to) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return }
+    const pct = parseFloat(retentionPct)
+    if (isNaN(pct) || pct < 0 || pct > 100) { alert('نسبة الحجز يجب أن تكون بين 0 و 100'); return }
+    const override = manualMode && retentionAmountManual !== '' ? parseFloat(retentionAmountManual) : undefined
+    onSave({ period_from: from, period_to: to, notes, retention_pct: pct, retention_amount_override: override })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Pencil size={20} className="text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">تعديل المطالبة</h2>
+              <p className="text-sm text-slate-500">سيتم إعادة حساب المبالغ تلقائياً</p>
+            </div>
+          </div>
+          <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSave} className="space-y-4">
+          {/* التواريخ */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">من تاريخ</label>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)} required
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">إلى تاريخ</label>
+              <input type="date" value={to} onChange={e => setTo(e.target.value)} required
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+          </div>
+
+          {/* حجز التأمينات */}
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-orange-800 flex items-center gap-1.5">
+                <ShieldCheck size={14} /> حجز التأمينات
+              </label>
+              <button type="button"
+                onClick={() => { setManualMode(!manualMode); setRetentionAmountManual('') }}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                  manualMode ? 'bg-orange-200 text-orange-800 border-orange-300' : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-100'
+                }`}>
+                {manualMode ? '● مبلغ يدوي' : 'إدخال مبلغ يدوياً'}
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-1">
+                <label className="text-xs text-orange-700">النسبة (%)</label>
+                <input type="number" min={0} max={100} step={0.5}
+                  value={retentionPct} onChange={e => setRetentionPct(e.target.value)}
+                  className="w-full px-3 py-2 border border-orange-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" dir="ltr" />
+              </div>
+              {manualMode && (
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-orange-700">مبلغ الحجز (₪) — يدوي</label>
+                  <input type="number" min={0} step={0.01}
+                    value={retentionAmountManual} onChange={e => setRetentionAmountManual(e.target.value)}
+                    placeholder="سيحسب تلقائياً..."
+                    className="w-full px-3 py-2 border border-orange-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" dir="ltr" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ملاحظات */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-700">ملاحظات (اختياري)</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="أي ملاحظات إضافية..."
+              rows={2}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none" />
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onCancel} disabled={loading}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50">
+              إلغاء
+            </button>
+            <button type="submit" disabled={loading || !from || !to}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Pencil size={14} />}
+              حفظ التعديلات
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -385,6 +508,7 @@ function DisbursementCard({
   onRecalc,
   onSubmit,
   onReview,
+  onEdit,
   onDelete,
   isAdmin,
   isManager,
@@ -393,6 +517,7 @@ function DisbursementCard({
   onRecalc: (id: string) => void
   onSubmit: (disb: Disbursement) => void
   onReview: (disb: Disbursement) => void
+  onEdit: (disb: Disbursement) => void
   onDelete: (id: string) => void
   isAdmin: boolean
   isManager: boolean
@@ -456,11 +581,15 @@ function DisbursementCard({
                 className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                 <RotateCcw size={15} />
               </button>
+              <button onClick={() => onEdit(disb)} title="تعديل"
+                className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                <Pencil size={15} />
+              </button>
               <button onClick={() => onSubmit(disb)} title="تقديم للاعتماد"
                 className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                 <Send size={15} />
               </button>
-              {isAdmin && (
+              {(isAdmin || isManager) && (
                 <button onClick={() => onDelete(disb.id)} title="حذف"
                   className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
                   <Trash2 size={15} />
@@ -553,6 +682,7 @@ export default function DisbursementsPage() {
   const [showNew, setShowNew] = useState(false)
   const [submitTarget, setSubmitTarget] = useState<Disbursement | null>(null)
   const [reviewTarget, setReviewTarget] = useState<Disbursement | null>(null)
+  const [editTarget, setEditTarget] = useState<Disbursement | null>(null)
   const [defaultRetentionPct, setDefaultRetentionPct] = useState(10)
 
   const load = useCallback(async () => {
@@ -598,6 +728,22 @@ export default function DisbursementsPage() {
       setError(null)
       await recalcDisbursement(id)
       showSuccessMsg('تم إعادة الحساب بنجاح')
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'حدث خطأ')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleUpdate(fields: { period_from: string; period_to: string; notes: string; retention_pct: number; retention_amount_override?: number }) {
+    if (!editTarget) return
+    try {
+      setActionLoading(true)
+      setError(null)
+      await updateDisbursement(editTarget.id, fields)
+      setEditTarget(null)
+      showSuccessMsg('تم تعديل المطالبة بنجاح ✏️')
       await load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'حدث خطأ')
@@ -816,6 +962,7 @@ export default function DisbursementsPage() {
               onRecalc={handleRecalc}
               onSubmit={setSubmitTarget}
               onReview={setReviewTarget}
+              onEdit={setEditTarget}
               onDelete={handleDelete}
               isAdmin={isAdmin}
               isManager={isManager}
@@ -831,6 +978,14 @@ export default function DisbursementsPage() {
           onCancel={() => setShowNew(false)}
           loading={actionLoading}
           defaultRetentionPct={defaultRetentionPct}
+        />
+      )}
+      {editTarget && (
+        <EditDisbursementModal
+          disb={editTarget}
+          onSave={handleUpdate}
+          onCancel={() => setEditTarget(null)}
+          loading={actionLoading}
         />
       )}
       {submitTarget && (
