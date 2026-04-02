@@ -185,135 +185,174 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* ── الصف الأول: التشغيلي ───────────────────────────── */}
-      <div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-0.5">📋 النشاط التشغيلي</p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {loading ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />) : <>
-            {/* إجمالي النقلات */}
-            <KpiCard
-              label="إجمالي النقلات"
-              value={stats.totalTrips}
-              suffix="نقلة"
-              icon={Truck}
-              bg="bg-blue-50" text="text-blue-600" border="border-blue-100"
-              sub={`اليوم: ${stats.todayTripsCount} نقلة`}
-              badge={
-                <div className="flex gap-1 flex-wrap justify-end">
-                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-lg font-semibold">✓ {stats.paidTripsCount}</span>
-                  <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-lg font-semibold">◷ {stats.creditTripsCount}</span>
-                </div>
-              }
-            />
-            {/* نقلات هذا الشهر */}
-            <KpiCard
-              label="نقلات هذا الشهر"
-              value={stats.monthTripsCount}
-              suffix="نقلة"
-              icon={Truck}
-              bg="bg-sky-50" text="text-sky-600" border="border-sky-100"
-              sub={`متوسط: ${stats.avgTripsPerFactory} نقلة / مصنع`}
-            />
-            {/* المصانع */}
-            <KpiCard
-              label="إجمالي المصانع"
-              value={stats.totalFactories}
-              suffix="مصنع"
-              icon={Factory}
-              bg="bg-violet-50" text="text-violet-600" border="border-violet-100"
-              sub={`نشطة (لها نقلات): ${stats.activeFactoriesTotal}`}
-              badge={stats.overdueFactories > 0
-                ? <span className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-lg">⚠ {stats.overdueFactories} متأخرة</span>
-                : <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-lg">✓ منتظمة</span>
-              }
-            />
-            {/* مصانع نشطة هذا الشهر */}
-            <KpiCard
-              label="مصانع نشطة هذا الشهر"
-              value={stats.activeFactoriesThisMonth}
-              suffix="مصنع"
-              icon={Factory}
-              bg="bg-fuchsia-50" text="text-fuchsia-600" border="border-fuchsia-100"
-              sub={`من أصل ${stats.totalFactories} مسجلة`}
-            />
-          </>}
+      {/* ── بطاقة النشاط التشغيلي ────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
+          <span className="text-base">📋</span>
+          <h2 className="font-semibold text-slate-700 text-sm">النشاط التشغيلي</h2>
         </div>
+        {loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white p-5"><SkeletonCard /></div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-slate-100">
+
+            {/* إجمالي النقلات */}
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <Truck size={15} className="text-blue-600" />
+                </div>
+                <p className="text-xs text-slate-500">إجمالي النقلات</p>
+              </div>
+              <p className="text-3xl font-bold text-slate-800 mt-2">
+                {stats.totalTrips.toLocaleString()}
+                <span className="text-sm font-normal text-slate-400 ms-1">نقلة</span>
+              </p>
+              <div className="flex gap-1.5 mt-2.5">
+                <span className="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-semibold">✓ {stats.paidTripsCount} مدفوع</span>
+                <span className="text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg font-semibold">◷ {stats.creditTripsCount} ذمة</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">اليوم: {stats.todayTripsCount} نقلة</p>
+            </div>
+
+            {/* نقلات هذا الشهر */}
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
+                  <Truck size={15} className="text-sky-600" />
+                </div>
+                <p className="text-xs text-slate-500">نقلات هذا الشهر</p>
+              </div>
+              <p className="text-3xl font-bold text-slate-800 mt-2">
+                {stats.monthTripsCount.toLocaleString()}
+                <span className="text-sm font-normal text-slate-400 ms-1">نقلة</span>
+              </p>
+              <p className="text-[11px] text-slate-400 mt-2.5">متوسط: {stats.avgTripsPerFactory} نقلة / مصنع</p>
+            </div>
+
+            {/* إجمالي المصانع */}
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
+                    <Factory size={15} className="text-violet-600" />
+                  </div>
+                  <p className="text-xs text-slate-500">إجمالي المصانع</p>
+                </div>
+                {stats.overdueFactories > 0
+                  ? <span className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-lg">⚠ {stats.overdueFactories} متأخرة</span>
+                  : <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-lg">✓ منتظمة</span>}
+              </div>
+              <p className="text-3xl font-bold text-slate-800 mt-2">
+                {stats.totalFactories.toLocaleString()}
+                <span className="text-sm font-normal text-slate-400 ms-1">مصنع</span>
+              </p>
+              <p className="text-[11px] text-slate-400 mt-2.5">نشطة (لها نقلات): {stats.activeFactoriesTotal}</p>
+            </div>
+
+            {/* مصانع نشطة هذا الشهر */}
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-fuchsia-50 flex items-center justify-center flex-shrink-0">
+                  <Factory size={15} className="text-fuchsia-600" />
+                </div>
+                <p className="text-xs text-slate-500">مصانع نشطة هذا الشهر</p>
+              </div>
+              <p className="text-3xl font-bold text-slate-800 mt-2">
+                {stats.activeFactoriesThisMonth.toLocaleString()}
+                <span className="text-sm font-normal text-slate-400 ms-1">مصنع</span>
+              </p>
+              <p className="text-[11px] text-slate-400 mt-2.5">من أصل {stats.totalFactories} مسجلة</p>
+            </div>
+
+          </div>
+        )}
       </div>
 
-      {/* ── بطاقة الأحجام ──────────────────────────────── */}
-      <div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-0.5">🚛 إحصائيات الأحجام</p>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {loading ? [...Array(3)].map((_, i) => <SkeletonCard key={i} />) : <>
-
-            {/* إجمالي الحجم */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-md transition-shadow">
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                  <Truck size={20} className="text-slate-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">إجمالي الحجم المنقول</p>
-                  <p className="text-2xl font-bold text-slate-800">
-                    {stats.totalVolume.toLocaleString()}
-                    <span className="text-sm font-normal text-slate-400 ms-1">م³</span>
-                  </p>
-                </div>
-              </div>
-              <div className="border-t border-slate-100 pt-3 flex justify-between text-xs text-slate-500">
-                <span>هذا الشهر</span>
-                <span className="font-semibold text-slate-700">{stats.monthVolume.toLocaleString()} م³</span>
-              </div>
-            </div>
-
-            {/* سائل */}
-            <div className="bg-white rounded-2xl border border-blue-100 p-5 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xl">💧</span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">ربو سائل</p>
-                    <p className="text-2xl font-bold text-blue-700">
-                      {stats.liquidVolume.toLocaleString()}
-                      <span className="text-sm font-normal text-slate-400 ms-1">م³</span>
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[11px] bg-blue-100 text-blue-700 px-2 py-1 rounded-lg font-semibold">{stats.liquidCount} نقلة</span>
-              </div>
-              <div className="border-t border-blue-50 pt-3 flex justify-between text-xs text-slate-500">
-                <span>هذا الشهر</span>
-                <span className="font-semibold text-blue-700">{stats.liquidVolumeMonth.toLocaleString()} م³ · {stats.liquidCountMonth} نقلة</span>
-              </div>
-            </div>
-
-            {/* جاف */}
-            <div className="bg-white rounded-2xl border border-orange-100 p-5 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xl">🪨</span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">ربو جاف</p>
-                    <p className="text-2xl font-bold text-orange-700">
-                      {stats.dryVolume.toLocaleString()}
-                      <span className="text-sm font-normal text-slate-400 ms-1">م³</span>
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[11px] bg-orange-100 text-orange-700 px-2 py-1 rounded-lg font-semibold">{stats.dryCount} نقلة</span>
-              </div>
-              <div className="border-t border-orange-50 pt-3 flex justify-between text-xs text-slate-500">
-                <span>هذا الشهر</span>
-                <span className="font-semibold text-orange-700">{stats.dryVolumeMonth.toLocaleString()} م³ · {stats.dryCountMonth} نقلة</span>
-              </div>
-            </div>
-
-          </>}
+      {/* ── بطاقة الأحجام ───────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
+          <span className="text-base">🚛</span>
+          <h2 className="font-semibold text-slate-700 text-sm">إحصائيات الأحجام</h2>
+          <span className="ms-auto text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg">إجمالي هذا الشهر: {loading ? '...' : `${stats.monthVolume.toLocaleString()} م³`}</span>
         </div>
+        {loading ? (
+          <div className="p-5"><SkeletonCard /></div>
+        ) : (
+          <div className="p-5 space-y-5">
+
+            {/* الإجمالي */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 mb-0.5">إجمالي الحجم المنقول</p>
+                <p className="text-3xl font-bold text-slate-800">
+                  {stats.totalVolume.toLocaleString()}
+                  <span className="text-sm font-normal text-slate-400 ms-1">م³</span>
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-400 mb-0.5">إجمالي النقلات</p>
+                <p className="text-2xl font-bold text-slate-600">{stats.totalTrips.toLocaleString()} <span className="text-sm font-normal text-slate-400">نقلة</span></p>
+              </div>
+            </div>
+
+            {/* شريط سائل vs جاف */}
+            {(() => {
+              const total = stats.liquidVolume + stats.dryVolume
+              const liquidPct = total > 0 ? Math.round(stats.liquidVolume / total * 100) : 0
+              const dryPct    = total > 0 ? Math.round(stats.dryVolume    / total * 100) : 0
+              return (
+                <div>
+                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-blue-400 transition-all" style={{ width: `${liquidPct}%` }} title="سائل" />
+                    <div className="h-full bg-orange-400 transition-all" style={{ width: `${dryPct}%` }} title="جاف" />
+                  </div>
+                  <div className="flex justify-between text-[11px] mt-1.5">
+                    <span className="text-blue-500">💧 سائل: {liquidPct}%</span>
+                    <span className="text-orange-500">🪨 جاف: {dryPct}%</span>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* صف سائل + جاف */}
+            <div className="grid grid-cols-2 gap-4 pt-1">
+
+              {/* سائل */}
+              <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-base">💧</span>
+                  <span className="text-[11px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-lg font-semibold">{stats.liquidCount} نقلة</span>
+                </div>
+                <p className="text-xs text-blue-600 mb-1">ربو سائل</p>
+                <p className="text-2xl font-bold text-blue-800">{stats.liquidVolume.toLocaleString()} <span className="text-xs font-normal text-blue-500">م³</span></p>
+                <div className="mt-2 pt-2 border-t border-blue-100 flex justify-between text-[10px] text-blue-500">
+                  <span>هذا الشهر</span>
+                  <span className="font-semibold">{stats.liquidVolumeMonth.toLocaleString()} م³ · {stats.liquidCountMonth} نقلة</span>
+                </div>
+              </div>
+
+              {/* جاف */}
+              <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-base">🪨</span>
+                  <span className="text-[11px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-lg font-semibold">{stats.dryCount} نقلة</span>
+                </div>
+                <p className="text-xs text-orange-600 mb-1">ربو جاف</p>
+                <p className="text-2xl font-bold text-orange-800">{stats.dryVolume.toLocaleString()} <span className="text-xs font-normal text-orange-500">م³</span></p>
+                <div className="mt-2 pt-2 border-t border-orange-100 flex justify-between text-[10px] text-orange-500">
+                  <span>هذا الشهر</span>
+                  <span className="font-semibold">{stats.dryVolumeMonth.toLocaleString()} م³ · {stats.dryCountMonth} نقلة</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── الصف الثاني: مالي / تمويل ──────────────────────── */}
