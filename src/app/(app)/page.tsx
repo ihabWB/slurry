@@ -355,209 +355,144 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── الصف الثاني: مالي / تمويل ──────────────────────── */}
-      <div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-0.5">💰 الملخص المالي للمشروع</p>
+      {/* ── بطاقة الملخص المالي الموحّدة ───────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
 
-        {/* تحذير: نقلات بدون تسعيرة */}
-        {!loading && stats.totalTrips > 0 && stats.tripsWithCostCount < stats.totalTrips && (
-          <div className="mb-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠️</span>
-            <p className="text-xs text-amber-800 leading-relaxed">
-              <span className="font-semibold">{stats.totalTrips - stats.tripsWithCostCount} نقلة</span>
-              {' '}لا تحتوي بيانات تسعيرة — التكلفة الكلية غير مكتملة.
-              شغّل{' '}
-              <code className="bg-amber-100 px-1 rounded font-mono">backfill_trip_costs.sql</code>
-              {' '}في Supabase SQL Editor لتحديث الأرقام.
-            </p>
-          </div>
-        )}
-
-        {/* 4 بطاقات مالية */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {loading ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />) : <>
-
-            {/* إجمالي تكلفة النقلات */}
-            <KpiCard
-              label="إجمالي تكلفة النقلات"
-              value={Math.round(stats.totalProjectCost)}
-              suffix="₪"
-              icon={TrendingUp}
-              bg="bg-slate-100" text="text-slate-600" border="border-slate-200"
-              sub={`${stats.tripsWithCostCount} نقلة مسعّرة من ${stats.totalTrips}`}
-            />
-
-            {/* إيرادات مساهمات المصانع */}
-            <div className="bg-white rounded-2xl border border-blue-100 p-4 hover:shadow-md transition-shadow col-span-2 lg:col-span-2">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <Factory size={18} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">إيرادات مساهمات المصانع</p>
-                    <p className="text-lg font-bold text-slate-800">
-                      {Math.round(stats.totalFactoryShare).toLocaleString()}
-                      <span className="text-xs font-normal text-slate-400 ms-1">₪ إجمالي</span>
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">
-                  {contributionPerTrip}₪ / نقلة
-                </span>
-              </div>
-              {/* شريط المحصّل */}
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all"
-                  style={{ width: `${collectPct}%` }}
-                />
-              </div>
-              {/* صفان: محصّل / غير محصّل */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-center">
-                  <p className="text-[10px] text-emerald-600 font-medium mb-0.5">✅ محصّل (مدفوع)</p>
-                  <p className="text-sm font-bold text-emerald-700">{Math.round(stats.factoryShareCollected).toLocaleString()} ₪</p>
-                  <p className="text-[10px] text-emerald-500">{stats.paidTripsCount} نقلة × {contributionPerTrip}₪</p>
-                </div>
-                <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5 text-center">
-                  <p className="text-[10px] text-amber-600 font-medium mb-0.5">⏳ غير محصّل (ذمة)</p>
-                  <p className="text-sm font-bold text-amber-700">{Math.round(stats.factoryShareUncollected).toLocaleString()} ₪</p>
-                  <p className="text-[10px] text-amber-500">{stats.creditTripsCount} نقلة × {contributionPerTrip}₪</p>
-                </div>
-              </div>
-            </div>
-
-            {/* الصرف الفعلي من التمويل */}
-            <KpiCard
-              label="الصرف من التمويل"
-              value={Math.round(stats.spentFromBudget)}
-              suffix="₪"
-              icon={Sprout}
-              bg="bg-teal-50" text="text-teal-600" border="border-teal-100"
-              sub={`${stats.budgetSpentPct}% من إجمالي التمويل`}
-            />
-
-            {/* المتبقي من التمويل */}
-            <KpiCard
-              label="المتبقي من التمويل"
-              value={Math.round(stats.remainingBudget)}
-              suffix="₪"
-              icon={Banknote}
-              bg="bg-violet-50" text="text-violet-600" border="border-violet-100"
-              sub={`من أصل ${stats.projectBudget > 0 ? stats.projectBudget.toLocaleString() : '—'} ₪`}
-            />
-          </>}
+        {/* Header */}
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
+          <span className="text-base">💰</span>
+          <h2 className="font-semibold text-slate-700 text-sm">الملخص المالي للمشروع</h2>
+          {!loading && stats.totalTrips > 0 && stats.tripsWithCostCount < stats.totalTrips && (
+            <span className="ms-auto flex items-center gap-1.5 text-[11px] bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-lg">
+              ⚠️ {stats.totalTrips - stats.tripsWithCostCount} نقلة بدون تسعيرة
+            </span>
+          )}
         </div>
 
-        {/* بطاقة الدفعات المصروفة الفعلية */}
-        {!loading && stats.closedDisbursementsCount > 0 && (
-          <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <Lock size={18} className="text-emerald-700" />
+        {loading ? (
+          <div className="p-5 space-y-4">
+            {[...Array(3)].map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        ) : (
+          <>
+            {/* ── القسم 1: تكلفة المشروع والتمويل ── */}
+            <div className="p-5 space-y-4">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">تكلفة المشروع والتمويل</p>
+
+              {/* 3 أرقام رئيسية */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">إجمالي تكلفة النقلات</p>
+                  <p className="text-2xl font-bold text-slate-800">
+                    {Math.round(stats.totalProjectCost).toLocaleString()}
+                    <span className="text-xs font-normal text-slate-400 ms-1">₪</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">{stats.tripsWithCostCount} نقلة مسعّرة من {stats.totalTrips}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-emerald-700 font-medium">صافي المصروف الفعلي ({stats.closedDisbursementsCount} دفعة)</p>
-                  <p className="text-xl font-bold text-emerald-800">
-                    {Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-sm font-normal">₪</span>
+                  <p className="text-xs text-slate-400 mb-1">مُصرف من التمويل</p>
+                  <p className="text-2xl font-bold text-teal-700">
+                    {Math.round(stats.spentFromBudget).toLocaleString()}
+                    <span className="text-xs font-normal text-slate-400 ms-1">₪</span>
                   </p>
+                  <p className="text-[10px] text-slate-400 mt-1">{stats.budgetSpentPct}% من إجمالي الميزانية</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">المتبقي من التمويل</p>
+                  <p className="text-2xl font-bold text-violet-700">
+                    {Math.round(stats.remainingBudget).toLocaleString()}
+                    <span className="text-xs font-normal text-slate-400 ms-1">₪</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">من أصل {stats.projectBudget > 0 ? stats.projectBudget.toLocaleString() : '—'} ₪</p>
                 </div>
               </div>
-                <Link href="/disbursements" className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1">
-                <Receipt size={11} /> عرض المطالبات المالية
-              </Link>
+
+              {/* شريط الميزانية */}
+              {stats.projectBudget > 0 && (
+                <div>
+                  <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-violet-500 rounded-full transition-all"
+                      style={{ width: `${stats.budgetSpentPct}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] mt-1.5">
+                    <span className="text-violet-600 font-medium">مُصرف: {stats.budgetSpentPct}%</span>
+                    <span className="text-slate-400">متبقٍ: {Math.round(stats.remainingBudget).toLocaleString()} ₪ من {stats.projectBudget.toLocaleString()} ₪</span>
+                  </div>
+                </div>
+              )}
             </div>
-            {stats.totalRetained > 0 && (
-              <div className="flex items-center gap-3 border-t border-emerald-200 pt-3">
-                <div className="w-8 h-8 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <ShieldCheck size={14} className="text-orange-700" />
+
+            {/* ── القسم 2: مساهمات المصانع ── */}
+            <div className="border-t border-slate-100 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">مساهمات المصانع — إيراد مستقل</p>
+                <span className="text-[11px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-lg">{contributionPerTrip} ₪ / نقلة</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-400 mb-0.5">الإجمالي المتوقع</p>
+                  <p className="text-xl font-bold text-slate-800">{Math.round(stats.totalFactoryShare).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
                 </div>
-                <div className="flex-1">
-                  <p className="text-xs text-orange-700 font-medium">إجمالي حجز التأمينات (محتجز، يُعاد عند انتهاء المشروع)</p>
-                  <p className="text-base font-bold text-orange-800">
-                    {Math.round(stats.totalRetained).toLocaleString()} <span className="text-xs font-normal">₪</span>
-                  </p>
+                <div className="flex gap-3">
+                  <div className="text-center">
+                    <p className="text-[10px] text-emerald-600 font-medium mb-0.5">✅ محصّل</p>
+                    <p className="text-base font-bold text-emerald-700">{Math.round(stats.factoryShareCollected).toLocaleString()} ₪</p>
+                    <p className="text-[10px] text-emerald-500">{stats.paidTripsCount} نقلة · {collectPct}%</p>
+                  </div>
+                  <div className="w-px bg-slate-100" />
+                  <div className="text-center">
+                    <p className="text-[10px] text-amber-600 font-medium mb-0.5">⏳ ذمة</p>
+                    <p className="text-base font-bold text-amber-700">{Math.round(stats.factoryShareUncollected).toLocaleString()} ₪</p>
+                    <p className="text-[10px] text-amber-500">{stats.creditTripsCount} نقلة · {uncollectedPct}%</p>
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
+
+              {/* شريط محصّل / ذمة */}
+              <div>
+                <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
+                  <div className="h-full bg-emerald-500 transition-all" style={{ width: `${collectPct}%` }} />
+                  <div className="h-full bg-amber-400 transition-all" style={{ width: `${uncollectedPct}%` }} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── القسم 3: الدفعات المقفلة ── */}
+            <div className="border-t border-slate-100 p-5">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">الدفعات المقفلة (مطالبات مالية)</p>
+              {stats.closedDisbursementsCount === 0 ? (
+                <p className="text-xs text-slate-400 italic">لا توجد دفعات مقفلة حتى الآن</p>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="flex gap-6">
+                    <div>
+                      <p className="text-xs text-slate-400 mb-0.5">صافي المصروف الفعلي</p>
+                      <p className="text-xl font-bold text-emerald-700">{Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{stats.closedDisbursementsCount} دفعة مقفلة</p>
+                    </div>
+                    {stats.totalRetained > 0 && (
+                      <>
+                        <div className="w-px bg-slate-100" />
+                        <div>
+                          <p className="text-xs text-slate-400 mb-0.5">حجز التأمينات (محتجز)</p>
+                          <p className="text-xl font-bold text-orange-700">{Math.round(stats.totalRetained).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">يُعاد عند انتهاء المشروع</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <Link href="/disbursements" className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-2 rounded-xl transition-colors">
+                    <Receipt size={13} /> عرض المطالبات
+                  </Link>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
-
-      {/* ── أشرطة التقدم المالي ────────────────────────────── */}
-      {!loading && (stats.totalProjectCost > 0 || stats.projectBudget > 0) && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-5">
-          <p className="text-sm font-semibold text-slate-700">📊 نسب المشروع</p>
-
-          {/* 1. إيرادات مساهمات المصانع: محصّل / غير محصّل */}
-          {stats.totalFactoryShare > 0 && (
-            <div>
-              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                <span className="flex items-center gap-1"><Factory size={12} className="text-blue-500" /> إيرادات مساهمات المصانع</span>
-                <span className="font-semibold text-blue-600">{Math.round(stats.totalFactoryShare).toLocaleString()} ₪</span>
-              </div>
-              {/* شريط ثلاثي: محصّل (أخضر) + غير محصّل (برتقالي) + الباقي (رمادي) */}
-              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
-                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${collectPct}%` }} title="محصّل" />
-                <div className="h-full bg-amber-400 transition-all" style={{ width: `${uncollectedPct}%` }} title="ذمة غير محصّلة" />
-              </div>
-              <div className="flex justify-between text-[11px] mt-1">
-                <span className="text-emerald-600">✅ محصّل: {Math.round(stats.factoryShareCollected).toLocaleString()} ₪ ({collectPct}%)</span>
-                <span className="text-amber-600">⏳ ذمة: {Math.round(stats.factoryShareUncollected).toLocaleString()} ₪ ({uncollectedPct}%)</span>
-              </div>
-            </div>
-          )}
-
-          {/* 2. توزيع تكلفة المشروع (مصانع vs تمويل) */}
-          {stats.totalProjectCost > 0 && (
-            <div>
-              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                <span>توزيع تكلفة المشروع</span>
-                <span className="font-semibold text-slate-600">{Math.round(stats.totalProjectCost).toLocaleString()} ₪</span>
-              </div>
-              <div className="h-2.5 bg-teal-100 rounded-full overflow-hidden flex">
-                <div
-                  className="h-full bg-blue-500 transition-all"
-                  style={{ width: `${stats.totalProjectCost > 0 ? Math.round(stats.totalFactoryShare / stats.totalProjectCost * 100) : 0}%` }}
-                  title="مساهمة المصانع"
-                />
-              </div>
-              <div className="flex justify-between text-[11px] mt-1">
-                <span className="text-blue-500">مصانع: {Math.round(stats.totalFactoryShare).toLocaleString()} ₪</span>
-                <span className="text-teal-600">تمويل: {Math.round(stats.spentFromBudget).toLocaleString()} ₪</span>
-              </div>
-            </div>
-          )}
-
-          {/* 3. نسبة الصرف من إجمالي التمويل */}
-          {stats.projectBudget > 0 && (
-            <div>
-              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                <span className="flex items-center gap-1">
-                  <BadgePercent size={12} className="text-violet-500" />
-                  نسبة الصرف من إجمالي التمويل
-                </span>
-                <span className="font-semibold text-violet-600">{stats.budgetSpentPct}%</span>
-              </div>
-              <div className="h-2.5 bg-violet-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-violet-500 rounded-full transition-all"
-                  style={{ width: `${stats.budgetSpentPct}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-[11px] mt-1">
-                <span className="text-violet-600">مُصرف: {Math.round(stats.spentFromBudget).toLocaleString()} ₪</span>
-                <span className="text-slate-400">
-                  متبقٍ: <span className="text-violet-700 font-semibold">{Math.round(stats.remainingBudget).toLocaleString()} ₪</span>
-                  {' '}من {stats.projectBudget.toLocaleString()} ₪
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── إجراءات سريعة ──────────────────────────────────── */}
       <div>
