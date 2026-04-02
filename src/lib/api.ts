@@ -477,6 +477,38 @@ export async function createBulkTrips(factoryIds: string[], payment_status: 'pai
   return data as Trip[]
 }
 
+// ─── REPORTS: COSTS ──────────────────────────────────────────
+
+export async function getTripsForCosts(from?: string, to?: string) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = (supabase as any)
+    .from('trips')
+    .select('id, factory_id, trip_date, trip_cost, waste_type, volume_m3, factories(name)')
+    .order('trip_date', { ascending: false })
+  if (from) query = query.gte('trip_date', from)
+  if (to)   query = query.lte('trip_date', to)
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as any[]
+}
+
+// ─── REPORTS: CONTRIBUTIONS ──────────────────────────────────
+
+export async function getTripsForContributions(from?: string, to?: string) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = (supabase as any)
+    .from('trips')
+    .select('id, factory_id, trip_date, payment_status, payment_method, factory_contribution, factories(name)')
+    .order('trip_date', { ascending: false })
+  if (from) query = query.gte('trip_date', from)
+  if (to)   query = query.lte('trip_date', to)
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as any[]
+}
+
 // ─── PAYMENTS ────────────────────────────────────────────────
 
 export async function getPayments(filters?: { factory_id?: string; from?: string; to?: string }) {
