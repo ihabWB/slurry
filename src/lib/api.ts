@@ -725,10 +725,10 @@ export async function getDashboardStats() {
     (supabase as any).from('disbursements').select('disbursed_amount, retention_amount, net_payment').eq('status', 'closed'),
     // كل النقلات: waste_type + volume_m3 للإحصاءات
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, max_distance_km'),
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km'),
     // نقلات هذا الشهر: waste_type + volume_m3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, max_distance_km').gte('trip_date', monthStart),
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km').gte('trip_date', monthStart),
     // مصانع نشطة إجمالاً (distinct factory_id من trips)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_id'),
@@ -834,7 +834,8 @@ export async function getDashboardStats() {
   const getDumpKey = (r: any): string => {
     if (r.dump_site === 'central_press') return 'central_press'
     if (r.dump_site === 'municipal_dump') {
-      return Number(r.max_distance_km ?? 0) <= 7 ? 'khallet_sharbati' : 'sa3ir'
+      // distance_km هو العمود الفعلي في جدول trips
+      return Number(r.distance_km ?? 0) <= 7 ? 'khallet_sharbati' : 'sa3ir'
     }
     return 'unknown'
   }
