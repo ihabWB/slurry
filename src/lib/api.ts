@@ -509,6 +509,38 @@ export async function getTripsForContributions(from?: string, to?: string) {
   return (data ?? []) as any[]
 }
 
+// ─── FACTORY TRIP STATS (for map panel) ──────────────────────
+
+export async function getFactoryTripStats(factoryId: string) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .select('waste_type, volume_m3, trip_cost, factory_contribution, payment_status, amount')
+    .eq('factory_id', factoryId)
+  if (error) throw error
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const trips: any[] = data ?? []
+
+  const liquid = trips.filter(t => t.waste_type === 'liquid')
+  const solid  = trips.filter(t => t.waste_type === 'solid')
+
+  const sum = (arr: any[], key: string) => arr.reduce((s, t) => s + Number(t[key] ?? 0), 0)
+
+  const liquidContrib  = sum(liquid, 'factory_contribution')
+  const liquidPaid     = liquid.filter(t => t.payment_status === 'paid').reduce((s, t) => s + Number(t.factory_contribution ?? 0), 0)
+  const solidContrib   = sum(solid,  'factory_contribution')
+  const solidPaid      = solid.filter(t => t.payment_status === 'paid').reduce((s, t) => s + Number(t.factory_contribution ?? 0), 0)
+  const totalContrib   = liquidContrib + solidContrib
+  const totalPaid      = liquidPaid + solidPaid
+
+  return {
+    total:   { trips: trips.length,  cost: sum(trips,  'trip_cost'), contrib: totalContrib,  paid: totalPaid,  debt: totalContrib - totalPaid },
+    liquid:  { trips: liquid.length, volume: sum(liquid, 'volume_m3'), cost: sum(liquid, 'trip_cost'), contrib: liquidContrib, paid: liquidPaid, debt: liquidContrib - liquidPaid },
+    solid:   { trips: solid.length,  volume: sum(solid,  'volume_m3'), cost: sum(solid,  'trip_cost'), contrib: solidContrib,  paid: solidPaid,  debt: solidContrib  - solidPaid  },
+  }
+}
+
 // ─── PAYMENTS ────────────────────────────────────────────────
 
 export async function getPayments(filters?: { factory_id?: string; from?: string; to?: string }) {

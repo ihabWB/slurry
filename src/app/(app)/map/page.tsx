@@ -1,7 +1,7 @@
 ﻿'use client'
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { Search, X } from 'lucide-react'
-import { getFactoriesWithTripCount } from '@/lib/api'
+import { Search, X, Truck, Droplets, Package, TrendingUp, Coins, AlertTriangle } from 'lucide-react'
+import { getFactoriesWithTripCount, getFactoryTripStats } from '@/lib/api'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type FactoryWithCount = any
@@ -31,9 +31,14 @@ function getTripColor(count: number, max: number): string {
 }
 
 export default function MapPage() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Stats = any
+
   const mapRef = useRef<HTMLDivElement>(null)
   const [factories, setFactories] = useState<FactoryWithCount[]>([])
   const [selected, setSelected] = useState<FactoryWithCount | null>(null)
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,8 +58,18 @@ export default function MapPage() {
     ).slice(0, 8)
   }, [search, factories])
 
-  const flyTo = (f: FactoryWithCount) => {
+  const selectFactory = (f: FactoryWithCount) => {
     setSelected(f)
+    setStats(null)
+    setStatsLoading(true)
+    getFactoryTripStats(f.id)
+      .then(s => setStats(s))
+      .catch(console.error)
+      .finally(() => setStatsLoading(false))
+  }
+
+  const flyTo = (f: FactoryWithCount) => {
+    selectFactory(f)
     setSearch(f.name)
     setShowSuggestions(false)
     if (mapInstanceRef.current && f.lat && f.lng) {
@@ -129,7 +144,7 @@ export default function MapPage() {
             </div>
           `)
 
-        marker.on('click', () => setSelected(f))
+        marker.on('click', () => selectFactory(f))
       })
     })
 
@@ -199,29 +214,141 @@ export default function MapPage() {
         </div>
       </div>
 
-      <div
-        ref={mapRef}
-        className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full"
-        style={{ height: '720px' }}
-      />
+      <div className="flex gap-4 items-start">
+        {/* Map */}
+        <div
+          ref={mapRef}
+          className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex-1 min-w-0"
+          style={{ height: '720px' }}
+        />
 
-      {selected && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-800">{selected.name}</h3>
-              <p className="text-sm text-slate-500">{selected.owner_name} · {selected.phone} · {selected.region || ''}</p>
+        {/* Side Panel */}
+        {selected && (
+          <div className="w-72 flex-shrink-0 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-y-auto" style={{ height: '720px' }}>
+            {/* Header */}
+            <div className="flex items-start justify-between p-4 border-b border-slate-100">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-base leading-tight">{selected.name}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{selected.region || ''}</p>
+                <p className="text-xs text-slate-500 mt-0.5">👤 {selected.owner_name}</p>
+                <p className="text-xs text-slate-500">📞 {selected.phone}</p>
+              </div>
+              <button
+                onClick={() => { setSelected(null); setStats(null); setSearch('') }}
+                className="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-0.5"
+              >
+                <X size={15} />
+              </button>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-500">🚛 {selected.trip_count ?? 0} نقلة</span>
-              <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${selected.balance > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                {selected.balance > 0 ? `ذمة: ${selected.balance} ₪` : 'ملتزم ✓'}
-              </span>
-              <button onClick={() => { setSelected(null); setSearch('') }} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-            </div>
+
+            {statsLoading && (
+              <div className="flex items-center justify-center py-16 text-slate-400 text-sm">
+                <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin ml-2" />
+                جاري التحميل...
+              </div>
+            )}
+
+            {!statsLoading && stats && (() => {
+              const fmt = (n: number) => n.toLocaleString()
+              const Row = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
+                <div className="flex items-center justify-between py-1.5">
+                  <span className="text-xs text-slate-500">{label}</span>
+                  <div className="text-right">
+                    <span className="text-sm font-semibold text-slate-700">{value}</span>
+                    {sub && <p className="text-xs text-slate-400">{sub}</p>}
+                  </div>
+                </div>
+              )
+
+              return (
+                <div className="divide-y divide-slate-100">
+
+                  {/* ── الإجمالي ── */}
+                  <div className="px-4 py-3">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Truck size={13} className="text-blue-500" />
+                      <span className="text-xs font-bold text-blue-600">إجمالي النقلات</span>
+                    </div>
+                    <Row label="عدد النقلات" value={`${stats.total.trips} نقلة`} />
+                    <Row label="إجمالي التكاليف" value={`${fmt(stats.total.cost)} ₪`} />
+                  </div>
+
+                  {/* ── سائل ── */}
+                  {stats.liquid.trips > 0 && (
+                    <div className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Droplets size={13} className="text-blue-500" />
+                        <span className="text-xs font-bold text-blue-600">النقلات السائلة</span>
+                      </div>
+                      <Row label="عدد النقلات" value={`${stats.liquid.trips} نقلة`} />
+                      <Row label="إجمالي الحجم" value={`${stats.liquid.volume.toFixed(1)} م³`} />
+                      <Row label="التكاليف" value={`${fmt(stats.liquid.cost)} ₪`} />
+                      <div className="mt-2 pt-2 border-t border-slate-50">
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <Coins size={12} className="text-violet-400" />
+                          <span className="text-xs text-violet-600 font-medium">المساهمات</span>
+                        </div>
+                        <Row label="المطلوب" value={`${fmt(stats.liquid.contrib)} ₪`} />
+                        <Row label="✅ محصّل" value={`${fmt(stats.liquid.paid)} ₪`} />
+                        <Row
+                          label="⏳ ذمة"
+                          value={stats.liquid.debt > 0 ? `${fmt(stats.liquid.debt)} ₪` : '—'}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── جاف ── */}
+                  {stats.solid.trips > 0 && (
+                    <div className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Package size={13} className="text-amber-500" />
+                        <span className="text-xs font-bold text-amber-600">النقلات الجافة</span>
+                      </div>
+                      <Row label="عدد النقلات" value={`${stats.solid.trips} نقلة`} />
+                      <Row label="إجمالي الحجم" value={`${stats.solid.volume.toFixed(1)} م³`} />
+                      <Row label="التكاليف" value={`${fmt(stats.solid.cost)} ₪`} />
+                      <div className="mt-2 pt-2 border-t border-slate-50">
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <Coins size={12} className="text-violet-400" />
+                          <span className="text-xs text-violet-600 font-medium">المساهمات</span>
+                        </div>
+                        <Row label="المطلوب" value={`${fmt(stats.solid.contrib)} ₪`} />
+                        <Row label="✅ محصّل" value={`${fmt(stats.solid.paid)} ₪`} />
+                        <Row
+                          label="⏳ ذمة"
+                          value={stats.solid.debt > 0 ? `${fmt(stats.solid.debt)} ₪` : '—'}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── الملخص الكلي ── */}
+                  <div className="px-4 py-3">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <TrendingUp size={13} className="text-slate-500" />
+                      <span className="text-xs font-bold text-slate-600">الملخص الكلي</span>
+                    </div>
+                    <Row label="إجمالي التكاليف" value={`${fmt(stats.total.cost)} ₪`} />
+                    <Row label="إجمالي المساهمات" value={`${fmt(stats.total.contrib)} ₪`} />
+                    <Row label="✅ إجمالي المحصّل" value={`${fmt(stats.total.paid)} ₪`} />
+                    <div className="flex items-center justify-between py-1.5 mt-1 bg-red-50 rounded-xl px-2">
+                      <div className="flex items-center gap-1">
+                        <AlertTriangle size={12} className="text-red-500" />
+                        <span className="text-xs text-red-600">إجمالي الذمم</span>
+                      </div>
+                      <span className={`text-sm font-bold ${stats.total.debt > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {stats.total.debt > 0 ? `${fmt(stats.total.debt)} ₪` : 'ملتزم ✓'}
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+              )
+            })()}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
