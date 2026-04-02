@@ -687,6 +687,9 @@ export async function getDashboardStats() {
     costRes,            // كل النقلات: trip_cost + subsidy_amount
     settingsRes,        // الإعدادات: project_budget + factory_contribution
     disbursementsRes,   // الدفعات المقفلة: disbursed_amount
+    volumeAllRes,       // كل النقلات: waste_type + volume_m3
+    volumeMonthRes,     // نقلات الشهر: waste_type + volume_m3
+    activeFactoriesTotalRes, // مصانع نشطة (لها نقلات) إجمالاً
   ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
@@ -720,6 +723,15 @@ export async function getDashboardStats() {
     // الدفعات المقفلة — لمعرفة المبلغ الفعلي المصروف
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('disbursements').select('disbursed_amount, retention_amount, net_payment').eq('status', 'closed'),
+    // كل النقلات: waste_type + volume_m3 للإحصاءات
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id'),
+    // نقلات هذا الشهر: waste_type + volume_m3
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id').gte('trip_date', monthStart),
+    // مصانع نشطة إجمالاً (distinct factory_id من trips)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('factory_id'),
   ])
 
   // إجمالي تكاليف النقلات من جدول التسعيرة
@@ -792,6 +804,32 @@ export async function getDashboardStats() {
 
   const totalTrips = allTripsRes.count ?? 0
 
+  // ── أحجام وأنواع النقلات ─────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const volumeAll: any[]   = volumeAllRes.data   || []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const volumeMonth: any[] = volumeMonthRes.data || []
+
+  const liquidAll   = volumeAll.filter((r: any) => r.waste_type === 'liquid')
+  const dryAll      = volumeAll.filter((r: any) => r.waste_type === 'solid')
+  const liquidMonth = volumeMonth.filter((r: any) => r.waste_type === 'liquid')
+  const dryMonth    = volumeMonth.filter((r: any) => r.waste_type === 'solid')
+
+  const totalVolume      = volumeAll.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
+  const monthVolume      = volumeMonth.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
+  const liquidCount      = liquidAll.length
+  const liquidVolume     = liquidAll.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
+  const dryCount         = dryAll.length
+  const dryVolume        = dryAll.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
+  const liquidCountMonth = liquidMonth.length
+  const liquidVolumeMonth= liquidMonth.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
+  const dryCountMonth    = dryMonth.length
+  const dryVolumeMonth   = dryMonth.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
+
+  // مصانع نشطة إجمالاً (لها نقلة واحدة على الأقل)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeFactoriesTotal = new Set((activeFactoriesTotalRes.data || []).map((r: any) => r.factory_id)).size
+
   return {
     // تشغيلي
     totalTrips,
@@ -824,6 +862,19 @@ export async function getDashboardStats() {
     monthTripsCount,
     activeFactoriesThisMonth,
     avgTripsPerFactory,
+    // أحجام وأنواع
+    totalVolume,
+    monthVolume,
+    liquidCount,
+    liquidVolume,
+    dryCount,
+    dryVolume,
+    liquidCountMonth,
+    liquidVolumeMonth,
+    dryCountMonth,
+    dryVolumeMonth,
+    // مصانع نشطة إجمالاً
+    activeFactoriesTotal,
   }
 }
 
