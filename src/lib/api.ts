@@ -725,10 +725,10 @@ export async function getDashboardStats() {
     (supabase as any).from('disbursements').select('disbursed_amount, retention_amount, net_payment').eq('status', 'closed'),
     // كل النقلات: waste_type + volume_m3 للإحصاءات
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id'),
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, max_distance_km'),
     // نقلات هذا الشهر: waste_type + volume_m3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id').gte('trip_date', monthStart),
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, max_distance_km').gte('trip_date', monthStart),
     // مصانع نشطة إجمالاً (distinct factory_id من trips)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_id'),
@@ -830,6 +830,40 @@ export async function getDashboardStats() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activeFactoriesTotal = new Set((activeFactoriesTotalRes.data || []).map((r: any) => r.factory_id)).size
 
+  // ── إحصاءات وجهات النقل ──────────────────────────────
+  const getDumpKey = (r: any): string => {
+    if (r.dump_site === 'central_press') return 'central_press'
+    if (r.dump_site === 'municipal_dump') {
+      return Number(r.max_distance_km ?? 0) <= 7 ? 'khallet_sharbati' : 'sa3ir'
+    }
+    return 'unknown'
+  }
+
+  const dumpGroups: Record<string, { count: number; volume: number; countMonth: number; volumeMonth: number }> = {
+    central_press:    { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
+    khallet_sharbati: { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
+    sa3ir:            { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
+  }
+
+  volumeAll.forEach((r: any) => {
+    const key = getDumpKey(r)
+    if (!dumpGroups[key]) return
+    dumpGroups[key].count++
+    dumpGroups[key].volume += Number(r.volume_m3 ?? 0)
+  })
+  volumeMonth.forEach((r: any) => {
+    const key = getDumpKey(r)
+    if (!dumpGroups[key]) return
+    dumpGroups[key].countMonth++
+    dumpGroups[key].volumeMonth += Number(r.volume_m3 ?? 0)
+  })
+
+  const dumpSiteStats = {
+    centralPress:    dumpGroups['central_press'],
+    khalletSharbati: dumpGroups['khallet_sharbati'],
+    sa3ir:           dumpGroups['sa3ir'],
+  }
+
   return {
     // تشغيلي
     totalTrips,
@@ -873,6 +907,8 @@ export async function getDashboardStats() {
     liquidVolumeMonth,
     dryCountMonth,
     dryVolumeMonth,
+    // وجهات النقل
+    dumpSiteStats,
     // مصانع نشطة إجمالاً
     activeFactoriesTotal,
   }

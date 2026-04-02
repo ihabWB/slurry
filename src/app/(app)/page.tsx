@@ -47,6 +47,12 @@ interface Stats {
   liquidVolumeMonth: number
   dryCountMonth: number
   dryVolumeMonth: number
+  // وجهات النقل
+  dumpSiteStats: {
+    centralPress:    { count: number; volume: number; countMonth: number; volumeMonth: number }
+    khalletSharbati: { count: number; volume: number; countMonth: number; volumeMonth: number }
+    sa3ir:           { count: number; volume: number; countMonth: number; volumeMonth: number }
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,6 +128,11 @@ export default function DashboardPage() {
     totalVolume: 0, monthVolume: 0,
     liquidCount: 0, liquidVolume: 0, dryCount: 0, dryVolume: 0,
     liquidCountMonth: 0, liquidVolumeMonth: 0, dryCountMonth: 0, dryVolumeMonth: 0,
+    dumpSiteStats: {
+      centralPress:    { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
+      khalletSharbati: { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
+      sa3ir:           { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
+    },
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
@@ -353,6 +364,80 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ── بطاقة وجهات النقل ─────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
+          <span className="text-base">📍</span>
+          <h2 className="font-semibold text-slate-700 text-sm">وجهات النقل</h2>
+          <span className="ms-auto text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg">إجمالي: {loading ? '...' : `${stats.totalTrips.toLocaleString()} نقلة`}</span>
+        </div>
+        {loading ? (
+          <div className="p-5"><SkeletonCard /></div>
+        ) : (() => {
+          const sites = [
+            { key: 'centralPress',    label: 'عصارة الربو المركزية', icon: '🏭', color: 'blue',    data: stats.dumpSiteStats.centralPress },
+            { key: 'khalletSharbati', label: 'مكب خلة الشرباتي',    icon: '🗑️', color: 'emerald', data: stats.dumpSiteStats.khalletSharbati },
+            { key: 'sa3ir',           label: 'مكب سعير',             icon: '🗑️', color: 'orange',  data: stats.dumpSiteStats.sa3ir },
+          ] as const
+          const totalForBar = sites.reduce((s, site) => s + site.data.count, 0)
+          const colorMap = {
+            blue:    { bar: 'bg-blue-500',    badge: 'bg-blue-100 text-blue-700',       sub: 'text-blue-500',    border: 'border-blue-100',    bg: 'bg-blue-50/60' },
+            emerald: { bar: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700', sub: 'text-emerald-600', border: 'border-emerald-100', bg: 'bg-emerald-50/60' },
+            orange:  { bar: 'bg-orange-500',  badge: 'bg-orange-100 text-orange-700',   sub: 'text-orange-500',  border: 'border-orange-100',  bg: 'bg-orange-50/60' },
+          }
+          return (
+            <div className="p-5 space-y-4">
+              {/* شريط توزيع كلي */}
+              {totalForBar > 0 && (
+                <div>
+                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
+                    {sites.map(site => (
+                      <div key={site.key} className={`h-full ${colorMap[site.color].bar} transition-all`}
+                        style={{ width: `${Math.round(site.data.count / totalForBar * 100)}%` }} title={site.label} />
+                    ))}
+                  </div>
+                  <div className="flex gap-4 mt-1.5 flex-wrap">
+                    {sites.map(site => (
+                      <span key={site.key} className={`text-[10px] flex items-center gap-1 ${colorMap[site.color].sub}`}>
+                        <span className={`w-2 h-2 rounded-full ${colorMap[site.color].bar}`} />
+                        {site.label}: {totalForBar > 0 ? Math.round(site.data.count / totalForBar * 100) : 0}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* صفوف الوجهات */}
+              <div className="space-y-2">
+                {sites.map(site => {
+                  const pct = totalForBar > 0 ? Math.round(site.data.count / totalForBar * 100) : 0
+                  const c = colorMap[site.color]
+                  return (
+                    <div key={site.key} className={`rounded-xl border ${c.border} ${c.bg} px-4 py-3 flex items-center gap-4`}>
+                      <span className="text-lg w-7 text-center flex-shrink-0">{site.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-700">{site.label}</p>
+                        <p className={`text-[10px] ${c.sub} mt-0.5`}>هذا الشهر: {site.data.countMonth} نقلة · {site.data.volumeMonth.toLocaleString()} م³</p>
+                      </div>
+                      <div className="flex items-center gap-4 flex-shrink-0 text-right">
+                        <div>
+                          <p className="text-xl font-bold text-slate-800">{site.data.count.toLocaleString()}</p>
+                          <p className="text-[10px] text-slate-400">نقلة</p>
+                        </div>
+                        <div>
+                          <p className="text-base font-semibold text-slate-600">{site.data.volume.toLocaleString()}</p>
+                          <p className="text-[10px] text-slate-400">م³</p>
+                        </div>
+                        <span className={`text-[11px] font-bold ${c.badge} px-2.5 py-1 rounded-lg w-12 text-center`}>{pct}%</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* ── بطاقة الملخص المالي الموحّدة ───────────────────── */}
