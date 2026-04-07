@@ -108,9 +108,20 @@ export default function MapPage() {
       const map = L.map(mapRef.current!).fitBounds(bounds)
       mapInstanceRef.current = map
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-      }).addTo(map)
+      // Satellite base layer (ESRI World Imagery)
+      const satellite = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { attribution: 'Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community' }
+      )
+
+      // Labels overlay (OpenStreetMap streets/names on top)
+      const labels = L.tileLayer(
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { attribution: '© OpenStreetMap contributors', opacity: 0.6 }
+      )
+
+      satellite.addTo(map)
+      labels.addTo(map)
 
       const maxTrips = Math.max(...(factories as FactoryWithCount[]).map((f: FactoryWithCount) => f.trip_count ?? 0), 1)
 
