@@ -11,6 +11,8 @@ import {
   approveDisbursement,
   returnDisbursement,
   getUncoveredTripsInfo,
+  getTripsForDisbursement,
+  setTripDisbursementExclusion,
 } from '@/lib/api'
 import type { Disbursement } from '@/lib/supabase/database.types'
 import {
@@ -363,7 +365,7 @@ function AdminReviewModal({
   )
 }
 
-// ─── مودال دفعة جديدة ────────────────────────────────────────
+// ─── مودال دفعة جديدة (خطوتان) ──────────────────────────────
 function NewDisbursementModal({
   onSubmit,
   onCancel,
@@ -383,6 +385,7 @@ function NewDisbursementModal({
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = today.slice(0, 7) + '-01'
+  const [step, setStep] = useState<1 | 2>(1)
   const [from, setFrom] = useState(suggestedFrom ?? firstOfMonth)
   const [to, setTo] = useState(suggestedTo ?? today)
   const [notes, setNotes] = useState('')
@@ -390,22 +393,66 @@ function NewDisbursementModal({
   const [retentionAmountManual, setRetentionAmountManual] = useState('')
   const [manualMode, setManualMode] = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!from || !to) return
-    if (from > to) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return }
+  // الخطوة 2: النقلات
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [periodTrips, setPeriodTrips] = useState<any[]>([])
+  const [tripsLoading, setTripsLoading] = useState(false)
+  // النقلات المستثناة — Set من IDs
+  const [excluded, setExcluded] = useState<Set<string>>(new Set())
+  const [toggling, setToggling] = useState<string | null>(null)
+
+  async function goToStep2() {
+    if (!from || !to || from > to) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return }
     const pct = parseFloat(retentionPct)
     if (isNaN(pct) || pct < 0 || pct > 100) { alert('نسبة الحجز يجب أن تكون بين 0 و 100'); return }
+    setTripsLoading(true)
+    try {
+      const data = await getTripsForDisbursement(from, to)
+      // تحميل الحالة الحالية للمستثناة من DB
+      const alreadyExcluded = new Set<string>(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data.filter((t: any) => t.disbursement_excluded).map((t: any) => t.id as string)
+      )
+      setPeriodTrips(data)
+      setExcluded(alreadyExcluded)
+      setStep(2)
+    } catch { alert('فشل تحميل النقلات') }
+    finally { setTripsLoading(false) }
+  }
+
+  async function toggleExclude(tripId: string, currentlyExcluded: boolean) {
+    setToggling(tripId)
+    try {
+      await setTripDisbursementExclusion(tripId, !currentlyExcluded)
+      setExcluded(prev => {
+        const next = new Set(prev)
+        if (!currentlyExcluded) next.add(tripId)
+        else next.delete(tripId)
+        return next
+      })
+    } catch { alert('فشل تحديث حالة النقلة') }
+    finally { setToggling(null) }
+  }
+
+  function handleSubmit() {
+    const pct = parseFloat(retentionPct)
     const override = manualMode && retentionAmountManual !== ''
       ? parseFloat(retentionAmountManual)
       : undefined
     onSubmit(from, to, notes, pct, override)
   }
 
+  const includedCount = periodTrips.filter(t => !excluded.has(t.id)).length
+  const excludedCount = excluded.size
+  const fmt = (n: number) => n.toLocaleString('ar-SA')
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
+      <div className={`relative bg-white rounded-2xl shadow-2xl w-full p-6 space-y-5 ${
+        step === 2 ? 'max-w-2xl' : 'max-w-lg'
+      }`}>
+        {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -413,7 +460,9 @@ function NewDisbursementModal({
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">مطالبة مالية جديدة</h2>
-              <p className="text-sm text-slate-500">حدد الفترة ونسبة الحجز لحساب المبالغ تلقائياً</p>
+              <p className="text-sm text-slate-500">
+                {step === 1 ? 'الخطوة 1 من 2 — حدد الفترة ونسبة الحجز' : 'الخطوة 2 من 2 — راجع النقلات وحدد المستثناة'}
+              </p>
             </div>
           </div>
           <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
@@ -421,110 +470,194 @@ function NewDisbursementModal({
           </button>
         </div>
 
-        {suggestedFrom && uncoveredCount && uncoveredCount > 0 && (
-          <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-3 text-sm">
-            <Zap size={15} className="text-blue-500 flex-shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-blue-800">
-                {uncoveredCount.toLocaleString('ar-SA')} نقلة غير مشمولة
-              </p>
-              <p className="text-blue-600 text-xs mt-0.5">
-                أقدم نقلة بتاريخ {fmtDate(suggestedFrom)} — تم تعبئة الفترة تلقائياً
+        {/* Step indicator */}
+        <div className="flex items-center gap-2">
+          <div className={`flex-1 h-1.5 rounded-full ${step >= 1 ? 'bg-blue-500' : 'bg-slate-200'}`} />
+          <div className={`flex-1 h-1.5 rounded-full ${step >= 2 ? 'bg-blue-500' : 'bg-slate-200'}`} />
+        </div>
+
+        {/* ══ STEP 1 ══ */}
+        {step === 1 && (
+          <div className="space-y-4">
+            {suggestedFrom && uncoveredCount && uncoveredCount > 0 && (
+              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-3 text-sm">
+                <Zap size={15} className="text-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-blue-800">{uncoveredCount.toLocaleString('ar-SA')} نقلة غير مشمولة</p>
+                  <p className="text-blue-600 text-xs mt-0.5">أقدم نقلة بتاريخ {fmtDate(suggestedFrom)} — تم تعبئة الفترة تلقائياً</p>
+                </div>
+                <button type="button" onClick={() => { setFrom(suggestedFrom); setTo(suggestedTo ?? today) }}
+                  className="text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition-colors flex-shrink-0">
+                  تطبيق
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">من تاريخ</label>
+                <input type="date" value={from} onChange={e => setFrom(e.target.value)} required
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">إلى تاريخ</label>
+                <input type="date" value={to} onChange={e => setTo(e.target.value)} required
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold text-orange-800 flex items-center gap-1.5">
+                  <ShieldCheck size={14} /> حجز التأمينات
+                </label>
+                <button type="button"
+                  onClick={() => { setManualMode(!manualMode); setRetentionAmountManual('') }}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                    manualMode ? 'bg-orange-200 text-orange-800 border-orange-300' : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-100'
+                  }`}>
+                  {manualMode ? '● مبلغ يدوي' : 'إدخال مبلغ يدوياً'}
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-orange-700">النسبة (%)</label>
+                  <input type="number" min={0} max={100} step={0.5} value={retentionPct}
+                    onChange={e => setRetentionPct(e.target.value)}
+                    className="w-full px-3 py-2 border border-orange-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" dir="ltr" />
+                </div>
+                {manualMode && (
+                  <div className="flex-1 space-y-1">
+                    <label className="text-xs text-orange-700">مبلغ الحجز (₪) — يدوي</label>
+                    <input type="number" min={0} step={0.01} value={retentionAmountManual}
+                      onChange={e => setRetentionAmountManual(e.target.value)}
+                      placeholder="سيحسب تلقائياً..."
+                      className="w-full px-3 py-2 border border-orange-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" dir="ltr" />
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-orange-600">
+                سيتم حجز {retentionPct || 0}%
+                {manualMode && retentionAmountManual ? ` (مبلغ يدوي: ${parseFloat(retentionAmountManual).toLocaleString()} ₪)` : ''}
+                {' '}من مبلغ دعم التمويل بعد حساب النقلات.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => { setFrom(suggestedFrom); setTo(suggestedTo ?? today) }}
-              className="text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition-colors flex-shrink-0"
-            >
-              تطبيق
-            </button>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">ملاحظات (اختياري)</label>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                placeholder="أي ملاحظات إضافية..." rows={2}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={onCancel}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors">
+                إلغاء
+              </button>
+              <button type="button" onClick={goToStep2} disabled={tripsLoading || !from || !to}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                {tripsLoading ? <RefreshCw size={14} className="animate-spin" /> : null}
+                التالي — مراجعة النقلات
+              </button>
+            </div>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">من تاريخ</label>
-              <input type="date" value={from} onChange={e => setFrom(e.target.value)} required
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        {/* ══ STEP 2 ══ */}
+        {step === 2 && (
+          <div className="space-y-4">
+            {/* ملخص الفترة */}
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm">
+              <Calendar size={15} className="text-slate-500 flex-shrink-0" />
+              <span className="text-slate-600">الفترة: <strong className="text-slate-800">{fmtDate(from)} — {fmtDate(to)}</strong></span>
+              <span className="mr-auto text-slate-500">
+                <span className="font-bold text-emerald-700">{fmt(includedCount)}</span> نقلة مشمولة
+                {excludedCount > 0 && <span className="mr-2 text-amber-600 font-bold">· {fmt(excludedCount)} مستثناة</span>}
+              </span>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">إلى تاريخ</label>
-              <input type="date" value={to} onChange={e => setTo(e.target.value)} required
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-          </div>
 
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-semibold text-orange-800 flex items-center gap-1.5">
-                <ShieldCheck size={14} /> حجز التأمينات
-              </label>
-              <button
-                type="button"
-                onClick={() => { setManualMode(!manualMode); setRetentionAmountManual('') }}
-                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
-                  manualMode
-                    ? 'bg-orange-200 text-orange-800 border-orange-300'
-                    : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-100'
-                }`}
-              >
-                {manualMode ? '● مبلغ يدوي' : 'إدخال مبلغ يدوياً'}
+            {/* تعليمات */}
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800">
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <span>النقلات المستثناة <strong>لن تُحسب</strong> في هذه المطالبة وستبقى متاحة للمطالبات القادمة. التغييرات تُحفظ فوراً.</span>
+            </div>
+
+            {/* قائمة النقلات */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 grid grid-cols-12 gap-2 text-xs font-semibold text-slate-500">
+                <div className="col-span-1 text-center">شمل</div>
+                <div className="col-span-3">المصنع</div>
+                <div className="col-span-2 text-center">التاريخ</div>
+                <div className="col-span-2 text-center">النوع</div>
+                <div className="col-span-2 text-center">التكلفة</div>
+                <div className="col-span-2 text-center">الحالة</div>
+              </div>
+              <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                {periodTrips.length === 0 && (
+                  <div className="text-center py-8 text-slate-400 text-sm">لا توجد نقلات في هذه الفترة</div>
+                )}
+                {periodTrips.map((t) => {
+                  const isExcluded = excluded.has(t.id)
+                  const isToggling = toggling === t.id
+                  return (
+                    <div key={t.id}
+                      className={`px-4 py-2.5 grid grid-cols-12 gap-2 items-center text-sm transition-colors ${
+                        isExcluded ? 'bg-amber-50/60 opacity-60' : 'hover:bg-slate-50'
+                      }`}>
+                      <div className="col-span-1 flex justify-center">
+                        <button
+                          onClick={() => toggleExclude(t.id, isExcluded)}
+                          disabled={isToggling}
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                            isToggling ? 'opacity-50 cursor-wait' :
+                            isExcluded
+                              ? 'border-amber-400 bg-amber-50 hover:bg-amber-100'
+                              : 'border-emerald-500 bg-emerald-500 hover:bg-emerald-600'
+                          }`}
+                          title={isExcluded ? 'انقر لإعادة الإدراج' : 'انقر للاستثناء'}
+                        >
+                          {!isExcluded && (
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                              <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <div className="col-span-3 font-medium text-slate-700 truncate text-xs">{t.factories?.name ?? '—'}</div>
+                      <div className="col-span-2 text-center text-xs text-slate-500">{t.trip_date ? fmtDate(t.trip_date) : '—'}</div>
+                      <div className="col-span-2 text-center">
+                        {t.waste_type === 'liquid'
+                          ? <span className="bg-blue-50 text-blue-700 text-xs px-1.5 py-0.5 rounded-full">💧 سائل</span>
+                          : t.waste_type === 'solid'
+                          ? <span className="bg-amber-50 text-amber-700 text-xs px-1.5 py-0.5 rounded-full">🪨 جاف</span>
+                          : <span className="text-slate-400 text-xs">—</span>}
+                      </div>
+                      <div className="col-span-2 text-center text-xs font-mono text-slate-700">{t.trip_cost ? `${Number(t.trip_cost).toLocaleString()} ₪` : '—'}</div>
+                      <div className="col-span-2 text-center">
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                          t.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                        }`}>{t.payment_status === 'paid' ? 'مدفوع' : 'ذمة'}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => setStep(1)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors">
+                رجوع
+              </button>
+              <button type="button" onClick={handleSubmit} disabled={loading || includedCount === 0}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                {loading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                إنشاء مطالبة ({fmt(includedCount)} نقلة)
               </button>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex-1 space-y-1">
-                <label className="text-xs text-orange-700">النسبة (%)</label>
-                <input
-                  type="number" min={0} max={100} step={0.5}
-                  value={retentionPct}
-                  onChange={e => setRetentionPct(e.target.value)}
-                  className="w-full px-3 py-2 border border-orange-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                  dir="ltr"
-                />
-              </div>
-              {manualMode && (
-                <div className="flex-1 space-y-1">
-                  <label className="text-xs text-orange-700">مبلغ الحجز (₪) — يدوي</label>
-                  <input
-                    type="number" min={0} step={0.01}
-                    value={retentionAmountManual}
-                    onChange={e => setRetentionAmountManual(e.target.value)}
-                    placeholder="سيحسب تلقائياً..."
-                    className="w-full px-3 py-2 border border-orange-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                    dir="ltr"
-                  />
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-orange-600">
-              سيتم حجز {retentionPct || 0}%
-              {manualMode && retentionAmountManual ? ` (مبلغ يدوي: ${parseFloat(retentionAmountManual).toLocaleString()} ₪)` : ''}
-              {' '}من مبلغ دعم التمويل بعد حساب النقلات.
-            </p>
           </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">ملاحظات (اختياري)</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)}
-              placeholder="أي ملاحظات إضافية..."
-              rows={2}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onCancel} disabled={loading}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium text-sm transition-colors disabled:opacity-50">
-              إلغاء
-            </button>
-            <button type="submit" disabled={loading || !from || !to}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-              إنشاء مطالبة (مسودة)
-            </button>
-          </div>
-        </form>
+        )}
       </div>
     </div>
   )

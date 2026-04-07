@@ -1112,6 +1112,37 @@ export async function getDisbursements(): Promise<Disbursement[]> {
 }
 
 /** حساب مجاميع النقلات لفترة معينة */
+/**
+ * جلب النقلات في فترة زمنية للعرض في مودال المطالبة الجديدة.
+ * تُعيد كل النقلات (المشمولة والمستثناة) مع بيانات المصنع.
+ */
+export async function getTripsForDisbursement(from: string, to: string) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .select('id, trip_date, trip_cost, payment_status, waste_type, disbursement_excluded, factories(name)')
+    .gte('trip_date', from)
+    .lte('trip_date', to)
+    .order('trip_date', { ascending: true })
+  if (error) throw error
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []) as any[]
+}
+
+/**
+ * تبديل حالة استثناء نقلة من/إلى المطالبات المالية.
+ */
+export async function setTripDisbursementExclusion(tripId: string, excluded: boolean): Promise<void> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('trips')
+    .update({ disbursement_excluded: excluded })
+    .eq('id', tripId)
+  if (error) throw error
+}
+
 async function calcDisbursementAmounts(from: string, to: string) {
   const supabase = createClient()
 
@@ -1121,13 +1152,14 @@ async function calcDisbursementAmounts(from: string, to: string) {
     .from('settings').select('value').eq('key', 'factory_contribution').single()
   const contributionPerTrip = Number(setting?.value ?? 50)
 
-  // جلب كل النقلات في الفترة مع حالة الدفع
+  // جلب كل النقلات في الفترة مع حالة الدفع — باستثناء المستثناة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('trips')
     .select('trip_cost, payment_status')
     .gte('trip_date', from)
     .lte('trip_date', to)
+    .eq('disbursement_excluded', false)
   if (error) throw error
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows: any[] = data ?? []
@@ -1319,12 +1351,13 @@ export async function updateDisbursement(
   const newTo   = fields.period_to   ?? current.period_to
   const newPct  = fields.retention_pct ?? Number(current.retention_pct ?? 10)
 
-  // نحسب المبالغ من الفترة الجديدة
+  // نحسب المبالغ من الفترة الجديدة — باستثناء المستثناة
   const { data: trips } = await (supabase as any)
     .from('trips')
     .select('trip_cost, payment_status')
     .gte('trip_date', newFrom)
     .lte('trip_date', newTo)
+    .eq('disbursement_excluded', false)
 
   // جلب قيمة مساهمة المصنع من الإعدادات
   const { data: contribSetting } = await (supabase as any)
