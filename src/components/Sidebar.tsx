@@ -47,7 +47,7 @@ export default function Sidebar() {
     ]},
     { label: t(T.navGroups.analytics, lang), items: [
       { href: '/reports', label: t(T.nav.reports, lang), icon: BarChart2, show: 'edit' },
-      { href: '/map',     label: t(T.nav.map,     lang), icon: MapPin,    show: 'edit' },
+      { href: '/map',     label: t(T.nav.map,     lang), icon: MapPin,    show: 'always' },
     ]},
     { label: t(T.navGroups.admin, lang), items: [
       { href: '/users',    label: t(T.nav.users,    lang), icon: Users,    show: 'admin' },

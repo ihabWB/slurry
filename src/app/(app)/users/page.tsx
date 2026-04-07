@@ -179,7 +179,7 @@ export default function UsersPage() {
                 onChange={(e) => setForm(p => ({ ...p, role: e.target.value as UserRole }))}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="viewer">مستخدم عادي — عرض لوحة التحكم فقط</option>
+                <option value="viewer">مستخدم عادي — عرض لوحة التحكم والخريطة</option>
                 <option value="manager">مدير مشروع — إدخال البيانات والتقارير</option>
                 <option value="admin">مدير النظام — صلاحية كاملة</option>
               </select>
@@ -277,7 +277,7 @@ export default function UsersPage() {
                 <p className="text-xs opacity-75 mt-0.5">
                   {r === 'admin' && 'وصول كامل + إدارة المستخدمين'}
                   {r === 'manager' && 'إدخال البيانات والتقارير والخريطة'}
-                  {r === 'viewer' && 'عرض لوحة التحكم فقط'}
+                  {r === 'viewer' && 'عرض لوحة التحكم والخريطة'}
                 </p>
               </div>
             </div>
