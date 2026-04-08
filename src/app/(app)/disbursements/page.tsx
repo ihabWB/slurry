@@ -587,11 +587,12 @@ function NewDisbursementModal({
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 grid grid-cols-12 gap-2 text-xs font-semibold text-slate-500">
                 <div className="col-span-1 text-center">شمل</div>
-                <div className="col-span-3">المصنع</div>
+                <div className="col-span-2">المصنع</div>
                 <div className="col-span-2 text-center">التاريخ</div>
+                <div className="col-span-2 text-center">الكوبون</div>
                 <div className="col-span-2 text-center">النوع</div>
                 <div className="col-span-2 text-center">التكلفة</div>
-                <div className="col-span-2 text-center">الحالة</div>
+                <div className="col-span-1 text-center">الحالة</div>
               </div>
               <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
                 {periodTrips.length === 0 && (
@@ -624,8 +625,9 @@ function NewDisbursementModal({
                           )}
                         </button>
                       </div>
-                      <div className="col-span-3 font-medium text-slate-700 truncate text-xs">{t.factories?.name ?? '—'}</div>
+                      <div className="col-span-2 font-medium text-slate-700 truncate text-xs">{t.factories?.name ?? '—'}</div>
                       <div className="col-span-2 text-center text-xs text-slate-500">{t.trip_date ? fmtDate(t.trip_date) : '—'}</div>
+                      <div className="col-span-2 text-center text-xs font-mono text-slate-600">{t.coupon_number ?? <span className="text-slate-300">—</span>}</div>
                       <div className="col-span-2 text-center">
                         {t.waste_type === 'liquid'
                           ? <span className="bg-blue-50 text-blue-700 text-xs px-1.5 py-0.5 rounded-full">💧 سائل</span>
@@ -634,10 +636,10 @@ function NewDisbursementModal({
                           : <span className="text-slate-400 text-xs">—</span>}
                       </div>
                       <div className="col-span-2 text-center text-xs font-mono text-slate-700">{t.trip_cost ? `${Number(t.trip_cost).toLocaleString()} ₪` : '—'}</div>
-                      <div className="col-span-2 text-center">
+                      <div className="col-span-1 text-center">
                         <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                           t.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                        }`}>{t.payment_status === 'paid' ? 'مدفوع' : 'ذمة'}</span>
+                        }`}>{t.payment_status === 'paid' ? '✓' : 'ذمة'}</span>
                       </div>
                     </div>
                   )
