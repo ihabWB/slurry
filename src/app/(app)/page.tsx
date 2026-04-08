@@ -393,23 +393,30 @@ export default function DashboardPage() {
                     <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${stats.budgetSpentPct}%` }} />
                   </div>
                 </div>
-              ) : stats.closedDisbursementsCount > 0 ? (
+              ) : null}
+
+              {/* الدفعات المقفلة — تظهر دائماً لو في دفعات */}
+              {stats.closedDisbursementsCount > 0 && (
                 <div className="bg-white rounded-xl border border-slate-100 p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-[11px] text-slate-400 font-medium mb-1">الدفعات المقفلة</p>
+                      <p className="text-[11px] text-slate-400 font-medium mb-1">صافي المصروف الفعلي</p>
                       <p className="text-2xl font-bold text-emerald-700">{Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{stats.closedDisbursementsCount} دفعة مقفلة</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{stats.closedDisbursementsCount} دفعة مقفلة معتمدة</p>
                     </div>
                     {stats.totalRetained > 0 && (
-                      <div className="text-right">
-                        <p className="text-[11px] text-slate-400 font-medium mb-1">محتجز (تأمينات)</p>
-                        <p className="text-xl font-bold text-orange-700">{Math.round(stats.totalRetained).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
-                      </div>
+                      <>
+                        <div className="w-px h-12 bg-slate-100" />
+                        <div className="text-right">
+                          <p className="text-[11px] text-slate-400 font-medium mb-1">حجز التأمينات (محتجز)</p>
+                          <p className="text-xl font-bold text-orange-700">{Math.round(stats.totalRetained).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">يُعاد عند انتهاء المشروع</p>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
-              ) : null}
+              )}
 
               <Link href="/disbursements" className="flex items-center justify-center gap-1.5 w-full text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl transition-colors">
                 <Receipt size={13} /> عرض المطالبات التفصيلية
