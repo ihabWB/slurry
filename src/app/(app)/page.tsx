@@ -253,6 +253,7 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
+            <>
             <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
 
               {/* إجمالي النقلات */}
@@ -364,6 +365,7 @@ export default function DashboardPage() {
                 </div>
               )
             })()}
+            </>
           )}
         </div>
 
