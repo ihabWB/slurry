@@ -1134,7 +1134,7 @@ export async function getTripsForDisbursement(from: string, to: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('trips')
-    .select('id, trip_date, trip_cost, payment_status, waste_type, disbursement_excluded, factories(name)')
+    .select('id, trip_date, trip_cost, payment_status, waste_type, disbursement_excluded, coupon_number, factories(name)')
     .gte('trip_date', from)
     .lte('trip_date', to)
     .order('trip_date', { ascending: true })
