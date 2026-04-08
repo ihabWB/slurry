@@ -326,7 +326,7 @@ export default function DashboardPage() {
             </div>
 
             {/* ── مؤشر الاتجاه الشهري ──────────────────────── */}
-            {!loading && (() => {
+            {(() => {
               const curr = stats.monthTripsCount
               const prev = stats.prevMonthTripsCount
               const day  = stats.currentMonthDay
