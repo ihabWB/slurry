@@ -170,6 +170,7 @@ export default function DashboardPage() {
     { href: '/trips/new',    label: t(T.dashboard.newTrip, lang),     sub: t(T.dashboard.newTripSub, lang),    icon: Truck,      bg: 'bg-blue-600',    shadow: 'shadow-blue-200' },
     { href: '/payments/new', label: t(T.dashboard.newPayment, lang),  sub: t(T.dashboard.newPaymentSub, lang), icon: DollarSign, bg: 'bg-emerald-500', shadow: 'shadow-emerald-200' },
     { href: '/reports',      label: t(T.dashboard.viewReports, lang), sub: 'PDF / Excel',                      icon: TrendingUp, bg: 'bg-violet-500',  shadow: 'shadow-violet-200' },
+    { href: '/map',          label: 'خريطة المصانع',                  sub: 'عرض المواقع الجغرافية',            icon: Factory,    bg: 'bg-teal-500',    shadow: 'shadow-teal-200' },
   ]
 
   return (
@@ -195,6 +196,45 @@ export default function DashboardPage() {
           <span className="hidden sm:inline">{t(T.dashboard.refresh, lang)}</span>
         </button>
       </div>
+
+      {/* ── نبضة اليوم ──────────────────────────────────── */}
+      {!loading && (
+        <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm">
+          <span className="text-slate-400 text-xs font-semibold">اليوم</span>
+          <span className="w-px h-4 bg-slate-200" />
+          <span className="flex items-center gap-1.5 font-bold text-slate-700">
+            <Truck size={13} className="text-blue-500" />
+            {stats.todayTripsCount} نقلة
+          </span>
+          {stats.todayPaidCount > 0 && (
+            <span className="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-semibold">✓ {stats.todayPaidCount} مدفوعة</span>
+          )}
+          {stats.todayCreditCount > 0 && (
+            <span className="text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg font-semibold">◷ {stats.todayCreditCount} ذمة</span>
+          )}
+          {stats.todayTripsCount === 0 && (
+            <span className="text-xs text-slate-400 italic">لا توجد نقلات مسجّلة اليوم</span>
+          )}
+        </div>
+      )}
+
+      {/* ── تحذير المصانع المتأخرة ───────────────────────── */}
+      {!loading && stats.overdueFactories > 0 && (
+        <div className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 rounded-2xl px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={18} className="text-red-600" />
+            </div>
+            <div>
+              <p className="font-bold text-red-700 text-sm">{stats.overdueFactories} مصنع لديهم مستحقات متأخرة</p>
+              <p className="text-xs text-red-400 mt-0.5">يرجى المتابعة وتحصيل المبالغ المستحقة</p>
+            </div>
+          </div>
+          <Link href="/reports" className="flex-shrink-0 flex items-center gap-1.5 text-xs font-semibold text-red-700 hover:text-red-800 bg-red-100 hover:bg-red-200 border border-red-200 px-3 py-2 rounded-xl transition-colors">
+            <ArrowLeft size={13} className={dir === 'ltr' ? 'rotate-180' : ''} /> عرض المتأخرين
+          </Link>
+        </div>
+      )}
 
       {/* ── بطاقة النشاط التشغيلي ────────────────────────── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -446,7 +486,7 @@ export default function DashboardPage() {
       </div>{/* ── end grid (أحجام + وجهات) ─────────────────────── */}
 
       {/* ── بطاقة الملخص المالي الموحّدة ───────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
@@ -587,7 +627,7 @@ export default function DashboardPage() {
       {/* ── إجراءات سريعة ──────────────────────────────────── */}
       <div>
         <h2 className="text-sm font-semibold text-slate-500 mb-3 px-0.5">{t(T.dashboard.quickActions, lang)}</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {quickActions.map(({ href, label, sub, icon: Icon, bg, shadow }) => (
             <Link key={href} href={href}
               className="group bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-4 hover:shadow-md hover:border-slate-200 transition-all">
