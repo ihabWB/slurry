@@ -754,6 +754,7 @@ export async function getDashboardStats() {
     volumeAllRes,       // كل النقلات: waste_type + volume_m3
     volumeMonthRes,     // نقلات الشهر: waste_type + volume_m3
     activeFactoriesTotalRes, // مصانع نشطة (لها نقلات) إجمالاً
+    prevMonthTripsRes,  // نقلات الشهر الماضي (نفس الأيام)
   ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
@@ -796,6 +797,15 @@ export async function getDashboardStats() {
     // مصانع نشطة إجمالاً (distinct factory_id من trips)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_id'),
+    // نقلات الشهر الماضي (نفس عدد الأيام) — لمؤشر الاتجاه
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('id').gte('trip_date', (() => {
+      const d = new Date(now); d.setMonth(d.getMonth() - 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+    })()).lte('trip_date', (() => {
+      const d = new Date(now); d.setMonth(d.getMonth() - 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    })()),
   ])
 
   // إجمالي تكاليف النقلات من جدول التسعيرة
@@ -976,6 +986,9 @@ export async function getDashboardStats() {
     dumpSiteStats,
     // مصانع نشطة إجمالاً
     activeFactoriesTotal,
+    // مؤشر الاتجاه الشهري
+    prevMonthTripsCount: (prevMonthTripsRes.data || []).length,
+    currentMonthDay: now.getDate(),
   }
 }
 

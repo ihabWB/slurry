@@ -53,6 +53,9 @@ interface Stats {
     khalletSharbati: { count: number; volume: number; countMonth: number; volumeMonth: number }
     sa3ir:           { count: number; volume: number; countMonth: number; volumeMonth: number }
   }
+  // مؤشر الاتجاه الشهري
+  prevMonthTripsCount: number
+  currentMonthDay: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,6 +136,7 @@ export default function DashboardPage() {
       khalletSharbati: { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
       sa3ir:           { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
     },
+    prevMonthTripsCount: 0, currentMonthDay: 1,
   })
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
@@ -320,8 +324,47 @@ export default function DashboardPage() {
               </div>
 
             </div>
+
+            {/* ── مؤشر الاتجاه الشهري ──────────────────────── */}
+            {!loading && (() => {
+              const curr = stats.monthTripsCount
+              const prev = stats.prevMonthTripsCount
+              const day  = stats.currentMonthDay
+              if (prev === 0 && curr === 0) return null
+              const diff = curr - prev
+              const pct  = prev > 0 ? Math.round(Math.abs(diff) / prev * 100) : 100
+              const up   = diff > 0
+              const same = diff === 0
+              return (
+                <div className="px-3.5 pb-3.5">
+                  <div className={`rounded-lg px-3 py-2 flex items-center justify-between gap-2 ${
+                    same ? 'bg-slate-50 border border-slate-100' :
+                    up   ? 'bg-emerald-50 border border-emerald-100' :
+                           'bg-red-50 border border-red-100'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-sm font-bold ${
+                        same ? 'text-slate-400' : up ? 'text-emerald-600' : 'text-red-500'
+                      }`}>
+                        {same ? '↔' : up ? '▲' : '▼'}
+                      </span>
+                      <p className={`text-[11px] font-semibold ${
+                        same ? 'text-slate-500' : up ? 'text-emerald-700' : 'text-red-600'
+                      }`}>
+                        {same
+                          ? 'نفس وتيرة الشهر الماضي'
+                          : `${up ? '+' : ''}${diff} نقلة (${up ? '+' : '-'}${pct}%)`
+                        }
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      1–{day} مقابل نفس الفترة الشهر الماضي · {prev} نقلة
+                    </p>
+                  </div>
+                </div>
+              )
+            })()}
           )}
-        </div>
 
         {/* ── الملخص المالي السريع (3/5) ─────────────────── */}
         <div className="lg:col-span-3 bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
