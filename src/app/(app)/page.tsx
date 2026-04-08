@@ -284,6 +284,9 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* ── بطاقة الأحجام + وجهات النقل جنب بعض ────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+
       {/* ── بطاقة الأحجام ───────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
@@ -439,6 +442,8 @@ export default function DashboardPage() {
           )
         })()}
       </div>
+
+      </div>{/* ── end grid (أحجام + وجهات) ─────────────────────── */}
 
       {/* ── بطاقة الملخص المالي الموحّدة ───────────────────── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
