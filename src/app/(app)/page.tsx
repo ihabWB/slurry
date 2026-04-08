@@ -365,6 +365,7 @@ export default function DashboardPage() {
               )
             })()}
           )}
+        </div>
 
         {/* ── الملخص المالي السريع (3/5) ─────────────────── */}
         <div className="lg:col-span-3 bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
