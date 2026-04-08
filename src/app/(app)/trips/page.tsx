@@ -437,6 +437,38 @@ export default function TripsPage() {
     finally { setApprovingAll(false) }
   }
 
+  const handleExport = () => {
+    if (trips.length === 0) { showToast('error', 'لا توجد نقلات للتصدير'); return }
+    const headers = ['#', 'المصنع', 'المنطقة', 'نوع الربو', 'الحجم (م³)', 'المبلغ (₪)', 'حالة الدفع', 'حالة الاعتماد', 'تاريخ النقلة', 'رقم الكوبون', 'السائق', 'نوع المركبة', 'موقع التفريغ', 'ملاحظات']
+    const rows = trips.map((t: Trip, i: number) => [
+      i + 1,
+      t.factories?.name ?? '',
+      t.factories?.region ?? '',
+      t.waste_type === 'liquid' ? 'سائل' : t.waste_type === 'solid' ? 'صلب' : '',
+      t.volume_m3 ?? '',
+      t.amount ?? '',
+      t.payment_status === 'paid' ? 'مدفوع' : 'ذمة',
+      APPROVAL_LABELS[t.approval_status as ApprovalStatus]?.label ?? t.approval_status ?? '',
+      t.trip_date ?? '',
+      t.coupon_number ?? '',
+      t.driver_name ?? '',
+      t.vehicle_type ?? '',
+      t.dump_site ?? '',
+      t.notes ?? '',
+    ])
+    const csv = [headers, ...rows]
+      .map(row => row.map((v: unknown) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `نقلات_${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast('success', `تم تصدير ${trips.length} نقلة`)
+  }
+
   const canEditTrip = (t: Trip) => {
     if (isAdmin) return true
     return t.approval_status === 'draft' || t.approval_status === 'rejected'
@@ -578,7 +610,7 @@ export default function TripsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-slate-800">قائمة النقلات</h2>
-            <Button variant="ghost" size="sm"><Download size={14} /> تصدير</Button>
+            <Button variant="ghost" size="sm" onClick={handleExport}><Download size={14} /> تصدير ({trips.length})</Button>
           </div>
         </CardHeader>
         <div className="overflow-x-auto">
