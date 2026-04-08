@@ -200,8 +200,8 @@ export default function DashboardPage() {
       {/* ── صف النشاط التشغيلي + الملخص المالي السريع ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
 
-        {/* ── النشاط التشغيلي (3/5) ──────────────────────── */}
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {/* ── النشاط التشغيلي (2/5) ──────────────────────── */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
             <span className="text-base">📋</span>
             <h2 className="font-semibold text-slate-700 text-sm">النشاط التشغيلي</h2>
@@ -252,79 +252,79 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
 
               {/* إجمالي النقلات */}
-              <div className="p-5">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <Truck size={15} className="text-blue-600" />
+              <div className="p-3.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="w-6 h-6 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <Truck size={12} className="text-blue-600" />
                   </div>
-                  <p className="text-xs text-slate-500">إجمالي النقلات</p>
+                  <p className="text-[11px] text-slate-500">إجمالي النقلات</p>
                 </div>
-                <p className="text-3xl font-bold text-slate-800 mt-2">
+                <p className="text-2xl font-bold text-slate-800">
                   {stats.totalTrips.toLocaleString()}
-                  <span className="text-sm font-normal text-slate-400 ms-1">نقلة</span>
+                  <span className="text-xs font-normal text-slate-400 ms-1">نقلة</span>
                 </p>
-                <div className="flex gap-1.5 mt-2.5">
-                  <span className="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-semibold">✓ {stats.paidTripsCount} مدفوع</span>
-                  <span className="text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg font-semibold">◷ {stats.creditTripsCount} ذمة</span>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">✓ {stats.paidTripsCount}</span>
+                  <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-semibold">◷ {stats.creditTripsCount}</span>
                 </div>
               </div>
 
               {/* نقلات هذا الشهر */}
-              <div className="p-5">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
-                    <Truck size={15} className="text-sky-600" />
+              <div className="p-3.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="w-6 h-6 rounded-md bg-sky-50 flex items-center justify-center flex-shrink-0">
+                    <Truck size={12} className="text-sky-600" />
                   </div>
-                  <p className="text-xs text-slate-500">نقلات هذا الشهر</p>
+                  <p className="text-[11px] text-slate-500">هذا الشهر</p>
                 </div>
-                <p className="text-3xl font-bold text-slate-800 mt-2">
+                <p className="text-2xl font-bold text-slate-800">
                   {stats.monthTripsCount.toLocaleString()}
-                  <span className="text-sm font-normal text-slate-400 ms-1">نقلة</span>
+                  <span className="text-xs font-normal text-slate-400 ms-1">نقلة</span>
                 </p>
-                <p className="text-[11px] text-slate-400 mt-2.5">متوسط: {stats.avgTripsPerFactory} نقلة / مصنع</p>
+                <p className="text-[10px] text-slate-400 mt-1.5">متوسط: {stats.avgTripsPerFactory}/مصنع</p>
               </div>
 
               {/* إجمالي المصانع */}
-              <div className="p-5">
+              <div className="p-3.5">
                 <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
-                      <Factory size={15} className="text-violet-600" />
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-6 h-6 rounded-md bg-violet-50 flex items-center justify-center flex-shrink-0">
+                      <Factory size={12} className="text-violet-600" />
                     </div>
-                    <p className="text-xs text-slate-500">إجمالي المصانع</p>
+                    <p className="text-[11px] text-slate-500">المصانع</p>
                   </div>
                   {stats.overdueFactories > 0
-                    ? <span className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-lg">⚠ {stats.overdueFactories} متأخرة</span>
-                    : <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-lg">✓ منتظمة</span>}
+                    ? <span className="text-[9px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded">⚠ {stats.overdueFactories}</span>
+                    : <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">✓</span>}
                 </div>
-                <p className="text-3xl font-bold text-slate-800 mt-2">
+                <p className="text-2xl font-bold text-slate-800">
                   {stats.totalFactories.toLocaleString()}
-                  <span className="text-sm font-normal text-slate-400 ms-1">مصنع</span>
+                  <span className="text-xs font-normal text-slate-400 ms-1">مصنع</span>
                 </p>
-                <p className="text-[11px] text-slate-400 mt-2.5">نشطة (لها نقلات): {stats.activeFactoriesTotal}</p>
+                <p className="text-[10px] text-slate-400 mt-1.5">نشطة: {stats.activeFactoriesTotal}</p>
               </div>
 
               {/* مصانع نشطة هذا الشهر */}
-              <div className="p-5">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-8 h-8 rounded-lg bg-fuchsia-50 flex items-center justify-center flex-shrink-0">
-                    <Factory size={15} className="text-fuchsia-600" />
+              <div className="p-3.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="w-6 h-6 rounded-md bg-fuchsia-50 flex items-center justify-center flex-shrink-0">
+                    <Factory size={12} className="text-fuchsia-600" />
                   </div>
-                  <p className="text-xs text-slate-500">مصانع نشطة هذا الشهر</p>
+                  <p className="text-[11px] text-slate-500">نشطة الشهر</p>
                 </div>
-                <p className="text-3xl font-bold text-slate-800 mt-2">
+                <p className="text-2xl font-bold text-slate-800">
                   {stats.activeFactoriesThisMonth.toLocaleString()}
-                  <span className="text-sm font-normal text-slate-400 ms-1">مصنع</span>
+                  <span className="text-xs font-normal text-slate-400 ms-1">مصنع</span>
                 </p>
-                <p className="text-[11px] text-slate-400 mt-2.5">من أصل {stats.totalFactories} مسجلة</p>
+                <p className="text-[10px] text-slate-400 mt-1.5">من {stats.totalFactories} مسجلة</p>
               </div>
 
             </div>
           )}
         </div>
 
-        {/* ── الملخص المالي السريع (2/5) ─────────────────── */}
-        <div className="lg:col-span-2 bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* ── الملخص المالي السريع (3/5) ─────────────────── */}
+        <div className="lg:col-span-3 bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
             <span className="text-base">💰</span>
             <h2 className="font-semibold text-slate-700 text-sm">الملخص المالي</h2>
@@ -334,59 +334,84 @@ export default function DashboardPage() {
           ) : (
             <div className="p-5 space-y-4">
 
-              {/* تكلفة النقلات */}
-              <div className="space-y-0.5">
-                <p className="text-[11px] text-slate-400">إجمالي تكلفة النقلات</p>
-                <p className="text-2xl font-bold text-slate-800">{Math.round(stats.totalProjectCost).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
-                <p className="text-[10px] text-slate-400">{stats.tripsWithCostCount} نقلة مسعّرة من {stats.totalTrips}</p>
+              {/* صف علوي: تكلفة + مساهمات */}
+              <div className="grid grid-cols-2 gap-4">
+
+                {/* تكلفة النقلات */}
+                <div className="bg-white rounded-xl border border-slate-100 p-4 space-y-1">
+                  <p className="text-[11px] text-slate-400 font-medium">إجمالي تكلفة النقلات</p>
+                  <p className="text-2xl font-bold text-slate-800">{Math.round(stats.totalProjectCost).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                  <p className="text-[10px] text-slate-400">{stats.tripsWithCostCount} نقلة مسعّرة من {stats.totalTrips}</p>
+                  {stats.totalTrips > 0 && stats.tripsWithCostCount < stats.totalTrips && (
+                    <p className="text-[10px] text-amber-600 font-semibold">⚠️ {stats.totalTrips - stats.tripsWithCostCount} بدون تسعيرة</p>
+                  )}
+                </div>
+
+                {/* مساهمات المصانع */}
+                <div className="bg-white rounded-xl border border-slate-100 p-4 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] text-slate-400 font-medium">مساهمات المصانع</p>
+                    <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{contributionPerTrip} ₪/نقلة</span>
+                  </div>
+                  <p className="text-2xl font-bold text-slate-800">{Math.round(stats.totalFactoryShare).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                  <div className="flex gap-1.5">
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-semibold">✓ {Math.round(stats.factoryShareCollected).toLocaleString()} ₪ · {collectPct}%</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-semibold">◷ {Math.round(stats.factoryShareUncollected).toLocaleString()} ₪ · {uncollectedPct}%</span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${collectPct}%` }} />
+                    <div className="h-full bg-amber-400 transition-all" style={{ width: `${uncollectedPct}%` }} />
+                  </div>
+                </div>
+
               </div>
 
-              <div className="h-px bg-slate-100" />
-
-              {/* مساهمات المصانع */}
-              <div className="space-y-1.5">
-                <p className="text-[11px] text-slate-400">مساهمات المصانع</p>
-                <p className="text-2xl font-bold text-slate-800">{Math.round(stats.totalFactoryShare).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
-                <div className="flex gap-2">
-                  <span className="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-semibold">✓ {Math.round(stats.factoryShareCollected).toLocaleString()} ₪</span>
-                  <span className="text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg font-semibold">◷ {Math.round(stats.factoryShareUncollected).toLocaleString()} ₪</span>
-                </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex mt-1">
-                  <div className="h-full bg-emerald-500 transition-all" style={{ width: `${collectPct}%` }} />
-                  <div className="h-full bg-amber-400 transition-all" style={{ width: `${uncollectedPct}%` }} />
-                </div>
-              </div>
-
-              <div className="h-px bg-slate-100" />
-
-              {/* الميزانية */}
+              {/* صف سفلي: التمويل / الدفعات */}
               {stats.projectBudget > 0 ? (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] text-slate-400">التمويل</p>
-                  <div className="flex justify-between">
+                <div className="bg-white rounded-xl border border-slate-100 p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] text-slate-400 font-medium">التمويل والميزانية</p>
+                    <span className="text-[10px] text-violet-600 font-semibold">{stats.budgetSpentPct}% مُصرف</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <p className="text-xs text-slate-400">مُصرف</p>
+                      <p className="text-[10px] text-slate-400">الميزانية الكلية</p>
+                      <p className="text-lg font-bold text-slate-700">{stats.projectBudget.toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400">مُصرف</p>
                       <p className="text-lg font-bold text-teal-700">{Math.round(stats.spentFromBudget).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">متبقٍ</p>
+                    <div>
+                      <p className="text-[10px] text-slate-400">متبقٍ</p>
                       <p className="text-lg font-bold text-violet-700">{Math.round(stats.remainingBudget).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
                     </div>
                   </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                     <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${stats.budgetSpentPct}%` }} />
                   </div>
-                  <p className="text-[10px] text-slate-400 text-center">{stats.budgetSpentPct}% من {stats.projectBudget.toLocaleString()} ₪</p>
                 </div>
-              ) : (
-                <div className="space-y-0.5">
-                  <p className="text-[11px] text-slate-400">الدفعات المقفلة</p>
-                  <p className="text-2xl font-bold text-emerald-700">{Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
-                  <p className="text-[10px] text-slate-400">{stats.closedDisbursementsCount} دفعة مقفلة</p>
+              ) : stats.closedDisbursementsCount > 0 ? (
+                <div className="bg-white rounded-xl border border-slate-100 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] text-slate-400 font-medium mb-1">الدفعات المقفلة</p>
+                      <p className="text-2xl font-bold text-emerald-700">{Math.round(stats.totalDisbursed).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{stats.closedDisbursementsCount} دفعة مقفلة</p>
+                    </div>
+                    {stats.totalRetained > 0 && (
+                      <div className="text-right">
+                        <p className="text-[11px] text-slate-400 font-medium mb-1">محتجز (تأمينات)</p>
+                        <p className="text-xl font-bold text-orange-700">{Math.round(stats.totalRetained).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+              ) : null}
 
-              <Link href="/disbursements" className="flex items-center justify-center gap-1.5 w-full text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl transition-colors mt-1">
+              <Link href="/disbursements" className="flex items-center justify-center gap-1.5 w-full text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl transition-colors">
                 <Receipt size={13} /> عرض المطالبات التفصيلية
               </Link>
             </div>
