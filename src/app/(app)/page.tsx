@@ -142,6 +142,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [draftCount, setDraftCount] = useState(0)
 
   const load = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -155,6 +156,7 @@ export default function DashboardPage() {
       setStats(s)
       setRecentTrips((trips || []).slice(0, 10))
       setPendingCount(approvalStats.pending_approval)
+      setDraftCount(approvalStats.draft)
     } catch (e: unknown) {
       if ((e as { name?: string })?.name !== 'AbortError') console.error(e)
     } finally {
@@ -214,14 +216,24 @@ export default function DashboardPage() {
             <h2 className="font-semibold text-slate-700 text-sm">النشاط التشغيلي</h2>
           </div>
 
-          {/* بنر الاعتماد — للأدمن فقط */}
-          {!loading && isAdmin && pendingCount > 0 && (
+          {/* بنر النقلات الجديدة — للأدمن فقط */}
+          {!loading && isAdmin && (draftCount > 0 || pendingCount > 0) && (
             <Link href="/trips" className="flex items-center justify-between gap-3 px-5 py-3 bg-violet-50 border-b border-violet-100 hover:bg-violet-100 transition-colors group">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
-                <p className="text-xs font-semibold text-violet-800">
-                  {pendingCount} نقلة بانتظار اعتمادك
-                </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse flex-shrink-0" />
+                {draftCount > 0 && (
+                  <span className="text-xs font-semibold text-violet-800">
+                    {draftCount} نقلة جديدة (مسودة)
+                  </span>
+                )}
+                {draftCount > 0 && pendingCount > 0 && (
+                  <span className="text-violet-300 text-xs">·</span>
+                )}
+                {pendingCount > 0 && (
+                  <span className="text-xs font-semibold text-violet-800">
+                    {pendingCount} بانتظار الاعتماد
+                  </span>
+                )}
               </div>
               <span className="text-[11px] font-bold text-violet-600 bg-violet-100 group-hover:bg-violet-200 px-2.5 py-1 rounded-lg transition-colors flex-shrink-0">
                 مراجعة ←
