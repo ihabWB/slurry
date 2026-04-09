@@ -400,11 +400,19 @@ export default function DashboardPage() {
                     <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{contributionPerTrip} ₪/نقلة</span>
                   </div>
                   <p className="text-2xl font-bold text-slate-800">{Math.round(stats.totalFactoryShare).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
-                  <div className="flex gap-1.5">
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-semibold">✓ {Math.round(stats.factoryShareCollected).toLocaleString()} ₪ · {collectPct}%</span>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-semibold">◷ {Math.round(stats.factoryShareUncollected).toLocaleString()} ₪ · {uncollectedPct}%</span>
+                  <div className="space-y-1 mt-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+                        <span className="bg-emerald-100 rounded px-1 py-0.5">✓ مدفوع</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-700">{Math.round(stats.factoryShareCollected).toLocaleString()} ₪ <span className="font-normal text-slate-400">· {collectPct}%</span></span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-700">
+                        <span className="bg-amber-100 rounded px-1 py-0.5">◷ ذمة</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-amber-700">{Math.round(stats.factoryShareUncollected).toLocaleString()} ₪ <span className="font-normal text-slate-400">· {uncollectedPct}%</span></span>
+                    </div>
                   </div>
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex">
                     <div className="h-full bg-emerald-500 transition-all" style={{ width: `${collectPct}%` }} />
