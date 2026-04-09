@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout, Banknote, BadgePercent, Receipt, Lock } from 'lucide-react'
-import { getDashboardStats, getTrips } from '@/lib/api'
+import { getDashboardStats, getTrips, getTripApprovalStats } from '@/lib/api'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { ar, enUS } from 'date-fns/locale'
@@ -115,7 +115,7 @@ function KpiCard({
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const { lang, dir } = useLang()
   const dateLocale = lang === 'ar' ? ar : enUS
 
@@ -141,17 +141,20 @@ export default function DashboardPage() {
   const [recentTrips, setRecentTrips] = useState<RecentTrip[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
 
   const load = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     try {
-      const [s, trips] = await Promise.all([
+      const [s, trips, approvalStats] = await Promise.all([
         getDashboardStats(),
         getTrips({ from: new Date(Date.now() - 7 * 86400000).toISOString() }),
+        getTripApprovalStats(),
       ])
       setStats(s)
       setRecentTrips((trips || []).slice(0, 10))
+      setPendingCount(approvalStats.pending_approval)
     } catch (e: unknown) {
       if ((e as { name?: string })?.name !== 'AbortError') console.error(e)
     } finally {
@@ -210,6 +213,21 @@ export default function DashboardPage() {
             <span className="text-base">📋</span>
             <h2 className="font-semibold text-slate-700 text-sm">النشاط التشغيلي</h2>
           </div>
+
+          {/* بنر الاعتماد — للأدمن فقط */}
+          {!loading && isAdmin && pendingCount > 0 && (
+            <Link href="/trips" className="flex items-center justify-between gap-3 px-5 py-3 bg-violet-50 border-b border-violet-100 hover:bg-violet-100 transition-colors group">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+                <p className="text-xs font-semibold text-violet-800">
+                  {pendingCount} نقلة بانتظار اعتمادك
+                </p>
+              </div>
+              <span className="text-[11px] font-bold text-violet-600 bg-violet-100 group-hover:bg-violet-200 px-2.5 py-1 rounded-lg transition-colors flex-shrink-0">
+                مراجعة ←
+              </span>
+            </Link>
+          )}
 
           {/* نبضة اليوم */}
           {!loading && (
