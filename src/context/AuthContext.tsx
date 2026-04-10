@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { getProfile } from '@/app/actions/profile';
+import { logLogin } from '@/app/actions/users';
 
 export type UserRole = 'admin' | 'manager' | 'viewer';
 
@@ -87,13 +88,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signIn(email: string, password: string): Promise<string | null> {
     const sb = getClient();
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (!error) return null;
-    if (error.message.includes('Invalid login credentials'))
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (!error && data?.user) {
+      // سجّل الدخول في الخلفية بدون انتظار
+      logLogin(data.user.id, navigator.userAgent).catch(() => {})
+      return null
+    }
+    if (error?.message.includes('Invalid login credentials'))
       return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
-    if (error.message.includes('Email not confirmed'))
+    if (error?.message.includes('Email not confirmed'))
       return 'يرجى تأكيد البريد الإلكتروني أولاً';
-    return error.message;
+    return error?.message ?? null;
   }
 
   async function signOut() {

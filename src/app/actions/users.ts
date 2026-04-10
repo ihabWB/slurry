@@ -99,3 +99,64 @@ export async function deleteUser(userId: string): Promise<{ error: string | null
   const { error } = await admin.auth.admin.deleteUser(userId);
   return { error: error?.message ?? null };
 }
+
+// ─── Log login ───────────────────────────────────────────────
+export async function logLogin(
+  userId: string,
+  userAgent: string
+): Promise<void> {
+  try {
+    const admin = adminClient();
+    await admin.from('user_login_logs').insert({ user_id: userId, user_agent: userAgent });
+  } catch { /* silent — login logging should never block the user */ }
+}
+
+// ─── Get login logs ──────────────────────────────────────────
+export async function getLoginLogs(): Promise<{
+  logs: {
+    id: string
+    user_id: string
+    full_name: string | null
+    email: string
+    role: UserRole
+    logged_in_at: string
+    device_type: string
+  }[]
+  error: string | null
+}> {
+  const admin = adminClient();
+
+  const { data: logs, error } = await admin
+    .from('user_login_logs')
+    .select('id, user_id, logged_in_at, device_type')
+    .order('logged_in_at', { ascending: false })
+    .limit(100);
+
+  if (error) return { logs: [], error: error.message };
+
+  // جلب بيانات المستخدمين
+  const { data: profiles } = await admin
+    .from('user_profiles')
+    .select('id, full_name, role');
+
+  const { data: authData } = await admin.auth.admin.listUsers();
+
+  const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  const emailMap   = new Map((authData?.users ?? []).map((u: any) => [u.id, u.email ?? '']));
+
+  return {
+    logs: (logs ?? []).map((l: any) => {
+      const profile: any = profileMap.get(l.user_id)
+      return {
+        id:           l.id,
+        user_id:      l.user_id,
+        full_name:    profile?.full_name ?? null,
+        email:        emailMap.get(l.user_id) ?? '—',
+        role:         (profile?.role ?? 'viewer') as UserRole,
+        logged_in_at: l.logged_in_at,
+        device_type:  l.device_type ?? 'desktop',
+      }
+    }),
+    error: null,
+  }
+}

@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { createUser, listUsers, updateUserRole, deleteUser } from '@/app/actions/users';
-import { UserPlus, Trash2, RefreshCw, Shield, Users, Eye } from 'lucide-react';
+import { createUser, listUsers, updateUserRole, deleteUser, getLoginLogs } from '@/app/actions/users';
+import { UserPlus, Trash2, RefreshCw, Shield, Users, Eye, Monitor, Smartphone, Tablet, LogIn } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
 
 type UserRole = 'admin' | 'manager' | 'viewer';
@@ -15,6 +15,16 @@ interface UserRow {
   full_name: string | null;
   role: UserRole;
   created_at: string;
+}
+
+interface LoginLog {
+  id: string;
+  user_id: string;
+  full_name: string | null;
+  email: string;
+  role: UserRole;
+  logged_in_at: string;
+  device_type: string;
 }
 
 const roleLabels: Record<UserRole, string> = {
@@ -40,6 +50,8 @@ export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [logs, setLogs] = useState<LoginLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ email: '', password: '', fullName: '', role: 'viewer' as UserRole });
@@ -52,7 +64,7 @@ export default function UsersPage() {
   }, [authLoading, isAdmin, router]);
 
   useEffect(() => {
-    if (!authLoading && isAdmin) fetchUsers();
+    if (!authLoading && isAdmin) { fetchUsers(); fetchLogs(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAdmin]);
 
@@ -62,6 +74,13 @@ export default function UsersPage() {
     if (error) showToast('error', 'فشل تحميل المستخدمين');
     else setUsers(data);
     setLoading(false);
+  }
+
+  async function fetchLogs() {
+    setLogsLoading(true);
+    const { logs: data } = await getLoginLogs();
+    setLogs(data);
+    setLogsLoading(false);
   }
 
   async function handleCreateUser(e: React.FormEvent) {
@@ -282,6 +301,70 @@ export default function UsersPage() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* سجل الدخول */}
+      <div className="mt-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <LogIn size={16} className="text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-700">سجل الدخول</h3>
+            <span className="text-xs text-slate-400">(آخر 100 عملية)</span>
+          </div>
+          <button onClick={fetchLogs} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors" title="تحديث">
+            <RefreshCw size={14} />
+          </button>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {logsLoading ? (
+            <div className="py-10 text-center text-slate-400 text-sm">جارّي التحميل...</div>
+          ) : logs.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 text-sm">لا توجد سجلات دخول بعد</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <th className="text-right px-4 py-3 font-medium text-slate-500 text-xs">المستخدم</th>
+                  <th className="text-right px-4 py-3 font-medium text-slate-500 text-xs">الصلاحية</th>
+                  <th className="text-right px-4 py-3 font-medium text-slate-500 text-xs">وقت الدخول</th>
+                  <th className="text-center px-4 py-3 font-medium text-slate-500 text-xs">الجهاز</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log, i) => {
+                  const dt = new Date(log.logged_in_at)
+                  const dateStr = dt.toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })
+                  const timeStr = dt.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+                  const DeviceIcon = log.device_type === 'mobile' ? Smartphone : log.device_type === 'tablet' ? Tablet : Monitor
+                  const deviceLabel = log.device_type === 'mobile' ? 'جوال' : log.device_type === 'tablet' ? 'لوح' : 'حاسوب'
+                  return (
+                    <tr key={log.id} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium text-slate-700 text-sm">{log.full_name ?? '—'}</p>
+                        <p className="text-xs text-slate-400" dir="ltr">{log.email}</p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium ${roleColors[log.role]}`}>
+                          {roleIcons[log.role]} {roleLabels[log.role]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <p className="text-slate-700 text-sm">{dateStr}</p>
+                        <p className="text-xs text-slate-400">{timeStr}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                          <DeviceIcon size={13} className="text-slate-400" />
+                          {deviceLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
