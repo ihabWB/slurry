@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Truck, Factory, AlertTriangle, DollarSign, TrendingUp, RefreshCw, ArrowLeft, Clock, Wallet, ShieldCheck, Sprout, Banknote, BadgePercent, Receipt, Lock } from 'lucide-react'
-import { getDashboardStats, getTrips, getTripApprovalStats } from '@/lib/api'
+import { getDashboardStats, getTrips, getTripApprovalStats, getPlanVsActual } from '@/lib/api'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { ar, enUS } from 'date-fns/locale'
@@ -143,20 +143,23 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [draftCount, setDraftCount] = useState(0)
+  const [planData, setPlanData] = useState<Awaited<ReturnType<typeof getPlanVsActual>> | null>(null)
 
   const load = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     try {
-      const [s, trips, approvalStats] = await Promise.all([
+      const [s, trips, approvalStats, plan] = await Promise.all([
         getDashboardStats(),
         getTrips({ from: new Date(Date.now() - 7 * 86400000).toISOString() }),
         getTripApprovalStats(),
+        getPlanVsActual(),
       ])
       setStats(s)
       setRecentTrips((trips || []).slice(0, 10))
       setPendingCount(approvalStats.pending_approval)
       setDraftCount(approvalStats.draft)
+      setPlanData(plan)
     } catch (e: unknown) {
       if ((e as { name?: string })?.name !== 'AbortError') console.error(e)
     } finally {
@@ -510,6 +513,122 @@ export default function DashboardPage() {
         </div>
 
       </div>{/* ── end صف النشاط + الملخص السريع ───────────────── */}
+
+      {/* ── بطاقة الأداء مقابل الخطة ───────────────────────── */}
+      {!loading && planData && planData.workingDays > 0 && (() => {
+        const { liquid, solid, workingDays, startDate } = planData
+        const lPct  = liquid.planned > 0 ? Math.min(Math.round(liquid.actual / liquid.planned * 100), 999) : 0
+        const sPct  = solid.planned  > 0 ? Math.min(Math.round(solid.actual  / solid.planned  * 100), 999) : 0
+        const lM3Pct = liquid.plannedM3 > 0 ? Math.min(Math.round(liquid.actualM3 / liquid.plannedM3 * 100), 999) : 0
+        const sM3Pct = solid.plannedM3  > 0 ? Math.min(Math.round(solid.actualM3  / solid.plannedM3  * 100), 999) : 0
+        const color = (pct: number) => pct >= 90 ? 'text-emerald-600' : pct >= 70 ? 'text-amber-600' : 'text-red-500'
+        const bar   = (pct: number) => pct >= 90 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-400' : 'bg-red-400'
+        const fmt = (n: number) => n.toLocaleString()
+        return (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <span className="text-base">📊</span>
+                <h2 className="font-semibold text-slate-700 text-sm">الأداء مقابل الخطة</h2>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <span>منذ {startDate}</span>
+                <span className="w-px h-3 bg-slate-200" />
+                <span className="font-semibold text-slate-600">{fmt(workingDays)} يوم عمل</span>
+              </div>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                {/* سائل */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0" />
+                    <p className="text-xs font-bold text-slate-700">الربو السائل</p>
+                  </div>
+                  {/* النقلات */}
+                  <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">عدد النقلات</span>
+                      <span className={`font-bold text-base ${color(lPct)}`}>{lPct}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${bar(lPct)}`} style={{ width: `${Math.min(lPct, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400">
+                      <span>فعلي: <span className="font-bold text-slate-700">{fmt(liquid.actual)}</span></span>
+                      <span>مخطط: <span className="font-bold text-slate-600">{fmt(liquid.planned)}</span></span>
+                      <span className={`font-bold ${liquid.actual >= liquid.planned ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {liquid.actual >= liquid.planned ? '+' : ''}{fmt(liquid.actual - liquid.planned)}
+                      </span>
+                    </div>
+                  </div>
+                  {/* الحجم */}
+                  <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">الحجم (م³)</span>
+                      <span className={`font-bold text-base ${color(lM3Pct)}`}>{lM3Pct}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${bar(lM3Pct)}`} style={{ width: `${Math.min(lM3Pct, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400">
+                      <span>فعلي: <span className="font-bold text-slate-700">{fmt(liquid.actualM3)} م³</span></span>
+                      <span>مخطط: <span className="font-bold text-slate-600">{fmt(liquid.plannedM3)} م³</span></span>
+                      <span className={`font-bold ${liquid.actualM3 >= liquid.plannedM3 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {liquid.actualM3 >= liquid.plannedM3 ? '+' : ''}{fmt(liquid.actualM3 - liquid.plannedM3)} م³
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* جاف */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0" />
+                    <p className="text-xs font-bold text-slate-700">الربو الجاف</p>
+                  </div>
+                  {/* النقلات */}
+                  <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">عدد النقلات</span>
+                      <span className={`font-bold text-base ${color(sPct)}`}>{sPct}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${bar(sPct)}`} style={{ width: `${Math.min(sPct, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400">
+                      <span>فعلي: <span className="font-bold text-slate-700">{fmt(solid.actual)}</span></span>
+                      <span>مخطط: <span className="font-bold text-slate-600">{fmt(solid.planned)}</span></span>
+                      <span className={`font-bold ${solid.actual >= solid.planned ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {solid.actual >= solid.planned ? '+' : ''}{fmt(solid.actual - solid.planned)}
+                      </span>
+                    </div>
+                  </div>
+                  {/* الحجم */}
+                  <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">الحجم (م³)</span>
+                      <span className={`font-bold text-base ${color(sM3Pct)}`}>{sM3Pct}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${bar(sM3Pct)}`} style={{ width: `${Math.min(sM3Pct, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400">
+                      <span>فعلي: <span className="font-bold text-slate-700">{fmt(solid.actualM3)} م³</span></span>
+                      <span>مخطط: <span className="font-bold text-slate-600">{fmt(solid.plannedM3)} م³</span></span>
+                      <span className={`font-bold ${solid.actualM3 >= solid.plannedM3 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {solid.actualM3 >= solid.plannedM3 ? '+' : ''}{fmt(solid.actualM3 - solid.plannedM3)} م³
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── بطاقة الأحجام + وجهات النقل جنب بعض ────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

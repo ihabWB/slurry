@@ -434,6 +434,81 @@ export async function deletePayment(id: string) {
   if (error) throw error
 }
 
+// ─── خطة vs فعلي ─────────────────────────────────────────────
+const PLAN_HOLIDAYS = ['2026-03-19', '2026-03-20', '2026-03-21', '2026-03-22']
+const PLAN_LIQUID_PER_DAY = 32   // نقلة/يوم
+const PLAN_SOLID_PER_DAY  = 24   // نقلة/يوم
+const PLAN_M3_PER_TRIP    = 15   // م³/نقلة
+
+function countWorkingDays(from: Date, to: Date): number {
+  let count = 0
+  const cur = new Date(from)
+  cur.setHours(0, 0, 0, 0)
+  const end = new Date(to)
+  end.setHours(0, 0, 0, 0)
+  while (cur <= end) {
+    const iso = cur.toISOString().split('T')[0]
+    const isFriday = cur.getDay() === 5
+    const isHoliday = PLAN_HOLIDAYS.includes(iso)
+    if (!isFriday && !isHoliday) count++
+    cur.setDate(cur.getDate() + 1)
+  }
+  return count
+}
+
+export async function getPlanVsActual(): Promise<{
+  startDate: string
+  workingDays: number
+  liquid: { planned: number; actual: number; plannedM3: number; actualM3: number }
+  solid:  { planned: number; actual: number; plannedM3: number; actualM3: number }
+}> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .select('trip_date, waste_type, volume_m3')
+    .order('trip_date', { ascending: true })
+  if (error) throw error
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const trips: any[] = data ?? []
+  if (trips.length === 0) {
+    return {
+      startDate: '',
+      workingDays: 0,
+      liquid: { planned: 0, actual: 0, plannedM3: 0, actualM3: 0 },
+      solid:  { planned: 0, actual: 0, plannedM3: 0, actualM3: 0 },
+    }
+  }
+  const startDate = trips[0].trip_date as string
+  const today = new Date()
+  const workingDays = countWorkingDays(new Date(startDate), today)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const liquidTrips = trips.filter((t: any) => t.waste_type === 'liquid')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const solidTrips  = trips.filter((t: any) => t.waste_type === 'solid')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sumM3 = (arr: any[]) => arr.reduce((s: number, t: any) => s + (Number(t.volume_m3) || PLAN_M3_PER_TRIP), 0)
+
+  return {
+    startDate,
+    workingDays,
+    liquid: {
+      planned:   workingDays * PLAN_LIQUID_PER_DAY,
+      actual:    liquidTrips.length,
+      plannedM3: workingDays * PLAN_LIQUID_PER_DAY * PLAN_M3_PER_TRIP,
+      actualM3:  sumM3(liquidTrips),
+    },
+    solid: {
+      planned:   workingDays * PLAN_SOLID_PER_DAY,
+      actual:    solidTrips.length,
+      plannedM3: workingDays * PLAN_SOLID_PER_DAY * PLAN_M3_PER_TRIP,
+      actualM3:  sumM3(solidTrips),
+    },
+  }
+}
+
 export interface BulkTripExtra {
   notes?: string
   volume_m3?: number | null
