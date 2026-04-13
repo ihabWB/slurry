@@ -257,6 +257,19 @@ export async function checkCouponExists(couponNumber: string, excludeId?: string
   return Array.isArray(data) && data.length > 0
 }
 
+export async function checkTagExists(tagNumber: string, excludeId?: string): Promise<boolean> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
+    .from('factories')
+    .select('id')
+    .eq('tag_number', tagNumber)
+    .limit(1)
+  if (excludeId) query = query.neq('id', excludeId)
+  const { data } = await query
+  return Array.isArray(data) && data.length > 0
+}
+
 function translateTripError(error: { code?: string; message?: string }): string {
   if (error.code === '23505' || error.message?.includes('trips_coupon_number_unique')) {
     return 'رقم الكوبون مستخدم مسبقاً — يرجى إدخال رقم آخر'

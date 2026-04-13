@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Plus, Search, MapPin, Phone, User, Edit2, BarChart2, Upload, FileSpreadsheet, Download, X, CheckCircle, AlertCircle } from 'lucide-react'
-import { getFactories, createFactory, updateFactory } from '@/lib/api'
+import { getFactories, createFactory, updateFactory, checkTagExists } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
@@ -24,6 +24,9 @@ export default function FactoriesPage() {
   const [editTarget, setEditTarget] = useState<Factory | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [tagStatus, setTagStatus] = useState<'idle' | 'checking' | 'ok' | 'taken'>('idle')
+  const tagTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [regionMode, setRegionMode] = useState<'select' | 'new'>('select')
 
   // Excel import state
   const [importOpen, setImportOpen] = useState(false)
@@ -127,16 +130,21 @@ export default function FactoriesPage() {
     ))
   }, [search, factories])
 
-  const openAdd = () => { setEditTarget(null); setForm(emptyForm); setModalOpen(true) }
+  const openAdd = () => { setEditTarget(null); setForm(emptyForm); setTagStatus('idle'); setRegionMode('select'); setModalOpen(true) }
   const openEdit = (f: Factory) => {
     setEditTarget(f)
     setForm({ name: f.name, owner_name: f.owner_name, phone: f.phone, lat: String(f.lat), lng: String(f.lng), region: f.region, tag_number: f.tag_number ?? '', waste_type: f.waste_type ?? '' })
+    setTagStatus('idle'); setRegionMode('select')
     setModalOpen(true)
   }
 
   const handleSave = async () => {
     if (!form.name || !form.owner_name || !form.phone) {
       showToast('warning', 'يرجى ملء الحقول المطلوبة: الاسم، المالك، الجوال')
+      return
+    }
+    if (tagStatus === 'taken') {
+      showToast('error', 'رقم TAG مستخدم مسبقاً — يرجى اختيار رقم آخر')
       return
     }
     setSaving(true)
@@ -313,24 +321,87 @@ export default function FactoriesPage() {
             value={form.phone}
             onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
           />
-          <Select
-            label="المنطقة"
-            value={form.region}
-            onChange={e => setForm(p => ({ ...p, region: e.target.value }))}
-          >
-            <option value="">اختر المنطقة</option>
-            <option value="شمال">شمال</option>
-            <option value="جنوب">جنوب</option>
-            <option value="وسط">وسط</option>
-            <option value="شرق">شرق</option>
-            <option value="غرب">غرب</option>
-          </Select>
-          <Input
-            label="رقم TAG"
-            placeholder="مثال: T-001"
-            value={form.tag_number}
-            onChange={e => setForm(p => ({ ...p, tag_number: e.target.value }))}
-          />
+          {/* المنطقة */}
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-1.5">المنطقة</p>
+            {regionMode === 'select' ? (
+              <div className="flex gap-2">
+                <select
+                  value={form.region}
+                  onChange={e => setForm(p => ({ ...p, region: e.target.value }))}
+                  className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                >
+                  <option value="">اختر المنطقة</option>
+                  {Array.from(new Set(factories.map(f => f.region).filter(Boolean))).sort().map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { setRegionMode('new'); setForm(p => ({ ...p, region: '' })) }}
+                  className="px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors whitespace-nowrap"
+                >
+                  + جديدة
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  placeholder="اكتب اسم المنطقة الجديدة"
+                  value={form.region}
+                  onChange={e => setForm(p => ({ ...p, region: e.target.value }))}
+                  className="flex-1 border-2 border-blue-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setRegionMode('select'); setForm(p => ({ ...p, region: '' })) }}
+                  className="px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors whitespace-nowrap"
+                >
+                  ← قائمة
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* رقم TAG */}
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-1.5">رقم TAG</p>
+            <div className="relative">
+              <input
+                type="number"
+                placeholder="مثال: 101"
+                value={form.tag_number}
+                onChange={e => {
+                  const val = e.target.value.replace(/[^0-9]/g, '')
+                  setForm(p => ({ ...p, tag_number: val }))
+                  if (tagTimerRef.current) clearTimeout(tagTimerRef.current)
+                  if (!val) { setTagStatus('idle'); return }
+                  setTagStatus('checking')
+                  tagTimerRef.current = setTimeout(async () => {
+                    const taken = await checkTagExists(val, editTarget?.id)
+                    setTagStatus(taken ? 'taken' : 'ok')
+                  }, 500)
+                }}
+                className={`w-full border-2 rounded-xl px-3 py-2 text-sm focus:outline-none transition-colors pr-8 ${
+                  tagStatus === 'taken' ? 'border-red-400 focus:ring-2 focus:ring-red-300' :
+                  tagStatus === 'ok'    ? 'border-emerald-400 focus:ring-2 focus:ring-emerald-300' :
+                                         'border-slate-200 focus:ring-2 focus:ring-blue-400'
+                }`}
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm">
+                {tagStatus === 'checking' && <span className="text-slate-400 animate-pulse">...</span>}
+                {tagStatus === 'ok'       && <span className="text-emerald-500">✓</span>}
+                {tagStatus === 'taken'    && <span className="text-red-500">✗</span>}
+              </span>
+            </div>
+            {tagStatus === 'taken' && (
+              <p className="text-xs text-red-500 mt-1">هذا الرقم مستخدم مسبقاً</p>
+            )}
+            {tagStatus === 'ok' && (
+              <p className="text-xs text-emerald-600 mt-1">الرقم متاح ✓</p>
+            )}
+          </div>
           <div>
             <p className="text-sm font-medium text-slate-700 mb-2">نوع الربو</p>
             <div className="grid grid-cols-3 gap-2">
