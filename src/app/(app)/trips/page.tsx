@@ -1,5 +1,6 @@
 ﻿'use client'
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
@@ -297,6 +298,7 @@ function NewTripModal({ onClose, onSuccess, isAdmin }: { onClose: () => void; on
 // ─── الصفحة الرئيسية ─────────────────────────────────────────
 export default function TripsPage() {
   const { canEdit, isAdmin } = useAuth()
+  const searchParams = useSearchParams()
   const [trips, setTrips]   = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
   const [showNew, setShowNew] = useState(false)
@@ -312,6 +314,7 @@ export default function TripsPage() {
   const [dateFrom, setDateFrom]             = useState('')
   const [dateTo, setDateTo]                 = useState('')
   const [showFilters, setShowFilters]       = useState(false)
+  const [unpricedOnly, setUnpricedOnly]     = useState(() => searchParams.get('unpriced') === '1')
 
   // ── Edit modal ───────────────────────────────────
   const [editTrip, setEditTrip] = useState<Trip | null>(null)
@@ -345,11 +348,12 @@ export default function TripsPage() {
         to: dateTo || undefined,
         coupon_number: couponSearch || undefined,
         search: searchText || undefined,
+        unpriced: unpricedOnly || undefined,
       })
       setTrips(data || [])
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
-  }, [approvalFilter, paymentFilter, dateFrom, dateTo, couponSearch, searchText])
+  }, [approvalFilter, paymentFilter, dateFrom, dateTo, couponSearch, searchText, unpricedOnly])
 
   useEffect(() => { load(); loadStats() }, [load, loadStats])
 
@@ -554,6 +558,15 @@ export default function TripsPage() {
                 <option value="paid">مدفوع</option>
                 <option value="credit">ذمة</option>
               </Select>
+              {/* فلتر بدون تسعيرة */}
+              <button onClick={() => setUnpricedOnly(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm border-2 rounded-xl font-medium transition-all ${
+                  unpricedOnly
+                    ? 'bg-amber-50 border-amber-400 text-amber-700 ring-2 ring-amber-200'
+                    : 'border-slate-200 text-slate-500 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700'
+                }`}>
+                ⚠️ بدون تسعيرة
+              </button>
               {/* زر الفلاتر التاريخية */}
               <button onClick={() => setShowFilters(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600">
@@ -596,8 +609,8 @@ export default function TripsPage() {
 
             <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
               <span>إجمالي المبالغ: <span className="font-bold text-slate-800">{totalAmount.toLocaleString()} ₪</span></span>
-              {(approvalFilter !== 'all' || paymentFilter !== 'all' || searchText || couponSearch || dateFrom || dateTo) && (
-                <button onClick={() => { setApprovalFilter('all'); setPaymentFilter('all'); setSearchText(''); setCouponSearch(''); setDateFrom(''); setDateTo('') }}
+              {(approvalFilter !== 'all' || paymentFilter !== 'all' || searchText || couponSearch || dateFrom || dateTo || unpricedOnly) && (
+                <button onClick={() => { setApprovalFilter('all'); setPaymentFilter('all'); setSearchText(''); setCouponSearch(''); setDateFrom(''); setDateTo(''); setUnpricedOnly(false) }}
                   className="text-blue-500 hover:underline">إعادة ضبط الفلاتر</button>
               )}
             </div>
@@ -642,7 +655,10 @@ export default function TripsPage() {
                   const editable = canEditTrip(t)
                   const deletable = canDeleteTrip(t)
                   return (
-                    <tr key={t.id} className={`border-b border-slate-50 hover:bg-slate-50/70 ${apStatus === 'rejected' ? 'bg-red-50/30' : apStatus === 'pending_approval' ? 'bg-amber-50/20' : ''}`}>
+                    <tr key={t.id} className={`border-b border-slate-50 hover:bg-slate-50/70 ${
+                      t.trip_cost == null ? 'bg-amber-50/40' :
+                      apStatus === 'rejected' ? 'bg-red-50/30' :
+                      apStatus === 'pending_approval' ? 'bg-amber-50/20' : ''}`}>
                       <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-slate-800 text-sm">{t.factories?.name ?? '—'}</p>
@@ -654,7 +670,12 @@ export default function TripsPage() {
                           : <span className="text-slate-300 text-xs">—</span>}
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{t.volume_m3 != null ? `${t.volume_m3} م³` : '—'}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">{t.amount} ₪</td>
+                      <td className="px-4 py-3">
+                        {t.trip_cost == null
+                          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-300">⚠️ غير مسعّرة</span>
+                          : <span className="font-semibold text-slate-800">{t.amount} ₪</span>
+                        }
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                           {t.payment_status === 'paid' ? 'مدفوع' : 'ذمة'}

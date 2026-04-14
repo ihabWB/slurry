@@ -422,7 +422,9 @@ export default function DashboardPage() {
                   <p className="text-2xl font-bold text-slate-800">{Math.round(stats.totalProjectCost).toLocaleString()} <span className="text-xs font-normal text-slate-400">₪</span></p>
                   <p className="text-[10px] text-slate-400">{stats.tripsWithCostCount} نقلة مسعّرة من {stats.totalTrips}</p>
                   {stats.totalTrips > 0 && stats.tripsWithCostCount < stats.totalTrips && (
-                    <p className="text-[10px] text-amber-600 font-semibold">⚠️ {stats.totalTrips - stats.tripsWithCostCount} بدون تسعيرة</p>
+                    <Link href="/trips?unpriced=1" className="inline-flex items-center gap-1 text-[10px] text-amber-700 font-semibold bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded px-1.5 py-0.5 transition-colors">
+                      ⚠️ {stats.totalTrips - stats.tripsWithCostCount} بدون تسعيرة ← عرض
+                    </Link>
                   )}
                 </div>
 

@@ -96,6 +96,7 @@ export async function getTrips(filters?: {
   approval_status?: 'draft' | 'pending_approval' | 'approved' | 'rejected'
   coupon_number?: string
   search?: string // بحث بالاسم (factory name)
+  unpriced?: boolean // نقلات بدون تسعيرة فقط
 }) {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,6 +111,7 @@ export async function getTrips(filters?: {
   if (filters?.from) query = query.gte('trip_date', filters.from.substring(0, 10))
   if (filters?.to) query = query.lte('trip_date', filters.to.substring(0, 10))
   if (filters?.coupon_number) query = query.ilike('coupon_number', `%${filters.coupon_number}%`)
+  if (filters?.unpriced) query = query.is('trip_cost', null)
 
   const { data, error } = await query
   if (error) throw error
