@@ -1,7 +1,7 @@
 ﻿'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye } from 'lucide-react'
 import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -315,6 +315,9 @@ export default function TripsPage() {
   const [dateTo, setDateTo]                 = useState('')
   const [showFilters, setShowFilters]       = useState(false)
   const [unpricedOnly, setUnpricedOnly]     = useState(() => searchParams.get('unpriced') === '1')
+
+  // ── View modal ───────────────────────────────────
+  const [viewTrip, setViewTrip] = useState<Trip | null>(null)
 
   // ── Edit modal ───────────────────────────────────
   const [editTrip, setEditTrip] = useState<Trip | null>(null)
@@ -694,6 +697,10 @@ export default function TripsPage() {
                       <td className="px-4 py-3 text-slate-400 text-xs max-w-[120px] truncate">{t.notes ?? '—'}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
+                          {/* عرض التفاصيل */}
+                          <button onClick={() => setViewTrip(t)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors" title="عرض التفاصيل">
+                            <Eye size={13} />
+                          </button>
                           {/* تعديل — حسب الصلاحية */}
                           {editable && (
                             <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="تعديل">
@@ -733,6 +740,93 @@ export default function TripsPage() {
           </table>
         </div>
       </Card>
+
+      {/* ── View / Details Modal ── */}
+      {viewTrip && (
+        <Modal open={!!viewTrip} onClose={() => setViewTrip(null)} title={`تفاصيل النقلة — ${viewTrip.factories?.name ?? ''}`}>
+          <div className="space-y-4" dir="rtl">
+
+            {/* تحليل سبب عدم التسعير */}
+            {viewTrip.trip_cost == null && (() => {
+              const missing: string[] = []
+              if (!viewTrip.waste_type)  missing.push('نوع الربو')
+              if (!viewTrip.volume_m3)   missing.push('الحجم (م³)')
+              if (!viewTrip.distance_km) missing.push('المسافة (كم)')
+              if (!viewTrip.dump_site)   missing.push('موقع التفريغ')
+              return (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-1.5">
+                  <p className="text-sm font-bold text-amber-800">⚠️ النقلة غير مسعّرة</p>
+                  {missing.length > 0 ? (
+                    <>
+                      <p className="text-xs text-amber-700">الحقول الناقصة التي تمنع التسعير:</p>
+                      <ul className="space-y-0.5">
+                        {missing.map(m => (
+                          <li key={m} className="text-xs font-semibold text-red-600 flex items-center gap-1">
+                            <span className="text-red-400">✗</span> {m}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="text-xs text-amber-700">
+                      جميع الحقول موجودة لكن لا توجد قاعدة تسعيرة تطابق:
+                      <span className="font-bold"> {viewTrip.waste_type === 'liquid' ? 'سائل' : 'جاف'}</span> ·
+                      <span className="font-bold"> {viewTrip.volume_m3} م³</span> ·
+                      <span className="font-bold"> {Number(viewTrip.distance_km) <= 7 ? '≤7 كم' : '>7 كم'}</span> ·
+                      <span className="font-bold"> {viewTrip.dump_site === 'central_press' ? 'مكبس مركزي' : 'مكب بلدي'}</span>
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* شبكة البيانات */}
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                ['المصنع',        viewTrip.factories?.name ?? '—'],
+                ['المنطقة',       viewTrip.factories?.region ?? '—'],
+                ['تاريخ النقلة',  viewTrip.trip_date ? format(new Date(viewTrip.trip_date), 'dd/MM/yyyy') : '—'],
+                ['رقم الكوبون',   viewTrip.coupon_number ?? '—'],
+                ['نوع الربو',     viewTrip.waste_type === 'liquid' ? '💧 سائل' : viewTrip.waste_type === 'solid' ? '🪨 جاف' : '—'],
+                ['الحجم',         viewTrip.volume_m3 != null ? `${viewTrip.volume_m3} م³` : '—'],
+                ['المسافة',       viewTrip.distance_km != null ? `${viewTrip.distance_km} كم` : '—'],
+                ['موقع التفريغ',  viewTrip.dump_site === 'central_press' ? 'مكبس مركزي' : viewTrip.dump_site === 'municipal_dump' ? 'مكب بلدي' : viewTrip.dump_site ?? '—'],
+                ['منطقة النقل',   viewTrip.transfer_zone ?? '—'],
+                ['السائق',        viewTrip.driver_name ?? '—'],
+                ['نوع المركبة',   viewTrip.vehicle_type === 'tank' ? '🚛 صهريج' : viewTrip.vehicle_type === 'truck' ? '🚚 شاحنة' : '—'],
+                ['حالة الدفع',    viewTrip.payment_status === 'paid' ? '✅ مدفوع' : '⏳ ذمة'],
+                ['حالة الاعتماد', APPROVAL_LABELS[viewTrip.approval_status as ApprovalStatus]?.label ?? '—'],
+                ['تكلفة النقلة',  viewTrip.trip_cost != null ? `${viewTrip.trip_cost} ₪` : '—'],
+                ['مساهمة المصنع', viewTrip.factory_contribution != null ? `${viewTrip.factory_contribution} ₪` : '—'],
+                ['دعم المشروع',   viewTrip.subsidy_amount != null ? `${viewTrip.subsidy_amount} ₪` : '—'],
+              ] as [string, string][]).map(([label, value]) => (
+                <div key={label} className="bg-slate-50 rounded-xl px-3 py-2">
+                  <p className="text-[10px] text-slate-400 mb-0.5">{label}</p>
+                  <p className="text-sm font-semibold text-slate-700">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* ملاحظات */}
+            {viewTrip.notes && (
+              <div className="bg-slate-50 rounded-xl px-3 py-2">
+                <p className="text-[10px] text-slate-400 mb-0.5">ملاحظات</p>
+                <p className="text-sm text-slate-600">{viewTrip.notes}</p>
+              </div>
+            )}
+
+            {/* سبب الرفض */}
+            {viewTrip.approval_status === 'rejected' && viewTrip.rejection_note && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                <p className="text-[10px] text-red-400 mb-0.5">سبب الرفض</p>
+                <p className="text-sm text-red-700 font-medium">{viewTrip.rejection_note}</p>
+              </div>
+            )}
+
+            <Button variant="ghost" className="w-full" onClick={() => setViewTrip(null)}>إغلاق</Button>
+          </div>
+        </Modal>
+      )}
 
       {/* ── Edit Modal ── */}
       {editTrip && (
