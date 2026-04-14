@@ -830,33 +830,137 @@ export default function TripsPage() {
 
       {/* ── Edit Modal ── */}
       {editTrip && (
-        <Modal open={!!editTrip} onClose={() => setEditTrip(null)} title={`تعديل نقلة — ${editTrip.factories?.name ?? ''}`}>
-          <div className="space-y-4">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">تاريخ النقلة</label>
-              <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">حالة الدفع</label>
-              <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
-                <option value="credit">ذمة</option><option value="paid">مدفوع</option>
-              </Select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">نوع الربو</label>
-              <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
-                <option value="">غير محدد</option><option value="liquid">💧 سائل</option><option value="solid">🪨 جاف</option>
-              </Select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">الحجم (م³)</label>
-              <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} /></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">ملاحظات</label>
-              <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
-            {/* إذا الأدمن يعدل pending → يعتمد مباشرة */}
-            {isAdmin && editTrip.approval_status === 'pending_approval' && (
-              <p className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl px-3 py-2">
-                ✓ سيتم اعتماد النقلة تلقائياً بعد الحفظ
-              </p>
-            )}
-            <div className="flex gap-2 pt-2">
-              <Button className="flex-1" onClick={handleSave} loading={saving}>حفظ التغييرات</Button>
-              <Button variant="ghost" className="flex-1" onClick={() => setEditTrip(null)}>إلغاء</Button>
+        <Modal
+          open={!!editTrip}
+          onClose={() => setEditTrip(null)}
+          title={`${isAdmin && editTrip.approval_status === 'pending_approval' ? 'مراجعة واعتماد' : 'تعديل'} نقلة — ${editTrip.factories?.name ?? ''}`}
+          size={isAdmin && editTrip.approval_status === 'pending_approval' ? '2xl' : 'md'}
+        >
+          {/* للأدمن على pending: عمودان (تفاصيل + تعديل) */}
+          {isAdmin && editTrip.approval_status === 'pending_approval' ? (
+            <div className="flex gap-6" dir="rtl">
+
+              {/* ── العمود الأيمن: عرض كامل للبيانات ── */}
+              <div className="flex-1 space-y-3 min-w-0">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-1">بيانات النقلة</p>
+
+                {/* تحذير غير مسعّرة */}
+                {editTrip.trip_cost == null && (() => {
+                  const missing: string[] = []
+                  if (!editTrip.waste_type)  missing.push('نوع الربو')
+                  if (!editTrip.volume_m3)   missing.push('الحجم (م³)')
+                  if (!editTrip.distance_km) missing.push('المسافة (كم)')
+                  if (!editTrip.dump_site)   missing.push('موقع التفريغ')
+                  return (
+                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 space-y-1">
+                      <p className="text-xs font-bold text-amber-800">⚠️ غير مسعّرة</p>
+                      {missing.length > 0
+                        ? <ul className="space-y-0.5">{missing.map(m => <li key={m} className="text-xs text-red-600 flex items-center gap-1"><span>✗</span>{m}</li>)}</ul>
+                        : <p className="text-xs text-amber-700">لا توجد قاعدة تسعيرة مطابقة للبيانات المدخلة</p>
+                      }
+                    </div>
+                  )
+                })()}
+
+                {/* شبكة البيانات */}
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['المصنع',        editTrip.factories?.name ?? '—'],
+                    ['المنطقة',       editTrip.factories?.region ?? '—'],
+                    ['تاريخ النقلة',  editTrip.trip_date ? format(new Date(editTrip.trip_date), 'dd/MM/yyyy') : '—'],
+                    ['رقم الكوبون',   editTrip.coupon_number ?? '—'],
+                    ['نوع الربو',     editTrip.waste_type === 'liquid' ? '💧 سائل' : editTrip.waste_type === 'solid' ? '🪨 جاف' : '—'],
+                    ['الحجم',         editTrip.volume_m3 != null ? `${editTrip.volume_m3} م³` : '—'],
+                    ['المسافة',       editTrip.distance_km != null ? `${editTrip.distance_km} كم` : '—'],
+                    ['موقع التفريغ',  editTrip.dump_site === 'central_press' ? 'مكبس مركزي' : editTrip.dump_site === 'municipal_dump' ? 'مكب بلدي' : editTrip.dump_site ?? '—'],
+                    ['منطقة النقل',   editTrip.transfer_zone ?? '—'],
+                    ['السائق',        editTrip.driver_name ?? '—'],
+                    ['نوع المركبة',   editTrip.vehicle_type === 'tank' ? '🚛 صهريج' : editTrip.vehicle_type === 'truck' ? '🚚 شاحنة' : '—'],
+                    ['حالة الدفع',    editTrip.payment_status === 'paid' ? '✅ مدفوع' : '⏳ ذمة'],
+                    ['تكلفة النقلة',  editTrip.trip_cost != null ? `${editTrip.trip_cost} ₪` : '—'],
+                    ['مساهمة المصنع', editTrip.factory_contribution != null ? `${editTrip.factory_contribution} ₪` : '—'],
+                    ['دعم المشروع',   editTrip.subsidy_amount != null ? `${editTrip.subsidy_amount} ₪` : '—'],
+                  ] as [string, string][]).map(([label, value]) => (
+                    <div key={label} className="bg-slate-50 rounded-lg px-2.5 py-1.5">
+                      <p className="text-[10px] text-slate-400">{label}</p>
+                      <p className="text-xs font-semibold text-slate-700">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {editTrip.notes && (
+                  <div className="bg-slate-50 rounded-lg px-2.5 py-1.5">
+                    <p className="text-[10px] text-slate-400">ملاحظات</p>
+                    <p className="text-xs text-slate-600">{editTrip.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* فاصل عمودي */}
+              <div className="w-px bg-slate-100 self-stretch" />
+
+              {/* ── العمود الأيسر: حقول التعديل ── */}
+              <div className="w-64 shrink-0 space-y-3 flex flex-col" dir="rtl">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-1">تعديل البيانات</p>
+
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">تاريخ النقلة</label>
+                  <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
+
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">حالة الدفع</label>
+                  <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                    <option value="credit">⏳ ذمة</option>
+                    <option value="paid">✅ مدفوع</option>
+                  </Select></div>
+
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">نوع الربو</label>
+                  <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
+                    <option value="">غير محدد</option>
+                    <option value="liquid">💧 سائل</option>
+                    <option value="solid">🪨 جاف</option>
+                  </Select></div>
+
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">الحجم (م³)</label>
+                  <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} /></div>
+
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">ملاحظات</label>
+                  <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
+
+                <div className="flex-1" />
+
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                  <p className="text-xs text-emerald-700 font-semibold">✓ سيتم اعتماد النقلة تلقائياً بعد الحفظ</p>
+                </div>
+
+                <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleSave} loading={saving}>
+                  ✓ حفظ واعتماد
+                </Button>
+                <Button variant="ghost" className="w-full" onClick={() => setEditTrip(null)}>إلغاء</Button>
+              </div>
             </div>
-          </div>
+
+          ) : (
+            /* للحالات الأخرى: modal بسيط كما كان */
+            <div className="space-y-4">
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">تاريخ النقلة</label>
+                <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">حالة الدفع</label>
+                <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                  <option value="credit">ذمة</option><option value="paid">مدفوع</option>
+                </Select></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">نوع الربو</label>
+                <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
+                  <option value="">غير محدد</option><option value="liquid">💧 سائل</option><option value="solid">🪨 جاف</option>
+                </Select></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">الحجم (م³)</label>
+                <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">ملاحظات</label>
+                <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
+              <div className="flex gap-2 pt-2">
+                <Button className="flex-1" onClick={handleSave} loading={saving}>حفظ التغييرات</Button>
+                <Button variant="ghost" className="flex-1" onClick={() => setEditTrip(null)}>إلغاء</Button>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
 
