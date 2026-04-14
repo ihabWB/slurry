@@ -643,7 +643,7 @@ export default function TripsPage() {
                 <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">تاريخ النقلة</th>
                 <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">الكوبون</th>
                 <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">ملاحظات</th>
-                <th className="px-4 py-3 text-xs text-slate-500 font-medium">إجراءات</th>
+                <th className="px-4 py-3 text-xs text-slate-500 font-medium min-w-[120px]">إجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -695,42 +695,55 @@ export default function TripsPage() {
                       <td className="px-4 py-3 text-slate-700 text-xs font-medium">{t.trip_date ? format(new Date(t.trip_date), 'dd/MM/yyyy') : '—'}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs">{t.coupon_number ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-400 text-xs max-w-[120px] truncate">{t.notes ?? '—'}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          {/* عرض التفاصيل */}
-                          <button onClick={() => setViewTrip(t)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors" title="عرض التفاصيل">
-                            <Eye size={13} />
-                          </button>
-                          {/* تعديل — حسب الصلاحية */}
-                          {editable && (
-                            <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="تعديل">
-                              <Pencil size={13} />
+                      <td className="px-4 py-3 min-w-[120px]">
+                        {isAdmin && apStatus === 'pending_approval' ? (
+                          /* للأدمن على pending: صفين من الأزرار */
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => setViewTrip(t)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors" title="عرض التفاصيل">
+                                <Eye size={13} />
+                              </button>
+                              <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="تعديل واعتماد">
+                                <Pencil size={13} />
+                              </button>
+                              <button onClick={() => setDeleteTarget(t)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="حذف">
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => handleApprove(t)}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold transition-colors" title="اعتماد">
+                                <ThumbsUp size={11} /> اعتماد
+                              </button>
+                              <button onClick={() => { setRejectTarget(t); setRejectNote('') }}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-semibold transition-colors" title="رفض">
+                                <ThumbsDown size={11} /> رفض
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* بقية الحالات: سطر واحد */
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => setViewTrip(t)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors" title="عرض التفاصيل">
+                              <Eye size={13} />
                             </button>
-                          )}
-                          {/* حذف — حسب الصلاحية */}
-                          {deletable && (
-                            <button onClick={() => setDeleteTarget(t)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="حذف">
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                          {/* اعتماد / رفض — للأدمن فقط على pending */}
-                          {isAdmin && apStatus === 'pending_approval' && (
-                            <>
+                            {editable && (
+                              <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="تعديل">
+                                <Pencil size={13} />
+                              </button>
+                            )}
+                            {deletable && (
+                              <button onClick={() => setDeleteTarget(t)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="حذف">
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                            {isAdmin && apStatus === 'rejected' && (
                               <button onClick={() => handleApprove(t)} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="اعتماد">
                                 <ThumbsUp size={13} />
                               </button>
-                              <button onClick={() => { setRejectTarget(t); setRejectNote('') }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors" title="رفض">
-                                <ThumbsDown size={13} />
-                              </button>
-                            </>
-                          )}
-                          {/* الأدمن يقدر يعتمد المرفوضة أيضاً بعد تعديلها */}
-                          {isAdmin && apStatus === 'rejected' && (
-                            <button onClick={() => handleApprove(t)} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="اعتماد">
-                              <ThumbsUp size={13} />
-                            </button>
-                          )}
-                        </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
