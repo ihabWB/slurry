@@ -325,7 +325,12 @@ export default function TripsPage() {
 
   // ── Edit modal ───────────────────────────────────
   const [editTrip, setEditTrip] = useState<Trip | null>(null)
-  const [editForm, setEditForm] = useState({ trip_date: '', notes: '', payment_status: 'credit', waste_type: '', volume_m3: '' })
+  const [editForm, setEditForm] = useState({
+    trip_date: '', notes: '', payment_status: 'credit',
+    waste_type: '', volume_m3: '',
+    distance_km: '', dump_site: '', transfer_zone: '',
+    driver_name: '', vehicle_type: '', coupon_number: '',
+  })
   const [saving, setSaving]     = useState(false)
 
   // ── Delete confirm ───────────────────────────────
@@ -366,7 +371,19 @@ export default function TripsPage() {
 
   const openEdit = (t: Trip) => {
     setEditTrip(t)
-    setEditForm({ trip_date: t.trip_date ?? '', notes: t.notes ?? '', payment_status: t.payment_status ?? 'credit', waste_type: t.waste_type ?? '', volume_m3: t.volume_m3 != null ? String(t.volume_m3) : '' })
+    setEditForm({
+      trip_date:     t.trip_date ?? '',
+      notes:         t.notes ?? '',
+      payment_status: t.payment_status ?? 'credit',
+      waste_type:    t.waste_type ?? '',
+      volume_m3:     t.volume_m3 != null ? String(t.volume_m3) : '',
+      distance_km:   t.distance_km != null ? String(t.distance_km) : '',
+      dump_site:     t.dump_site ?? '',
+      transfer_zone: t.transfer_zone ?? '',
+      driver_name:   t.driver_name ?? '',
+      vehicle_type:  t.vehicle_type ?? '',
+      coupon_number: t.coupon_number ?? '',
+    })
     setReviewMode('approve')
     setInlineRejectNote('')
   }
@@ -378,20 +395,26 @@ export default function TripsPage() {
       // الأدمن يعدل نقلة pending → تُعتمد تلقائياً
       if (isAdmin && editTrip.approval_status === 'pending_approval') {
         await editAndApproveTrip(editTrip.id, {
-          trip_date: editForm.trip_date || undefined,
-          notes: editForm.notes || null,
+          trip_date:     editForm.trip_date || undefined,
+          notes:         editForm.notes || null,
           payment_status: editForm.payment_status as 'paid' | 'credit',
-          waste_type: (editForm.waste_type as 'liquid' | 'solid') || null,
-          volume_m3: editForm.volume_m3 ? Number(editForm.volume_m3) : null,
+          waste_type:    (editForm.waste_type as 'liquid' | 'solid') || null,
+          volume_m3:     editForm.volume_m3    ? Number(editForm.volume_m3)    : null,
+          distance_km:   editForm.distance_km  ? Number(editForm.distance_km)  : null,
+          dump_site:     (editForm.dump_site as 'municipal_dump' | 'central_press') || null,
+          transfer_zone: editForm.transfer_zone || null,
+          driver_name:   editForm.driver_name   || null,
+          vehicle_type:  (editForm.vehicle_type as 'tank' | 'truck') || null,
+          coupon_number: editForm.coupon_number || null,
         })
         showToast('success', 'تم التعديل والاعتماد ✓')
       } else {
         await updateTrip(editTrip.id, {
-          trip_date: editForm.trip_date || undefined,
-          notes: editForm.notes || null,
+          trip_date:     editForm.trip_date || undefined,
+          notes:         editForm.notes || null,
           payment_status: editForm.payment_status as 'paid' | 'credit',
-          waste_type: (editForm.waste_type as 'liquid' | 'solid') || null,
-          volume_m3: editForm.volume_m3 ? Number(editForm.volume_m3) : null,
+          waste_type:    (editForm.waste_type as 'liquid' | 'solid') || null,
+          volume_m3:     editForm.volume_m3 ? Number(editForm.volume_m3) : null,
         })
         showToast('success', 'تم تحديث النقلة')
       }
@@ -968,26 +991,63 @@ export default function TripsPage() {
 
                 {/* ── وضع تعديل واعتماد ── */}
                 {reviewMode === 'edit' && (
-                  <div className="flex flex-col gap-3 flex-1">
+                  <div className="flex flex-col gap-2.5 flex-1 overflow-y-auto">
+
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">بيانات أساسية</p>
+
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">تاريخ النقلة</label>
                       <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
+
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">حالة الدفع</label>
                       <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
                         <option value="credit">⏳ ذمة</option>
                         <option value="paid">✅ مدفوع</option>
                       </Select></div>
+
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">رقم الكوبون</label>
+                      <Input value={editForm.coupon_number} onChange={e => setEditForm(f => ({ ...f, coupon_number: e.target.value }))} placeholder="مثال: K-001" /></div>
+
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide pt-1">بيانات التسعيرة</p>
+
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">نوع الربو</label>
                       <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
                         <option value="">غير محدد</option>
                         <option value="liquid">💧 سائل</option>
                         <option value="solid">🪨 جاف</option>
                       </Select></div>
+
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">الحجم (م³)</label>
                       <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} /></div>
+
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">المسافة (كم)</label>
+                      <Input type="number" placeholder="مثال: 5" value={editForm.distance_km} onChange={e => setEditForm(f => ({ ...f, distance_km: e.target.value }))} /></div>
+
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">موقع التفريغ</label>
+                      <Select value={editForm.dump_site} onChange={e => setEditForm(f => ({ ...f, dump_site: e.target.value }))}>
+                        <option value="">غير محدد</option>
+                        <option value="municipal_dump">🗻 مكب بلدي</option>
+                        <option value="central_press">🏭 مكبس مركزي</option>
+                      </Select></div>
+
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">منطقة النقل</label>
+                      <Input value={editForm.transfer_zone} onChange={e => setEditForm(f => ({ ...f, transfer_zone: e.target.value }))} placeholder="مثال: حزام A" /></div>
+
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide pt-1">بيانات السائق</p>
+
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">اسم السائق</label>
+                      <Input value={editForm.driver_name} onChange={e => setEditForm(f => ({ ...f, driver_name: e.target.value }))} placeholder="اسم السائق" /></div>
+
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">نوع المركبة</label>
+                      <Select value={editForm.vehicle_type} onChange={e => setEditForm(f => ({ ...f, vehicle_type: e.target.value }))}>
+                        <option value="">غير محدد</option>
+                        <option value="tank">🚛 صهريج</option>
+                        <option value="truck">🚚 شاحنة</option>
+                      </Select></div>
+
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">ملاحظات</label>
                       <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
-                    <div className="flex-1" />
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mt-1">
                       <p className="text-[11px] text-blue-700">✏️ سيتم حفظ التعديلات واعتماد النقلة تلقائياً</p>
                     </div>
                     <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSave} loading={saving}>
