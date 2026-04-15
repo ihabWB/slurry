@@ -319,6 +319,10 @@ export default function TripsPage() {
   // ── View modal ───────────────────────────────────
   const [viewTrip, setViewTrip] = useState<Trip | null>(null)
 
+  // ── وضع العمود الأيسر في modal المراجعة ──────────────
+  const [reviewMode, setReviewMode] = useState<'approve' | 'edit' | 'reject'>('approve')
+  const [inlineRejectNote, setInlineRejectNote] = useState('')
+
   // ── Edit modal ───────────────────────────────────
   const [editTrip, setEditTrip] = useState<Trip | null>(null)
   const [editForm, setEditForm] = useState({ trip_date: '', notes: '', payment_status: 'credit', waste_type: '', volume_m3: '' })
@@ -363,6 +367,8 @@ export default function TripsPage() {
   const openEdit = (t: Trip) => {
     setEditTrip(t)
     setEditForm({ trip_date: t.trip_date ?? '', notes: t.notes ?? '', payment_status: t.payment_status ?? 'credit', waste_type: t.waste_type ?? '', volume_m3: t.volume_m3 != null ? String(t.volume_m3) : '' })
+    setReviewMode('approve')
+    setInlineRejectNote('')
   }
 
   const handleSave = async () => {
@@ -432,6 +438,17 @@ export default function TripsPage() {
       setRejectTarget(null); setRejectNote(''); load(); loadStats()
     } catch { showToast('error', 'فشل الرفض') }
     finally { setRejecting(false) }
+  }
+
+  const handleInlineReject = async () => {
+    if (!editTrip || !inlineRejectNote.trim()) return
+    setSaving(true)
+    try {
+      await rejectTrip(editTrip.id, inlineRejectNote.trim())
+      showToast('success', 'تم رفض النقلة — ستظهر الملاحظة لمدير المشروع')
+      setEditTrip(null); setInlineRejectNote(''); load(); loadStats()
+    } catch { showToast('error', 'فشل الرفض') }
+    finally { setSaving(false) }
   }
 
   const handleApproveAll = async () => {
@@ -912,42 +929,104 @@ export default function TripsPage() {
               {/* فاصل عمودي */}
               <div className="w-px bg-slate-100 self-stretch" />
 
-              {/* ── العمود الأيسر: حقول التعديل ── */}
-              <div className="w-64 shrink-0 space-y-3 flex flex-col" dir="rtl">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-1">تعديل البيانات</p>
+              {/* ── العمود الأيسر: لوحة القرار ── */}
+              <div className="w-72 shrink-0 flex flex-col gap-3" dir="rtl">
 
-                <div><label className="block text-xs font-medium text-slate-600 mb-1">تاريخ النقلة</label>
-                  <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
-
-                <div><label className="block text-xs font-medium text-slate-600 mb-1">حالة الدفع</label>
-                  <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
-                    <option value="credit">⏳ ذمة</option>
-                    <option value="paid">✅ مدفوع</option>
-                  </Select></div>
-
-                <div><label className="block text-xs font-medium text-slate-600 mb-1">نوع الربو</label>
-                  <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
-                    <option value="">غير محدد</option>
-                    <option value="liquid">💧 سائل</option>
-                    <option value="solid">🪨 جاف</option>
-                  </Select></div>
-
-                <div><label className="block text-xs font-medium text-slate-600 mb-1">الحجم (م³)</label>
-                  <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} /></div>
-
-                <div><label className="block text-xs font-medium text-slate-600 mb-1">ملاحظات</label>
-                  <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
-
-                <div className="flex-1" />
-
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-                  <p className="text-xs text-emerald-700 font-semibold">✓ سيتم اعتماد النقلة تلقائياً بعد الحفظ</p>
+                {/* أزرار اختيار الوضع */}
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                  {([
+                    ['approve', '✓ اعتماد', 'text-emerald-700'],
+                    ['edit',    '✏️ تعديل',   'text-blue-700'],
+                    ['reject',  '✗ رفض',    'text-red-700'],
+                  ] as ['approve'|'edit'|'reject', string, string][]).map(([mode, label, color]) => (
+                    <button key={mode} onClick={() => setReviewMode(mode)}
+                      className={`py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        reviewMode === mode
+                          ? `bg-white shadow-sm ${color}`
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleSave} loading={saving}>
-                  ✓ حفظ واعتماد
-                </Button>
-                <Button variant="ghost" className="w-full" onClick={() => setEditTrip(null)}>إلغاء</Button>
+                {/* ── وضع اعتماد ── */}
+                {reviewMode === 'approve' && (
+                  <div className="flex flex-col gap-3 flex-1">
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-1">
+                      <p className="text-xs font-bold text-emerald-800">✓ اعتماد مباشر</p>
+                      <p className="text-[11px] text-emerald-700">سيتم اعتماد النقلة كما هي دون أي تعديل</p>
+                    </div>
+                    <div className="flex-1" />
+                    <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" loading={saving}
+                      onClick={async () => { setSaving(true); try { await approveTrip(editTrip.id); showToast('success', 'تم اعتماد النقلة ✓'); setEditTrip(null); load(); loadStats() } catch { showToast('error', 'فشل الاعتماد') } finally { setSaving(false) } }}>
+                      ✓ اعتماد النقلة
+                    </Button>
+                    <Button variant="ghost" className="w-full" onClick={() => setEditTrip(null)}>إلغاء</Button>
+                  </div>
+                )}
+
+                {/* ── وضع تعديل واعتماد ── */}
+                {reviewMode === 'edit' && (
+                  <div className="flex flex-col gap-3 flex-1">
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">تاريخ النقلة</label>
+                      <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">حالة الدفع</label>
+                      <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                        <option value="credit">⏳ ذمة</option>
+                        <option value="paid">✅ مدفوع</option>
+                      </Select></div>
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">نوع الربو</label>
+                      <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
+                        <option value="">غير محدد</option>
+                        <option value="liquid">💧 سائل</option>
+                        <option value="solid">🪨 جاف</option>
+                      </Select></div>
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">الحجم (م³)</label>
+                      <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} /></div>
+                    <div><label className="block text-xs font-medium text-slate-600 mb-1">ملاحظات</label>
+                      <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
+                    <div className="flex-1" />
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                      <p className="text-[11px] text-blue-700">✏️ سيتم حفظ التعديلات واعتماد النقلة تلقائياً</p>
+                    </div>
+                    <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSave} loading={saving}>
+                      ✓ حفظ واعتماد
+                    </Button>
+                    <Button variant="ghost" className="w-full" onClick={() => setEditTrip(null)}>إلغاء</Button>
+                  </div>
+                )}
+
+                {/* ── وضع الرفض ── */}
+                {reviewMode === 'reject' && (
+                  <div className="flex flex-col gap-3 flex-1">
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-1">
+                      <p className="text-xs font-bold text-red-700">✗ رفض وإعادة للمدير</p>
+                      <p className="text-[11px] text-red-600">ستظهر سبب الرفض لمدير المشروع ليعدل ويرفع مرة ثانية</p>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">سبب الرفض <span className="text-red-500">*</span></label>
+                      <textarea
+                        value={inlineRejectNote}
+                        onChange={e => setInlineRejectNote(e.target.value)}
+                        rows={5}
+                        placeholder="اكتب سبب الرفض بوضوح..."
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                      />
+                    </div>
+                    <Button
+                      variant="danger"
+                      className="w-full"
+                      onClick={handleInlineReject}
+                      loading={saving}
+                      disabled={!inlineRejectNote.trim()}
+                    >
+                      ✗ تأكيد الرفض
+                    </Button>
+                    <Button variant="ghost" className="w-full" onClick={() => setEditTrip(null)}>إلغاء</Button>
+                  </div>
+                )}
+
               </div>
             </div>
 
