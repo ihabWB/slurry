@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
 import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval } from '@/lib/api'
@@ -333,6 +333,10 @@ export default function TripsPage() {
   })
   const [saving, setSaving]     = useState(false)
 
+  // ── قواعد التسعيرة (للمعاينة الفورية) ───────────────────
+  const [pricingRules, setPricingRules]   = useState<PricingRule[]>([])
+  const [editContribPerTrip, setEditContribPerTrip] = useState(50)
+
   // ── Delete confirm ───────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<Trip | null>(null)
   const [deleting, setDeleting]         = useState(false)
@@ -373,6 +377,15 @@ export default function TripsPage() {
 
   useEffect(() => { load(); loadStats() }, [load, loadStats])
 
+  // جلب قواعد التسعيرة مرة واحدة عند تحميل الصفحة
+  useEffect(() => {
+    Promise.all([getPricingRules(), getSettings()]).then(([rules, setts]) => {
+      setPricingRules(rules)
+      const contrib = setts.find((s: {key:string;value:string}) => s.key === 'factory_contribution')
+      if (contrib) setEditContribPerTrip(parseFloat(contrib.value) || 50)
+    }).catch(console.error)
+  }, [])
+
   const openEdit = (t: Trip) => {
     setEditTrip(t)
     setEditForm({
@@ -391,6 +404,28 @@ export default function TripsPage() {
     setReviewMode('approve')
     setInlineRejectNote('')
   }
+
+  // ── معاينة التسعيرة الفورية ──────────────────────────────
+  const pricingPreview = useMemo(() => {
+    const { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds } = editForm
+    if (!wt || !vol || !dist || !ds) return null
+    const maxDist = parseFloat(dist) <= 7 ? 7 : 9999
+    const match = pricingRules.find(r =>
+      r.waste_type === wt &&
+      r.volume_m3 === parseFloat(vol) &&
+      r.max_distance_km === maxDist &&
+      r.dump_site === ds
+    )
+    if (!match) return { found: false as const, wt, vol, dist, ds, maxDist }
+    return {
+      found: true as const,
+      unitPrice:   match.unit_price,
+      contrib:     editContribPerTrip,
+      subsidy:     match.unit_price - editContribPerTrip,
+      label:       match.label,
+      wt, vol, dist, ds, maxDist,
+    }
+  }, [editForm, pricingRules, editContribPerTrip])
 
   const handleSave = async () => {
     if (!editTrip) return
@@ -1067,6 +1102,48 @@ export default function TripsPage() {
 
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">ملاحظات</label>
                       <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
+
+                    {/* ── معاينة التسعيرة ── */}
+                    {pricingPreview === null ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+                        <p className="text-[11px] text-slate-400 text-center">أدخل نوع الربو + الحجم + المسافة + الموقع لرؤية التسعيرة</p>
+                      </div>
+                    ) : pricingPreview.found ? (
+                      <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 space-y-2">
+                        <p className="text-xs font-bold text-emerald-800">✓ تم إيجاد قاعدة تسعيرة مطابقة</p>
+                        <div className="text-[10px] text-emerald-700 bg-emerald-100 rounded-lg px-2 py-1 font-mono">
+                          {pricingPreview.wt === 'liquid' ? '💧 سائل' : '🪨 جاف'}
+                          {' · '}{pricingPreview.vol} م³
+                          {' · '}{pricingPreview.maxDist === 7 ? '≤7 كم' : '>7 كم'}
+                          {' · '}{pricingPreview.ds === 'central_press' ? 'مكبس مركزي' : 'مكب بلدي'}
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <div className="bg-white rounded-lg px-2 py-1.5 text-center">
+                            <p className="text-[9px] text-slate-400">التكلفة الكلية</p>
+                            <p className="text-sm font-bold text-slate-800">{pricingPreview.unitPrice} ₪</p>
+                          </div>
+                          <div className="bg-white rounded-lg px-2 py-1.5 text-center">
+                            <p className="text-[9px] text-slate-400">مساهمة المصنع</p>
+                            <p className="text-sm font-bold text-blue-700">{pricingPreview.contrib} ₪</p>
+                          </div>
+                          <div className="bg-white rounded-lg px-2 py-1.5 text-center">
+                            <p className="text-[9px] text-slate-400">دعم المشروع</p>
+                            <p className="text-sm font-bold text-violet-700">{pricingPreview.subsidy} ₪</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-300 rounded-xl px-3 py-2.5 space-y-1">
+                        <p className="text-xs font-bold text-amber-800">⚠️ لا توجد قاعدة تسعيرة مطابقة</p>
+                        <p className="text-[10px] text-amber-700 bg-amber-100 rounded px-2 py-1 font-mono">
+                          {pricingPreview.wt === 'liquid' ? '💧 سائل' : '🪨 جاف'}
+                          {' · '}{pricingPreview.vol} م³
+                          {' · '}{pricingPreview.maxDist === 7 ? '≤7 كم' : '>7 كم'}
+                          {' · '}{pricingPreview.ds === 'central_press' ? 'مكبس مركزي' : 'مكب بلدي'}
+                        </p>
+                        <p className="text-[10px] text-amber-600">لن تتغير التكلفة عند الحفظ — أضف القاعدة من صفحة الإعدادات أولاً</p>
+                      </div>
+                    )}
 
                     <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mt-1">
                       <p className="text-[11px] text-blue-700">✏️ سيتم حفظ التعديلات واعتماد النقلة تلقائياً</p>
