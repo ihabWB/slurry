@@ -413,10 +413,56 @@ export async function editAndApproveTrip(id: string, updates: {
   const supabase = createClient()
   const now = new Date().toISOString()
   const { data: { user } } = await supabase.auth.getUser()
+
+  // ── إعادة حساب التسعيرة تلقائياً إذا توفرت البيانات ──────────
+  let computedCost: number | null = updates.trip_cost ?? null
+  let computedContrib: number | null = updates.factory_contribution ?? null
+  let computedSubsidy: number | null = updates.subsidy_amount ?? null
+
+  const wt   = updates.waste_type
+  const vol  = updates.volume_m3
+  const dist = updates.distance_km
+  const ds   = updates.dump_site
+
+  if (wt && vol != null && dist != null && ds) {
+    // جلب قواعد التسعيرة وإعداد الإعدادات
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [rulesRes, settingsRes] = await Promise.all([
+      (supabase as any).from('pricing_rules').select('*'),
+      (supabase as any).from('settings').select('key,value').eq('key', 'factory_contribution'),
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rules: any[] = rulesRes.data ?? []
+    const maxDist = dist <= 7 ? 7 : 9999
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const match = rules.find((r: any) =>
+      r.waste_type === wt &&
+      r.volume_m3 === vol &&
+      r.max_distance_km === maxDist &&
+      r.dump_site === ds
+    )
+    if (match) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contrib = Number((settingsRes.data ?? []).find((s: any) => s.key === 'factory_contribution')?.value ?? 50)
+      computedCost    = match.unit_price
+      computedContrib = contrib
+      computedSubsidy = match.unit_price - contrib
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('trips')
-    .update({ ...updates, approval_status: 'approved', approved_at: now, approved_by: user?.id ?? null, rejection_note: null })
+    .update({
+      ...updates,
+      trip_cost:            computedCost,
+      factory_contribution: computedContrib,
+      subsidy_amount:       computedSubsidy,
+      approval_status: 'approved',
+      approved_at:     now,
+      approved_by:     user?.id ?? null,
+      rejection_note:  null,
+    })
     .eq('id', id)
   if (error) throw error
 }
