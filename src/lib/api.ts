@@ -467,14 +467,14 @@ export async function editAndApproveTrip(id: string, updates: {
   if (error) throw error
 }
 
-/** الأدمن: إلغاء اعتماد نقلة معتمدة → ترجع لحالة draft */
+/** الأدمن: إلغاء اعتماد نقلة معتمدة → ترجع لحالة pending_approval */
 export async function revokeApproval(id: string): Promise<void> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('trips')
     .update({
-      approval_status: 'draft',
+      approval_status: 'pending_approval',
       approved_at: null,
       approved_by: null,
       rejection_note: null,

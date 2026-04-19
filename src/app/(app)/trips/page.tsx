@@ -518,7 +518,7 @@ export default function TripsPage() {
     setRevoking(true)
     try {
       await revokeApproval(revokeTarget.id)
-      showToast('success', 'تم إلغاء الاعتماد — النقلة أصبحت draft')
+      showToast('success', 'تم إلغاء الاعتماد — النقلة أصبحت بانتظار الاعتماد')
       setRevokeTarget(null); load(); loadStats()
     } catch { showToast('error', 'فشل إلغاء الاعتماد') }
     finally { setRevoking(false) }
@@ -1236,7 +1236,7 @@ export default function TripsPage() {
           <div className="space-y-4" dir="rtl">
             <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-1">
               <p className="text-sm font-bold text-orange-800">⚠️ تأكيد إلغاء الاعتماد</p>
-              <p className="text-xs text-orange-700">ستعود نقلة <span className="font-bold">{revokeTarget.factories?.name}</span> إلى حالة مسودة ويمكن تعديلها ورفعها للاعتماد مرة ثانية.</p>
+              <p className="text-xs text-orange-700">ستعود نقلة <span className="font-bold">{revokeTarget.factories?.name}</span> إلى حالة بانتظار الاعتماد ويمكن مراجعتها من قائمة الاعتماد مباشرة.</p>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-slate-50 rounded-lg px-3 py-2">
