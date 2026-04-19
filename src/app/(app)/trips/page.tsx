@@ -1,8 +1,8 @@
 ﻿'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye } from 'lucide-react'
-import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats } from '@/lib/api'
+import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
+import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -342,6 +342,10 @@ export default function TripsPage() {
   const [rejectNote, setRejectNote]       = useState('')
   const [rejecting, setRejecting]         = useState(false)
 
+  // ── Revoke confirm ────────────────────────────────
+  const [revokeTarget, setRevokeTarget] = useState<Trip | null>(null)
+  const [revoking, setRevoking]         = useState(false)
+
   // ── Bulk actions ─────────────────────────────────
   const [submitting, setSubmitting]       = useState(false)
   const [approvingAll, setApprovingAll]   = useState(false)
@@ -472,6 +476,17 @@ export default function TripsPage() {
       setEditTrip(null); setInlineRejectNote(''); load(); loadStats()
     } catch { showToast('error', 'فشل الرفض') }
     finally { setSaving(false) }
+  }
+
+  const handleRevoke = async () => {
+    if (!revokeTarget) return
+    setRevoking(true)
+    try {
+      await revokeApproval(revokeTarget.id)
+      showToast('success', 'تم إلغاء الاعتماد — النقلة أصبحت draft')
+      setRevokeTarget(null); load(); loadStats()
+    } catch { showToast('error', 'فشل إلغاء الاعتماد') }
+    finally { setRevoking(false) }
   }
 
   const handleApproveAll = async () => {
@@ -780,6 +795,12 @@ export default function TripsPage() {
                             {isAdmin && apStatus === 'rejected' && (
                               <button onClick={() => handleApprove(t)} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="اعتماد">
                                 <ThumbsUp size={13} />
+                              </button>
+                            )}
+                            {isAdmin && apStatus === 'approved' && (
+                              <button onClick={() => setRevokeTarget(t)}
+                                className="p-1.5 rounded-lg hover:bg-orange-50 text-slate-300 hover:text-orange-500 transition-colors" title="إلغاء الاعتماد">
+                                <RotateCcw size={13} />
                               </button>
                             )}
                           </div>
@@ -1127,6 +1148,42 @@ export default function TripsPage() {
             <div className="flex gap-2">
               <Button variant="danger" className="flex-1" onClick={handleRejectConfirm} loading={rejecting} disabled={!rejectNote.trim()}>تأكيد الرفض</Button>
               <Button variant="ghost" className="flex-1" onClick={() => setRejectTarget(null)}>إلغاء</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Revoke Modal ── */}
+      {revokeTarget && (
+        <Modal open={!!revokeTarget} onClose={() => setRevokeTarget(null)} title="إلغاء اعتماد النقلة">
+          <div className="space-y-4" dir="rtl">
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-1">
+              <p className="text-sm font-bold text-orange-800">⚠️ تأكيد إلغاء الاعتماد</p>
+              <p className="text-xs text-orange-700">ستعود نقلة <span className="font-bold">{revokeTarget.factories?.name}</span> إلى حالة مسودة ويمكن تعديلها ورفعها للاعتماد مرة ثانية.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="bg-slate-50 rounded-lg px-3 py-2">
+                <p className="text-slate-400">المصنع</p>
+                <p className="font-semibold text-slate-700">{revokeTarget.factories?.name ?? '—'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg px-3 py-2">
+                <p className="text-slate-400">تاريخ النقلة</p>
+                <p className="font-semibold text-slate-700">{revokeTarget.trip_date ? format(new Date(revokeTarget.trip_date), 'dd/MM/yyyy') : '—'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg px-3 py-2">
+                <p className="text-slate-400">رقم الكوبون</p>
+                <p className="font-semibold text-slate-700">{revokeTarget.coupon_number ?? '—'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg px-3 py-2">
+                <p className="text-slate-400">التكلفة</p>
+                <p className="font-semibold text-slate-700">{revokeTarget.trip_cost != null ? `${revokeTarget.trip_cost} ₪` : '—'}</p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" className="flex-1 border-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={handleRevoke} loading={revoking}>
+                <RotateCcw size={14} /> نعم، إلغاء الاعتماد
+              </Button>
+              <Button variant="ghost" className="flex-1" onClick={() => setRevokeTarget(null)}>تراجع</Button>
             </div>
           </div>
         </Modal>
