@@ -453,9 +453,15 @@ export default function TripsPage() {
           notes:         editForm.notes || null,
           payment_status: editForm.payment_status as 'paid' | 'credit',
           waste_type:    (editForm.waste_type as 'liquid' | 'solid') || null,
-          volume_m3:     editForm.volume_m3 ? Number(editForm.volume_m3) : null,
+          volume_m3:     editForm.volume_m3     ? Number(editForm.volume_m3)    : null,
+          distance_km:   editForm.distance_km   ? Number(editForm.distance_km)  : null,
+          dump_site:     (editForm.dump_site as 'municipal_dump' | 'central_press') || null,
+          transfer_zone: editForm.transfer_zone || null,
+          driver_name:   editForm.driver_name   || null,
+          vehicle_type:  (editForm.vehicle_type as 'tank' | 'truck') || null,
+          coupon_number: editForm.coupon_number || null,
         })
-        showToast('success', 'تم تحديث النقلة')
+        showToast('success', 'تم تحديث النقلة ✓')
       }
       setEditTrip(null); load(); loadStats()
     } catch { showToast('error', 'فشل التحديث') }
@@ -943,7 +949,7 @@ export default function TripsPage() {
           open={!!editTrip}
           onClose={() => setEditTrip(null)}
           title={`${isAdmin && editTrip.approval_status === 'pending_approval' ? 'مراجعة واعتماد' : 'تعديل'} نقلة — ${editTrip.factories?.name ?? ''}`}
-          size={isAdmin && editTrip.approval_status === 'pending_approval' ? '2xl' : 'md'}
+          size={isAdmin && editTrip.approval_status === 'pending_approval' ? '2xl' : !isAdmin && editTrip.approval_status === 'rejected' ? 'lg' : 'md'}
         >
           {/* للأدمن على pending: عمودان (تفاصيل + تعديل) */}
           {isAdmin && editTrip.approval_status === 'pending_approval' ? (
@@ -1188,8 +1194,77 @@ export default function TripsPage() {
               </div>
             </div>
 
+          ) : !isAdmin && editTrip.approval_status === 'rejected' ? (
+            /* مدير المشروع يعدل نقلة مرفوضة — نموذج كامل */
+            <div className="space-y-3 overflow-y-auto max-h-[75dvh]" dir="rtl">
+
+              {/* سبب الرفض */}
+              {editTrip.rejection_note && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                  <p className="text-xs font-bold text-red-700 mb-0.5">سبب الرفض من الأدمن</p>
+                  <p className="text-xs text-red-600">{editTrip.rejection_note}</p>
+                </div>
+              )}
+
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">بيانات أساسية</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">تاريخ النقلة</label>
+                  <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">حالة الدفع</label>
+                  <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                    <option value="credit">⏳ ذمة</option>
+                    <option value="paid">✅ مدفوع</option>
+                  </Select></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">رقم الكوبون</label>
+                  <Input value={editForm.coupon_number} onChange={e => setEditForm(f => ({ ...f, coupon_number: e.target.value }))} placeholder="مثال: K-001" /></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">اسم السائق</label>
+                  <Input value={editForm.driver_name} onChange={e => setEditForm(f => ({ ...f, driver_name: e.target.value }))} placeholder="اسم السائق" /></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">نوع المركبة</label>
+                  <Select value={editForm.vehicle_type} onChange={e => setEditForm(f => ({ ...f, vehicle_type: e.target.value }))}>
+                    <option value="">غير محدد</option>
+                    <option value="tank">🚛 صهريج</option>
+                    <option value="truck">🚚 شاحنة</option>
+                  </Select></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">منطقة النقل</label>
+                  <Input value={editForm.transfer_zone} onChange={e => setEditForm(f => ({ ...f, transfer_zone: e.target.value }))} placeholder="مثال: حزام A" /></div>
+              </div>
+
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide pt-1">بيانات التسعيرة</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">نوع الربو</label>
+                  <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
+                    <option value="">غير محدد</option>
+                    <option value="liquid">💧 سائل</option>
+                    <option value="solid">🪨 جاف</option>
+                  </Select></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">الحجم (م³)</label>
+                  <Input type="number" placeholder="0.00" value={editForm.volume_m3} onChange={e => setEditForm(f => ({ ...f, volume_m3: e.target.value }))} /></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">المسافة (كم)</label>
+                  <Input type="number" placeholder="مثال: 5" value={editForm.distance_km} onChange={e => setEditForm(f => ({ ...f, distance_km: e.target.value }))} /></div>
+                <div><label className="block text-xs font-medium text-slate-600 mb-1">موقع التفريغ</label>
+                  <Select value={editForm.dump_site} onChange={e => setEditForm(f => ({ ...f, dump_site: e.target.value }))}>
+                    <option value="">غير محدد</option>
+                    <option value="municipal_dump">🗻 مكب بلدي</option>
+                    <option value="central_press">🏭 مكبس مركزي</option>
+                  </Select></div>
+              </div>
+
+              <div><label className="block text-xs font-medium text-slate-600 mb-1">ملاحظات</label>
+                <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." /></div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                <p className="text-[11px] text-amber-700">💡 بعد الحفظ ستبقى النقلة مرفوضة — ارفعها للاعتماد مرة ثانية من زر &quot;رفع للاعتماد&quot;</p>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSave} loading={saving}>💾 حفظ التغييرات</Button>
+                <Button variant="ghost" className="flex-1" onClick={() => setEditTrip(null)}>إلغاء</Button>
+              </div>
+            </div>
           ) : (
-            /* للحالات الأخرى: modal بسيط كما كان */
+            /* للحالات الأخرى (draft): modal بسيط */
             <div className="space-y-4">
               <div><label className="block text-sm font-medium text-slate-700 mb-1">تاريخ النقلة</label>
                 <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>

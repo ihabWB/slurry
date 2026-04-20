@@ -321,7 +321,19 @@ export async function createTrip(trip: TripInsert) {
   return data as Trip
 }
 
-export async function updateTrip(id: string, updates: { volume_m3?: number | null; waste_type?: 'liquid' | 'solid' | null; notes?: string | null; payment_status?: 'paid' | 'credit'; trip_date?: string }) {
+export async function updateTrip(id: string, updates: {
+  volume_m3?: number | null
+  waste_type?: 'liquid' | 'solid' | null
+  notes?: string | null
+  payment_status?: 'paid' | 'credit'
+  trip_date?: string
+  distance_km?: number | null
+  dump_site?: 'municipal_dump' | 'central_press' | null
+  transfer_zone?: string | null
+  driver_name?: string | null
+  vehicle_type?: 'tank' | 'truck' | null
+  coupon_number?: string | null
+}) {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('trips').update(updates).eq('id', id).select().single()
