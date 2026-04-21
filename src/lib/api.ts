@@ -365,7 +365,18 @@ export async function submitAllDraftTrips(): Promise<number> {
   return (data ?? []).length
 }
 
-/** الأدمن: اعتماد نقلة واحدة */
+/** رفع نقلة واحدة للاعتماد (بغض النظر عن حالتها الحالية) */
+export async function submitTrip(id: string): Promise<void> {
+  const supabase = createClient()
+  const now = new Date().toISOString()
+  const { data: { user } } = await supabase.auth.getUser()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('trips')
+    .update({ approval_status: 'pending_approval', submitted_at: now, submitted_by: user?.id ?? null })
+    .eq('id', id)
+  if (error) throw error
+}
 export async function approveTrip(id: string): Promise<void> {
   const supabase = createClient()
   const now = new Date().toISOString()

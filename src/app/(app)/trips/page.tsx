@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
-import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval } from '@/lib/api'
+import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -349,6 +349,7 @@ export default function TripsPage() {
   // ── Revoke confirm ────────────────────────────────
   const [revokeTarget, setRevokeTarget] = useState<Trip | null>(null)
   const [revoking, setRevoking]         = useState(false)
+  const [submittingId, setSubmittingId] = useState<string | null>(null)
 
   // ── Bulk actions ─────────────────────────────────
   const [submitting, setSubmitting]       = useState(false)
@@ -528,6 +529,16 @@ export default function TripsPage() {
       setRevokeTarget(null); load(); loadStats()
     } catch { showToast('error', 'فشل إلغاء الاعتماد') }
     finally { setRevoking(false) }
+  }
+
+  const handleSubmitTrip = async (id: string) => {
+    setSubmittingId(id)
+    try {
+      await submitTrip(id)
+      showToast('success', 'تم رفع النقلة للاعتماد ✓')
+      load(); loadStats()
+    } catch { showToast('error', 'فشل الرفع للاعتماد') }
+    finally { setSubmittingId(null) }
   }
 
   const handleApproveAll = async () => {
@@ -826,6 +837,16 @@ export default function TripsPage() {
                             {editable && (
                               <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="تعديل">
                                 <Pencil size={13} />
+                              </button>
+                            )}
+                            {/* زر رفع للاعتماد — للمدير على المرفوضات */}
+                            {!isAdmin && apStatus === 'rejected' && (
+                              <button
+                                onClick={() => handleSubmitTrip(t.id)}
+                                disabled={submittingId === t.id}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-semibold transition-colors disabled:opacity-50"
+                                title="رفع للاعتماد">
+                                {submittingId === t.id ? '...' : <><SendHorizonal size={11} /> رفع</>}
                               </button>
                             )}
                             {deletable && (
