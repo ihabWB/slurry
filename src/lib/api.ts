@@ -535,7 +535,7 @@ export async function getRecentApprovedTrips(limit = 20, offset = 0): Promise<Tr
     .from('trips')
     .select('*, factories(name, region)')
     .eq('approval_status', 'approved')
-    .order('approved_at', { ascending: false })
+    .order('approved_at', { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1)
   if (error) throw error
   return (data ?? []) as Trip[]
