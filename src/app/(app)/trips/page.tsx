@@ -351,6 +351,50 @@ export default function TripsPage() {
   const [revoking, setRevoking]         = useState(false)
   const [submittingId, setSubmittingId] = useState<string | null>(null)
 
+  // ── مراجعة آخر المعتمدة ────────────────────────────────────
+  const [recentOpen,     setRecentOpen]     = useState(false)
+  const [recentTrips,    setRecentTrips]    = useState<Trip[]>([])
+  const [recentLoading,  setRecentLoading]  = useState(false)
+  const [recentOffset,   setRecentOffset]   = useState(0)
+  const [recentHasMore,  setRecentHasMore]  = useState(true)
+  const [recentRevoking, setRecentRevoking] = useState<string | null>(null)
+
+  const openRecentApproved = async () => {
+    setRecentOpen(true)
+    setRecentOffset(0)
+    setRecentTrips([])
+    setRecentLoading(true)
+    try {
+      const rows = await getRecentApprovedTrips(20, 0)
+      setRecentTrips(rows)
+      setRecentHasMore(rows.length === 20)
+    } catch { showToast('error', 'فشل تحميل النقلات') }
+    finally { setRecentLoading(false) }
+  }
+
+  const loadMoreRecent = async () => {
+    const nextOffset = recentOffset + 20
+    setRecentLoading(true)
+    try {
+      const rows = await getRecentApprovedTrips(20, nextOffset)
+      setRecentTrips(prev => [...prev, ...rows])
+      setRecentOffset(nextOffset)
+      setRecentHasMore(rows.length === 20)
+    } catch { showToast('error', 'فشل التحميل') }
+    finally { setRecentLoading(false) }
+  }
+
+  const handleRecentRevoke = async (id: string) => {
+    setRecentRevoking(id)
+    try {
+      await revokeApproval(id)
+      setRecentTrips(prev => prev.filter(t => t.id !== id))
+      showToast('success', 'تم إلغاء الاعتماد — أصبحت بانتظار الاعتماد')
+      loadStats()
+    } catch { showToast('error', 'فشل إلغاء الاعتماد') }
+    finally { setRecentRevoking(null) }
+  }
+
   // ── Bulk actions ─────────────────────────────────
   const [submitting, setSubmitting]       = useState(false)
   const [approvingAll, setApprovingAll]   = useState(false)
