@@ -527,6 +527,20 @@ export async function getTripApprovalStats(): Promise<{
   return stats
 }
 
+/** آخر N نقلة معتمدة — للأدمن لمراجعة الاعتماد */
+export async function getRecentApprovedTrips(limit = 20, offset = 0): Promise<Trip[]> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .select('*, factories(name, region)')
+    .eq('approval_status', 'approved')
+    .order('approved_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+  if (error) throw error
+  return (data ?? []) as Trip[]
+}
+
 export async function deletePayment(id: string) {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

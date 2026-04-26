@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
-import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval } from '@/lib/api'
+import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval, getRecentApprovedTrips } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -605,10 +605,17 @@ export default function TripsPage() {
           ['approved',         stats.approved,         'معتمدة',            'bg-emerald-50 border-emerald-200 text-emerald-800', <CheckCircle size={16} className="text-emerald-500" />],
           ['rejected',         stats.rejected,         'مرفوضة',            'bg-red-50 border-red-200 text-red-800',         <AlertCircle size={16} className="text-red-500" />],
         ] as const).map(([key, count, label, cls, icon]) => (
-          <button key={key} onClick={() => setApprovalFilter(approvalFilter === key ? 'all' : key as ApprovalStatus)}
+          <button key={key} onClick={() => {
+            if (isAdmin && key === 'approved') { openRecentApproved(); return }
+            setApprovalFilter(approvalFilter === key ? 'all' : key as ApprovalStatus)
+          }}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-right ${cls} ${approvalFilter === key ? 'ring-2 ring-offset-1 ring-current' : 'opacity-80 hover:opacity-100'}`}>
             {icon}
-            <div><p className="text-xl font-bold leading-none">{count}</p><p className="text-xs mt-0.5 opacity-70">{label}</p></div>
+            <div>
+              <p className="text-xl font-bold leading-none">{count}</p>
+              <p className="text-xs mt-0.5 opacity-70">{label}</p>
+              {isAdmin && key === 'approved' && <p className="text-[10px] opacity-50 mt-0.5">مراجعة →</p>}
+            </div>
           </button>
         ))}
       </div>
@@ -1379,6 +1386,96 @@ export default function TripsPage() {
       {/* ── New Trip Modal ── */}
       {showNew && (
         <NewTripModal onClose={() => setShowNew(false)} onSuccess={() => { setShowNew(false); load(); loadStats() }} isAdmin={isAdmin} />
+      )}
+
+      {/* ── مراجعة آخر المعتمدة ── */}
+      {recentOpen && (
+        <Modal open={recentOpen} onClose={() => setRecentOpen(false)} title="مراجعة آخر النقلات المعتمدة" size="2xl">
+          <div className="space-y-3" dir="rtl">
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <p className="text-xs text-amber-800">⚠️ إلغاء الاعتماد سيُعيد النقلة إلى قائمة <span className="font-bold">بانتظار الاعتماد</span> — يمكن مراجعتها واعتمادها مرة ثانية.</p>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-100">
+              <table className="w-full text-sm" dir="rtl">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">#</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">المصنع</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">تاريخ النقلة</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">وقت الاعتماد</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">الكوبون</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">التكلفة</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">نوع الربو</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold text-slate-500">إجراء</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentLoading && recentTrips.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center py-8 text-slate-400">جارٍ التحميل...</td></tr>
+                  ) : recentTrips.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center py-8 text-slate-400">لا توجد نقلات معتمدة</td></tr>
+                  ) : (
+                    recentTrips.map((t: Trip, i: number) => (
+                      <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                        <td className="px-3 py-2.5 text-slate-400 text-xs">{i + 1}</td>
+                        <td className="px-3 py-2.5">
+                          <p className="font-medium text-slate-800 text-xs">{t.factories?.name ?? '—'}</p>
+                          <p className="text-[10px] text-slate-400">{t.factories?.region ?? ''}</p>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap">
+                          {t.trip_date ? format(new Date(t.trip_date), 'dd/MM/yyyy') : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                          {t.approved_at ? format(new Date(t.approved_at), 'dd/MM/yyyy HH:mm') : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-slate-500">{t.coupon_number ?? '—'}</td>
+                        <td className="px-3 py-2.5 text-xs font-semibold text-slate-700">
+                          {t.trip_cost != null ? `${t.trip_cost} ₪` : <span className="text-amber-500">غير مسعّرة</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs">
+                          {t.waste_type === 'liquid'
+                            ? <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">💧 سائل</span>
+                            : t.waste_type === 'solid'
+                            ? <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">🪨 جاف</span>
+                            : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <button
+                            onClick={() => handleRecentRevoke(t.id)}
+                            disabled={recentRevoking === t.id}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
+                            title="إلغاء الاعتماد">
+                            {recentRevoking === t.id
+                              ? <span className="text-slate-400">...</span>
+                              : <><RotateCcw size={11} /> إلغاء الاعتماد</>}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* تحميل المزيد */}
+            {recentHasMore && !recentLoading && recentTrips.length > 0 && (
+              <button
+                onClick={loadMoreRecent}
+                className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 text-xs text-slate-500 hover:border-slate-300 hover:text-slate-700 transition-colors">
+                تحميل 20 نقلة إضافية ↓
+              </button>
+            )}
+            {recentLoading && recentTrips.length > 0 && (
+              <p className="text-center text-xs text-slate-400 py-2">جارٍ التحميل...</p>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <Button variant="ghost" onClick={() => setRecentOpen(false)}>إغلاق</Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   )
