@@ -882,6 +882,7 @@ export default function DisbursementsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [viewTripsList, setViewTripsList]   = useState<any[]>([])
   const [viewTripsLoading, setViewTripsLoading] = useState(false)
+  const [viewTripsSearch, setViewTripsSearch]   = useState('')
   const [defaultRetentionPct, setDefaultRetentionPct] = useState(10)
   const [uncoveredInfo, setUncoveredInfo] = useState<{ earliestDate: string | null; latestDate: string | null; count: number } | null>(null)
 
@@ -1191,6 +1192,7 @@ export default function DisbursementsPage() {
               onViewTrips={async (disb) => {
                 setViewTripsTarget(disb)
                 setViewTripsList([])
+                setViewTripsSearch('')
                 setViewTripsLoading(true)
                 try {
                   const rows = await getTripsForDisbursement(disb.period_from, disb.period_to)
@@ -1266,13 +1268,34 @@ export default function DisbursementsPage() {
               </button>
             </div>
 
+            {/* شريط البحث */}
+            <div className="px-5 py-2.5 border-b border-slate-100 flex-shrink-0">
+              <input
+                type="text"
+                value={viewTripsSearch}
+                onChange={e => setViewTripsSearch(e.target.value)}
+                placeholder="🔍 بحث برقم الكوبون أو اسم المصنع..."
+                className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-400"
+              />
+            </div>
+
             {/* Body */}
             <div className="overflow-auto flex-1 px-5 py-4">
               {viewTripsLoading ? (
                 <p className="text-center text-slate-400 py-10">جارٍّ التحميل...</p>
               ) : viewTripsList.length === 0 ? (
                 <p className="text-center text-slate-400 py-10">لا توجد نقلات في هذه الفترة</p>
-              ) : (
+              ) : (() => {
+                const filtered = viewTripsSearch.trim()
+                  ? viewTripsList.filter(t =>
+                      (t.coupon_number ?? '').toLowerCase().includes(viewTripsSearch.toLowerCase()) ||
+                      (t.factories?.name ?? '').toLowerCase().includes(viewTripsSearch.toLowerCase())
+                    )
+                  : viewTripsList
+                if (filtered.length === 0) return (
+                  <p className="text-center text-slate-400 py-10">لا توجد نتائج للبحث</p>
+                )
+                return (
                 <table className="w-full text-sm" dir="rtl">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
@@ -1288,7 +1311,7 @@ export default function DisbursementsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {viewTripsList.map((t, i) => (
+                    {filtered.map((t, i) => (
                       <tr key={t.id}
                         className={`border-b border-slate-50 ${
                           t.disbursement_excluded
@@ -1336,19 +1359,20 @@ export default function DisbursementsPage() {
                   <tfoot>
                     <tr className="bg-slate-50 border-t-2 border-slate-200">
                       <td colSpan={5} className="px-3 py-2.5 text-xs font-bold text-slate-600">
-                        المجموع ({viewTripsList.filter(t => !t.disbursement_excluded).length} نقلة)
+                        المجموع ({filtered.filter(t => !t.disbursement_excluded).length} نقلة)
                       </td>
                       <td className="px-3 py-2.5 text-sm font-bold text-slate-800">
-                        {viewTripsList.filter(t => !t.disbursement_excluded).reduce((s, t) => s + (t.trip_cost ?? 0), 0)} ₪
+                        {filtered.filter(t => !t.disbursement_excluded).reduce((s, t) => s + (t.trip_cost ?? 0), 0)} ₪
                       </td>
                       <td className="px-3 py-2.5 text-sm font-bold text-blue-700">
-                        {viewTripsList.filter(t => !t.disbursement_excluded).reduce((s, t) => s + (t.factory_contribution ?? 0), 0)} ₪
+                        {filtered.filter(t => !t.disbursement_excluded).reduce((s, t) => s + (t.factory_contribution ?? 0), 0)} ₪
                       </td>
                       <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
-              )}
+                )
+              })()}
             </div>
 
             <div className="px-5 py-3 border-t border-slate-100 flex justify-end flex-shrink-0">

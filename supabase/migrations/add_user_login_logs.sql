@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.user_login_logs (
   ) STORED
 );
 
+
 -- Index for fast lookup by user
 CREATE INDEX IF NOT EXISTS idx_login_logs_user_id ON public.user_login_logs(user_id);
 -- Index for time-based queries
