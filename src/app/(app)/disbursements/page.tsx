@@ -1288,10 +1288,26 @@ export default function DisbursementsPage() {
                 <h2 className="text-base font-bold text-slate-900">📋 نقلات المطالبة</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   الفترة: {fmtDate(viewTripsTarget.period_from)} — {fmtDate(viewTripsTarget.period_to)}
-                  {!viewTripsLoading && (
-                    <span className="mr-2 font-semibold text-slate-700">· {viewTripsList.filter(t => !t.disbursement_excluded).length} نقلة مشمولة</span>
-                  )}
                 </p>
+                {!viewTripsLoading && viewTripsList.length > 0 && (() => {
+                  const includedTrips = viewTripsList.filter(t => !t.disbursement_excluded)
+                  const excludedTrips = viewTripsList.filter(t => t.disbursement_excluded)
+                  return (
+                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                      <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                        إجمالي الفترة: <strong>{viewTripsList.length}</strong>
+                      </span>
+                      <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+                        ✅ مشمولة: <strong>{includedTrips.length}</strong>
+                      </span>
+                      {excludedTrips.length > 0 && (
+                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">
+                          ⬜ مستثناة: <strong>{excludedTrips.length}</strong>
+                        </span>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
               <button onClick={() => setViewTripsTarget(null)}
                 className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
