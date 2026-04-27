@@ -1620,8 +1620,8 @@ export async function updateDisbursement(
     .eq('id', id)
     .single()
   if (fetchErr) throw fetchErr
-  if (current.status !== 'draft' && current.status !== 'returned')
-    throw new Error('لا يمكن تعديل مطالبة مقدمة أو مُعتمدة')
+  if (current.status !== 'draft' && current.status !== 'returned' && current.status !== 'closed')
+    throw new Error('لا يمكن تعديل مطالبة مقدمة للاعتماد')
 
   // إعادة الحساب إذا تغيرت الفترة أو النسبة
   const newFrom = fields.period_from ?? current.period_from
@@ -1688,7 +1688,7 @@ export async function updateDisbursement(
 }
 
 /** حذف مطالبة (فقط المسودات والمرجعة) */
-export async function deleteDisbursement(id: string): Promise<void> {
+export async function deleteDisbursement(id: string, force = false): Promise<void> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: current, error: fetchErr } = await (supabase as any)
@@ -1697,7 +1697,7 @@ export async function deleteDisbursement(id: string): Promise<void> {
     .eq('id', id)
     .single()
   if (fetchErr) throw fetchErr
-  if (current.status === 'closed') throw new Error('لا يمكن حذف مطالبة مغلقة')
+  if (current.status === 'closed' && !force) throw new Error('لا يمكن حذف مطالبة مغلقة')
   if (current.status === 'pending') throw new Error('لا يمكن حذف مطالبة مقدمة للاعتماد — اسحبها أولاً')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

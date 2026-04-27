@@ -179,6 +179,16 @@ function EditDisbursementModal({
           </button>
         </div>
 
+        {disb.status === 'closed' && (
+          <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-3.5 py-3 text-sm">
+            <AlertTriangle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-red-800">⚠️ مطالبة مغلقة ومُعتمدة رسمياً</p>
+              <p className="text-red-700 text-xs mt-0.5">تعديلها سيغيّر البيانات المالية المعتمدة. تأكد من ضرورة هذا التعديل قبل المتابعة.</p>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSave} className="space-y-4">
           {/* التواريخ */}
           <div className="grid grid-cols-2 gap-3">
@@ -713,7 +723,7 @@ function DisbursementCard({
   onSubmit: (disb: Disbursement) => void
   onReview: (disb: Disbursement) => void
   onEdit: (disb: Disbursement) => void
-  onDelete: (id: string) => void
+  onDelete: (id: string, isClosed?: boolean) => void
   onViewTrips: (disb: Disbursement) => void
   isAdmin: boolean
   isManager: boolean
@@ -810,6 +820,19 @@ function DisbursementCard({
             <span className="text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
               في انتظار الاعتماد
             </span>
+          )}
+
+          {disb.status === 'closed' && isAdmin && (
+            <>
+              <button onClick={() => onEdit(disb)} title="تعديل مطالبة مغلقة"
+                className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                <Pencil size={15} />
+              </button>
+              <button onClick={() => onDelete(disb.id, true)} title="حذف مطالبة مغلقة"
+                className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                <Trash2 size={15} />
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1033,12 +1056,24 @@ export default function DisbursementsPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('هل أنت متأكد من حذف هذه المطالبة؟')) return
+  async function handleDelete(id: string, isClosed = false) {
+    if (isClosed) {
+      const confirmed = confirm(
+        '⚠️ تحذير خطير\n\n'
+        + 'هذه المطالبة مغلقة ومُعتمدة رسمياً.\n'
+        + 'حذفها سيحذف جميع بياناتها بشكل نهائي ولا يمكن التراجع.\n\n'
+        + 'اكتب كلمة حذف للتأكيد:'
+      )
+      if (!confirmed) return
+      const word = prompt('اكتب كلمة "حذف" للتأكيد:')
+      if (word?.trim() !== 'حذف') { alert('تم إلغاء العملية'); return }
+    } else {
+      if (!confirm('هل أنت متأكد من حذف هذه المطالبة؟')) return
+    }
     try {
       setActionLoading(true)
       setError(null)
-      await deleteDisbursement(id)
+      await deleteDisbursement(id, isClosed)
       showSuccessMsg('تم حذف المطالبة')
       await load()
     } catch (e: unknown) {
