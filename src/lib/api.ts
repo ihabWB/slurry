@@ -1277,21 +1277,26 @@ export async function getUncoveredTripsInfo(): Promise<{
     .from('disbursements')
     .select('period_from, period_to')
 
-  // جلب كل النقلات (trip_date فقط)
+  // جلب كل النقلات مع حالة الاستثناء والترحيل
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: trips, error } = await (supabase as any)
     .from('trips')
-    .select('trip_date')
+    .select('trip_date, disbursement_excluded, excluded_until')
     .order('trip_date', { ascending: true })
   if (error) throw error
 
   const covered = (disbursements ?? []) as { period_from: string; period_to: string }[]
 
-  // فلترة النقلات غير المشمولة بأي مطالبة
+  // نقلة "غير مشمولة" هي:
+  // 1. مستثناة صراحةً (disbursement_excluded=true) — استحقاق مالي معلق
+  // 2. محمولة وتم إدراجها في مطالبة (excluded_until != null, excluded=false) — مشمولة
+  // 3. عادية: غير مشمولة إن كان تاريخها خارج أي فترة مطالبة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const uncovered = ((trips ?? []) as { trip_date: string }[]).filter(t =>
-    !covered.some(d => t.trip_date >= d.period_from && t.trip_date <= d.period_to)
-  )
+  const uncovered = ((trips ?? []) as { trip_date: string; disbursement_excluded: boolean; excluded_until: string | null }[]).filter(t => {
+    if (t.disbursement_excluded) return true          // مستثناة → غير مشمولة
+    if (t.excluded_until !== null) return false       // محمولة ومُدرجة في مطالبة → مشمولة
+    return !covered.some(d => t.trip_date >= d.period_from && t.trip_date <= d.period_to)
+  })
 
   if (uncovered.length === 0) return { earliestDate: null, latestDate: null, count: 0 }
 
@@ -1318,29 +1323,76 @@ export async function getDisbursements(): Promise<Disbursement[]> {
  * جلب النقلات في فترة زمنية للعرض في مودال المطالبة الجديدة.
  * تُعيد كل النقلات (المشمولة والمستثناة) مع بيانات المصنع.
  */
-export async function getTripsForDisbursement(from: string, to: string) {
+/**
+ * mode='wizard' → تُعيد نقلات الفترة + النقلات المحمولة من فترات سابقة (للمعالج الجديد)
+ * mode='view'   → تُعيد نقلات الفترة + النقلات المحمولة المُدرجة فعلاً (للعرض فقط)
+ */
+export async function getTripsForDisbursement(from: string, to: string, mode: 'wizard' | 'view' = 'view') {
   const supabase = createClient()
+  const sel = 'id, trip_date, trip_cost, payment_status, waste_type, disbursement_excluded, excluded_until, coupon_number, factories(name)'
+
+  // النقلات العادية في نطاق التاريخ
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data: rangeData, error: e1 } = await (supabase as any)
     .from('trips')
-    .select('id, trip_date, trip_cost, payment_status, waste_type, disbursement_excluded, coupon_number, factories(name)')
+    .select(sel)
     .gte('trip_date', from)
     .lte('trip_date', to)
     .order('trip_date', { ascending: true })
-  if (error) throw error
+  if (e1) throw e1
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []) as any[]
+  let carryovers: any[] = []
+
+  if (mode === 'wizard') {
+    // مرشحات الترحيل: مستثناة من فترات سابقة (excluded_until < from)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: coData, error: e2 } = await (supabase as any)
+      .from('trips')
+      .select(sel)
+      .eq('disbursement_excluded', true)
+      .not('excluded_until', 'is', null)
+      .lt('excluded_until', from)
+      .order('trip_date', { ascending: true })
+    if (e2) throw e2
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    carryovers = (coData ?? []).map((t: any) => ({ ...t, is_carryover: true }))
+  } else {
+    // نقلات محمولة تم إدراجها فعلاً في هذه الفترة (excluded=false, excluded_until=to, trip_date < from)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: coData, error: e2 } = await (supabase as any)
+      .from('trips')
+      .select(sel)
+      .eq('disbursement_excluded', false)
+      .eq('excluded_until', to)
+      .lt('trip_date', from)
+      .order('trip_date', { ascending: true })
+    if (e2) throw e2
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    carryovers = (coData ?? []).map((t: any) => ({ ...t, is_carryover: true }))
+  }
+
+  // النقلات المحمولة تظهر في الأعلى
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return [...carryovers, ...(rangeData ?? [])] as any[]
 }
 
 /**
  * تبديل حالة استثناء نقلة من/إلى المطالبات المالية.
  */
-export async function setTripDisbursementExclusion(tripId: string, excluded: boolean): Promise<void> {
+export async function setTripDisbursementExclusion(
+  tripId: string,
+  excluded: boolean,
+  periodTo?: string | null,
+): Promise<void> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('trips')
-    .update({ disbursement_excluded: excluded })
+    .update({
+      disbursement_excluded: excluded,
+      excluded_until: periodTo ?? null,
+    })
     .eq('id', tripId)
   if (error) throw error
 }
@@ -1354,7 +1406,7 @@ async function calcDisbursementAmounts(from: string, to: string) {
     .from('settings').select('value').eq('key', 'factory_contribution').single()
   const contributionPerTrip = Number(setting?.value ?? 50)
 
-  // جلب كل النقلات في الفترة مع حالة الدفع — باستثناء المستثناة
+  // النقلات العادية في الفترة — باستثناء المستثناة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('trips')
@@ -1363,8 +1415,20 @@ async function calcDisbursementAmounts(from: string, to: string) {
     .lte('trip_date', to)
     .eq('disbursement_excluded', false)
   if (error) throw error
+
+  // النقلات المحمولة المُدرجة في هذه الفترة (excluded=false, excluded_until=to, trip_date < from)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows: any[] = data ?? []
+  const { data: carryoverData, error: e2 } = await (supabase as any)
+    .from('trips')
+    .select('trip_cost, payment_status')
+    .eq('disbursement_excluded', false)
+    .not('excluded_until', 'is', null)
+    .eq('excluded_until', to)
+    .lt('trip_date', from)
+  if (e2) throw e2
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: any[] = [...(data ?? []), ...(carryoverData ?? [])]
   const trips_count              = rows.length
   const paid_count               = rows.filter((r: any) => r.payment_status === 'paid').length
   // تكلفة النقلات من جدول التسعيرة
@@ -1402,8 +1466,9 @@ export async function createDisbursement(
   period_from: string,
   period_to: string,
   notes?: string,
-  retention_pct_override?: number,   // إن أدخلها المستخدم يدوياً
+  retention_pct_override?: number,    // إن أدخلها المستخدم يدوياً
   retention_amount_override?: number, // تجاوز الحساب وتحديد مبلغ مختلف
+  carryover_trip_ids?: string[],      // معرفات النقلات المحمولة التي وافق المستخدم على إدراجها
 ): Promise<Disbursement> {
   const supabase = createClient()
 
@@ -1435,6 +1500,16 @@ export async function createDisbursement(
       .eq('key', 'retention_pct')
       .single()
     if (setting?.value) retention_pct = parseFloat(setting.value)
+  }
+
+  // ── إدراج النقلات المحمولة التي وافق عليها المستخدم ──
+  if (carryover_trip_ids && carryover_trip_ids.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: coErr } = await (supabase as any)
+      .from('trips')
+      .update({ disbursement_excluded: false, excluded_until: period_to })
+      .in('id', carryover_trip_ids)
+    if (coErr) throw coErr
   }
 
   const amounts = await calcDisbursementAmounts(period_from, period_to)
@@ -1561,12 +1636,21 @@ export async function updateDisbursement(
     .lte('trip_date', newTo)
     .eq('disbursement_excluded', false)
 
+  // النقلات المحمولة المدرجة في هذه الفترة (excluded=false, excluded_until=newTo, trip_date < newFrom)
+  const { data: carryoverTrips } = await (supabase as any)
+    .from('trips')
+    .select('trip_cost, payment_status')
+    .eq('disbursement_excluded', false)
+    .not('excluded_until', 'is', null)
+    .eq('excluded_until', newTo)
+    .lt('trip_date', newFrom)
+
   // جلب قيمة مساهمة المصنع من الإعدادات
   const { data: contribSetting } = await (supabase as any)
     .from('settings').select('value').eq('key', 'factory_contribution').single()
   const contributionPerTrip = Number(contribSetting?.value ?? 50)
 
-  const tripsList = (trips ?? []) as { trip_cost: number; payment_status: string }[]
+  const tripsList = [...(trips ?? []), ...(carryoverTrips ?? [])] as { trip_cost: number; payment_status: string }[]
   const paid_count              = tripsList.filter(t => t.payment_status === 'paid').length
   const total_trips_cost        = tripsList.reduce((s: number, t) => s + Number(t.trip_cost ?? 0), 0)
   const total_factory_share     = tripsList.length * contributionPerTrip

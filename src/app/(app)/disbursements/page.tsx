@@ -375,7 +375,7 @@ function NewDisbursementModal({
   suggestedTo,
   uncoveredCount,
 }: {
-  onSubmit: (from: string, to: string, notes: string, retentionPct: number, retentionAmountOverride?: number) => void
+  onSubmit: (from: string, to: string, notes: string, retentionPct: number, retentionAmountOverride?: number, carryoverTripIds?: string[]) => void
   onCancel: () => void
   loading: boolean
   defaultRetentionPct: number
@@ -407,11 +407,11 @@ function NewDisbursementModal({
     if (isNaN(pct) || pct < 0 || pct > 100) { alert('نسبة الحجز يجب أن تكون بين 0 و 100'); return }
     setTripsLoading(true)
     try {
-      const data = await getTripsForDisbursement(from, to)
-      // تحميل الحالة الحالية للمستثناة من DB
+      const data = await getTripsForDisbursement(from, to, 'wizard')
+      // النقلات المستثناة داخل الفترة (ليست محمولة)
       const alreadyExcluded = new Set<string>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data.filter((t: any) => t.disbursement_excluded).map((t: any) => t.id as string)
+        data.filter((t: any) => t.disbursement_excluded && !t.is_carryover).map((t: any) => t.id as string)
       )
       setPeriodTrips(data)
       setExcluded(alreadyExcluded)
@@ -420,14 +420,21 @@ function NewDisbursementModal({
     finally { setTripsLoading(false) }
   }
 
-  async function toggleExclude(tripId: string, currentlyExcluded: boolean) {
-    setToggling(tripId)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function toggleExclude(trip: any, currentlyExcluded: boolean) {
+    setToggling(trip.id)
     try {
-      await setTripDisbursementExclusion(tripId, !currentlyExcluded)
+      const newExcluded = !currentlyExcluded
+      const periodTo = newExcluded
+        ? to                        // عند الاستثناء: سجّل نهاية الفترة الحالية
+        : trip.is_carryover
+          ? to                      // نقلة محمولة تُدرج: اربطها بالفترة الحالية
+          : null                    // نقلة عادية تُعاد: امسح علامة الاستثناء
+      await setTripDisbursementExclusion(trip.id, newExcluded, periodTo)
       setExcluded(prev => {
         const next = new Set(prev)
-        if (!currentlyExcluded) next.add(tripId)
-        else next.delete(tripId)
+        if (newExcluded) next.add(trip.id)
+        else next.delete(trip.id)
         return next
       })
     } catch { alert('فشل تحديث حالة النقلة') }
@@ -439,7 +446,13 @@ function NewDisbursementModal({
     const override = manualMode && retentionAmountManual !== ''
       ? parseFloat(retentionAmountManual)
       : undefined
-    onSubmit(from, to, notes, pct, override)
+    // معرّفات النقلات المحمولة التي لم يستثنِها المستخدم (يجب إدراجها)
+    const carryoverTripIds = periodTrips
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((t: any) => t.is_carryover && !excluded.has(t.id))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((t: any) => t.id as string)
+    onSubmit(from, to, notes, pct, override, carryoverTripIds.length > 0 ? carryoverTripIds : undefined)
   }
 
   const includedCount = periodTrips.filter(t => !excluded.has(t.id)).length
@@ -577,6 +590,21 @@ function NewDisbursementModal({
               </span>
             </div>
 
+            {/* بانر النقلات المحمولة */}
+            {(() => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const carryoverCount = periodTrips.filter((t: any) => t.is_carryover && !excluded.has(t.id)).length
+              if (carryoverCount === 0) return null
+              return (
+                <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl px-3.5 py-2.5 text-xs text-orange-800">
+                  <span className="flex-shrink-0 mt-0.5">📦</span>
+                  <span>
+                    يوجد <strong>{fmt(carryoverCount)} نقلة محمولة</strong> من فترات سابقة — ستُشمل تلقائياً في هذه المطالبة. يمكنك استثناءها إن أردت.
+                  </span>
+                </div>
+              )
+            })()}
+
             {/* تعليمات */}
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800">
               <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
@@ -604,11 +632,11 @@ function NewDisbursementModal({
                   return (
                     <div key={t.id}
                       className={`px-4 py-2.5 grid grid-cols-12 gap-2 items-center text-sm transition-colors ${
-                        isExcluded ? 'bg-amber-50/60 opacity-60' : 'hover:bg-slate-50'
+                        isExcluded ? 'bg-amber-50/60 opacity-60' : t.is_carryover ? 'bg-orange-50/40 hover:bg-orange-50' : 'hover:bg-slate-50'
                       }`}>
                       <div className="col-span-1 flex justify-center">
                         <button
-                          onClick={() => toggleExclude(t.id, isExcluded)}
+                          onClick={() => toggleExclude(t, isExcluded)}
                           disabled={isToggling}
                           className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
                             isToggling ? 'opacity-50 cursor-wait' :
@@ -625,7 +653,10 @@ function NewDisbursementModal({
                           )}
                         </button>
                       </div>
-                      <div className="col-span-2 font-medium text-slate-700 truncate text-xs">{t.factories?.name ?? '—'}</div>
+                      <div className="col-span-2 font-medium text-slate-700 truncate text-xs">
+                        {t.is_carryover && <span className="text-orange-500 mr-1" title="محمول من فترة سابقة">📦</span>}
+                        {t.factories?.name ?? '—'}
+                      </div>
                       <div className="col-span-2 text-center text-xs text-slate-500">{t.trip_date ? fmtDate(t.trip_date) : '—'}</div>
                       <div className="col-span-2 text-center text-xs font-mono text-slate-600">{t.coupon_number ?? <span className="text-slate-300">—</span>}</div>
                       <div className="col-span-2 text-center">
@@ -909,11 +940,11 @@ export default function DisbursementsPage() {
     setTimeout(() => setSuccess(null), 4000)
   }
 
-  async function handleCreate(from: string, to: string, notes: string, retentionPct: number, retentionAmountOverride?: number) {
+  async function handleCreate(from: string, to: string, notes: string, retentionPct: number, retentionAmountOverride?: number, carryoverTripIds?: string[]) {
     try {
       setActionLoading(true)
       setError(null)
-      await createDisbursement(from, to, notes || undefined, retentionPct, retentionAmountOverride)
+      await createDisbursement(from, to, notes || undefined, retentionPct, retentionAmountOverride, carryoverTripIds)
       setShowNew(false)
       showSuccessMsg('تم إنشاء المطالبة (مسودة) بنجاح')
       await load()
@@ -1351,7 +1382,9 @@ export default function DisbursementsPage() {
                         <td className="px-3 py-2.5 text-xs">
                           {t.disbursement_excluded
                             ? <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">مستثنى</span>
-                            : <span className="px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">مشمول</span>}
+                            : t.is_carryover
+                              ? <span className="px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700">📦 محمول</span>
+                              : <span className="px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">مشمول</span>}
                         </td>
                       </tr>
                     ))}
