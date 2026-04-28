@@ -318,6 +318,12 @@ export async function createTrip(trip: TripInsert) {
     .select()
     .single()
   if (error) throw new Error(translateTripError(error))
+
+  // إذا كانت النقلة بحالة credit وللمصنع رصيد دائن → غطّيها تلقائياً
+  if (data.payment_status === 'credit' && trip.factory_id) {
+    await applyFactoryCreditToNewTrip(data.id, trip.factory_id)
+  }
+
   return data as Trip
 }
 
@@ -753,34 +759,126 @@ export async function createPayment(payment: PaymentInsert) {
   const { data, error } = await (supabase as any).from('payments').insert(payment).select().single()
   if (error) throw error
 
-  // Auto-settle oldest credit trips for this factory based on amount paid
-  // Each trip costs 50₪ — settle as many as the payment covers
+  // غطّ نقلات الذمة الأقدم أولاً بالمبلغ المدفوع، نقلة نقلة (كل نقلة = 50₪)
   if (payment.factory_id && payment.amount_paid) {
-    const tripsToSettle = Math.floor(Number(payment.amount_paid) / 50)
-    if (tripsToSettle > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: creditTrips } = await (supabase as any)
-        .from('trips')
-        .select('id')
-        .eq('factory_id', payment.factory_id)
-        .eq('payment_status', 'credit')
-        .order('trip_date', { ascending: true })
-        .order('created_at', { ascending: true })
-        .limit(tripsToSettle)
+    let remaining = Number(payment.amount_paid)
 
-      if (creditTrips && creditTrips.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ids = (creditTrips as any[]).map((t: any) => t.id)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any)
-          .from('trips')
-          .update({ payment_status: 'paid', payment_method: 'later' })
-          .in('id', ids)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: creditTrips } = await (supabase as any)
+      .from('trips')
+      .select('id, factory_contribution')
+      .eq('factory_id', payment.factory_id)
+      .eq('payment_status', 'credit')
+      .order('trip_date', { ascending: true })
+      .order('created_at', { ascending: true })
+
+    const idsToSettle: string[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const trip of (creditTrips ?? []) as any[]) {
+      const contrib = Number(trip.factory_contribution ?? 50)
+      if (remaining >= contrib) {
+        idsToSettle.push(trip.id)
+        remaining -= contrib
+      } else {
+        break
       }
     }
+
+    if (idsToSettle.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('trips')
+        .update({ payment_status: 'paid', payment_method: 'later' })
+        .in('id', idsToSettle)
+    }
+    // الـ remaining (الرصيد الدائن) يبقى محفوظاً في factories.balance كقيمة سالبة
+    // سيُستخدم تلقائياً لتغطية النقلات القادمة عبر applyFactoryCreditToNewTrip
   }
 
   return data as Payment
+}
+
+/**
+ * معاينة: كيف سيُوزَّع المبلغ على نقلات الذمة قبل تسجيل الدفعة.
+ * تُعيد: عدد النقلات التي ستُغطى + المبلغ الدائن المتبقي.
+ */
+export async function previewPayment(factoryId: string, amountPaid: number): Promise<{
+  tripsCount: number
+  totalCovered: number
+  remainingCredit: number
+  existingCredit: number
+}> {
+  const supabase = createClient()
+
+  const [factoryRes, tripsRes] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('factories').select('balance').eq('id', factoryId).single(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('trips').select('id, factory_contribution')
+      .eq('factory_id', factoryId).eq('payment_status', 'credit')
+      .order('trip_date', { ascending: true }).order('created_at', { ascending: true }),
+  ])
+
+  // الرصيد الدائن الحالي (balance سالب = رصيد للمصنع)
+  const existingCredit = Math.max(0, -Number(factoryRes.data?.balance ?? 0))
+
+  let remaining = amountPaid + existingCredit
+  let tripsCount = 0
+  let totalCovered = 0
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const trip of (tripsRes.data ?? []) as any[]) {
+    const contrib = Number(trip.factory_contribution ?? 50)
+    if (remaining >= contrib) {
+      tripsCount++
+      totalCovered += contrib
+      remaining -= contrib
+    } else break
+  }
+
+  return {
+    tripsCount,
+    totalCovered,
+    remainingCredit: remaining,
+    existingCredit,
+  }
+}
+
+/**
+ * يُستدعى بعد إنشاء نقلة جديدة بحالة credit —
+ * إذا كان للمصنع رصيد دائن (balance < 0) يكفي قيمة النقلة، تُغطى فوراً.
+ */
+export async function applyFactoryCreditToNewTrip(tripId: string, factoryId: string): Promise<boolean> {
+  const supabase = createClient()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: factory } = await (supabase as any)
+    .from('factories')
+    .select('balance')
+    .eq('id', factoryId)
+    .single()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: trip } = await (supabase as any)
+    .from('trips')
+    .select('factory_contribution')
+    .eq('id', tripId)
+    .single()
+
+  const balance = Number(factory?.balance ?? 0)
+  const contrib = Number(trip?.factory_contribution ?? 50)
+
+  // رصيد دائن = balance سالب، وقيمته المطلقة تكفي النقلة
+  if (balance < 0 && Math.abs(balance) >= contrib) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('trips')
+      .update({ payment_status: 'paid', payment_method: 'later' })
+      .eq('id', tripId)
+    return true // تمت التغطية التلقائية
+  }
+  return false
 }
 
 export async function uploadReceipt(file: File, paymentId: string): Promise<string> {

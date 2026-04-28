@@ -1,8 +1,8 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { ArrowRight, Upload } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { ArrowRight, Upload, CheckCircle, Info } from 'lucide-react'
 import Link from 'next/link'
-import { getFactories, createPayment, uploadReceipt } from '@/lib/api'
+import { getFactories, createPayment, uploadReceipt, previewPayment } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
@@ -20,12 +20,36 @@ export default function NewPaymentPage() {
   const [notes, setNotes] = useState('')
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
+  const [preview, setPreview] = useState<{
+    tripsCount: number
+    totalCovered: number
+    remainingCredit: number
+    existingCredit: number
+  } | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   useEffect(() => {
     getFactories().then(setFactories).catch(console.error)
   }, [])
 
   const selectedFactory = factories.find(f => f.id === factoryId)
+
+  // معاينة فورية عند تغيير المصنع أو المبلغ
+  const refreshPreview = useCallback(async (fId: string, amt: string) => {
+    const num = Number(amt)
+    if (!fId || !amt || num <= 0) { setPreview(null); return }
+    setPreviewLoading(true)
+    try {
+      const result = await previewPayment(fId, num)
+      setPreview(result)
+    } catch { setPreview(null) }
+    finally { setPreviewLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    const t = setTimeout(() => refreshPreview(factoryId, amount), 400)
+    return () => clearTimeout(t)
+  }, [factoryId, amount, refreshPreview])
 
   const handleSubmit = async () => {
     if (!factoryId) { showToast('warning', 'يرجى اختيار المصنع'); return }
@@ -40,7 +64,6 @@ export default function NewPaymentPage() {
       })
       if (receiptFile) {
         const url = await uploadReceipt(receiptFile, payment.id)
-        // Update receipt URL (Supabase trigger already fired, just update the record URL)
         console.log('Receipt uploaded:', url)
       }
       showToast('success', 'تم تسجيل الدفعة بنجاح')
@@ -73,7 +96,9 @@ export default function NewPaymentPage() {
             <option value="">اختر مصنعاً...</option>
             {factories.map(f => (
               <option key={f.id} value={f.id}>
-                {f.name} {f.balance > 0 ? `(ذمة: ${f.balance} ₪)` : ''}
+                {f.name}
+                {f.balance > 0 ? ` (ذمة: ${f.balance} ₪)` : ''}
+                {f.balance < 0 ? ` ✅ رصيد دائن: ${Math.abs(f.balance)} ₪` : ''}
               </option>
             ))}
           </Select>
@@ -81,7 +106,15 @@ export default function NewPaymentPage() {
           {selectedFactory && selectedFactory.balance > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
               <p className="text-sm text-amber-800">
-                💰 الرصيد المستحق لـ <strong>{selectedFactory.name}</strong>: <strong>{selectedFactory.balance} ₪</strong>
+                💰 الذمة المستحقة على <strong>{selectedFactory.name}</strong>: <strong>{selectedFactory.balance} ₪</strong>
+              </p>
+            </div>
+          )}
+
+          {selectedFactory && selectedFactory.balance < 0 && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+              <p className="text-sm text-emerald-800">
+                ✅ رصيد دائن محفوظ لـ <strong>{selectedFactory.name}</strong>: <strong>{Math.abs(selectedFactory.balance)} ₪</strong> — سيُضاف إلى الدفعة الجديدة تلقائياً
               </p>
             </div>
           )}
@@ -126,12 +159,56 @@ export default function NewPaymentPage() {
         </CardBody>
       </Card>
 
-      {factoryId && amount && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardBody>
-            <p className="text-sm font-medium text-emerald-800">
-              دفعة بمبلغ <span className="text-lg font-bold">{Number(amount).toLocaleString()} ₪</span> لـ {selectedFactory?.name}
-            </p>
+      {/* معاينة التغطية */}
+      {factoryId && amount && Number(amount) > 0 && (
+        <Card className={preview && preview.tripsCount > 0 ? 'border-emerald-200 bg-emerald-50' : 'border-blue-200 bg-blue-50'}>
+          <CardBody className="space-y-2.5">
+            {previewLoading ? (
+              <p className="text-sm text-slate-500 text-center py-1">جارٍ الحساب...</p>
+            ) : preview ? (
+              <>
+                <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <Info size={15} className="text-blue-500" />
+                  معاينة توزيع الدفعة
+                </p>
+
+                {preview.existingCredit > 0 && (
+                  <div className="flex items-center justify-between text-xs bg-white/70 rounded-lg px-3 py-2">
+                    <span className="text-emerald-700">رصيد دائن سابق يُضاف</span>
+                    <span className="font-bold text-emerald-800">+ {preview.existingCredit} ₪</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between text-xs bg-white/70 rounded-lg px-3 py-2">
+                  <span className="text-slate-600">المبلغ الجديد</span>
+                  <span className="font-bold text-slate-800">{Number(amount).toLocaleString()} ₪</span>
+                </div>
+
+                {preview.tripsCount > 0 ? (
+                  <div className="flex items-center justify-between text-xs bg-white/70 rounded-lg px-3 py-2">
+                    <span className="text-emerald-700 flex items-center gap-1.5">
+                      <CheckCircle size={13} /> ستُغطى من نقلات الذمة
+                    </span>
+                    <span className="font-bold text-emerald-800">
+                      {preview.tripsCount} نقلة ({preview.totalCovered} ₪)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-xs bg-white/70 rounded-lg px-3 py-2">
+                    <span className="text-slate-500">لا توجد نقلات ذمة حالياً</span>
+                  </div>
+                )}
+
+                <div className={`flex items-center justify-between text-xs rounded-lg px-3 py-2 font-bold ${
+                  preview.remainingCredit > 0
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-white/70 text-slate-500'
+                }`}>
+                  <span>{preview.remainingCredit > 0 ? '💳 رصيد دائن يُحفظ للنقلات القادمة' : 'رصيد دائن متبقٍ'}</span>
+                  <span>{preview.remainingCredit} ₪</span>
+                </div>
+              </>
+            ) : null}
           </CardBody>
         </Card>
       )}
