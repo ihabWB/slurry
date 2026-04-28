@@ -1020,7 +1020,6 @@ export async function getFactoryStatement(factory_id: string) {
     (supabase as any).from('trips').select('*').eq('factory_id', factory_id).order('created_at'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('*').eq('factory_id', factory_id).order('date'),
-    // نجلب الرصيد الفعلي من جدول المصانع (موجب = ذمة، سالب = رصيد دائن)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('balance').eq('id', factory_id).single(),
   ])
@@ -1031,8 +1030,19 @@ export async function getFactoryStatement(factory_id: string) {
   const totalAmount = totalTrips * 50
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalPaid = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-  // الرصيد من قاعدة البيانات: موجب = ذمة على المصنع، سالب = رصيد دائن للمصنع
-  const balance = Number(factoryRes.data?.balance ?? 0)
+
+  // الذمة الحقيقية = مجموع اشتراكات النقلات غير المسواة فعلياً (credit)
+  // هذا هو مصدر الحقيقة الوحيد، بدلاً من الاعتماد على factories.balance
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const actualDebt = (tripsRes.data || []).reduce((sum: number, t: any) => {
+    if (t.payment_status === 'credit') return sum + Number(t.factory_contribution ?? 50)
+    return sum
+  }, 0)
+
+  // الرصيد الدائن (إذا المصنع دفع أكثر من كل الذمم) نجلبه من factories.balance
+  const dbBalance = Number(factoryRes.data?.balance ?? 0)
+  // balance النهائي: إذا في ذمم فعلية → موجب (قيمة الذمم)، إذا لا ذمم وفي رصيد → سالب (رصيد دائن)
+  const balance = actualDebt > 0 ? actualDebt : dbBalance
 
   return { trips: tripsRes.data, payments: paymentsRes.data, totalTrips, totalAmount, totalPaid, balance }
 }
