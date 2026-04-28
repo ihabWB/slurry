@@ -349,9 +349,40 @@ export async function updateTrip(id: string, updates: {
 
 export async function deleteTrip(id: string) {
   const supabase = createClient()
+
+  // نجلب بيانات النقلة قبل الحذف لمعالجة الرصيد يدوياً إذا لزم
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: trip } = await (supabase as any)
+    .from('trips')
+    .select('factory_id, payment_status, payment_method, factory_contribution')
+    .eq('id', id)
+    .single()
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('trips').delete().eq('id', id)
   if (error) throw error
+
+  // إذا كانت النقلة مدفوعة تلقائياً من رصيد دائن (paid/later)،
+  // trigger الحذف لا يعالج هذه الحالة → نُعيد قيمتها للرصيد يدوياً
+  if (
+    trip?.factory_id &&
+    trip?.payment_status === 'paid' &&
+    trip?.payment_method === 'later'
+  ) {
+    const contrib = Number(trip.factory_contribution ?? 50)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: factory } = await (supabase as any)
+      .from('factories')
+      .select('balance')
+      .eq('id', trip.factory_id)
+      .single()
+    const currentBalance = Number(factory?.balance ?? 0)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('factories')
+      .update({ balance: currentBalance - contrib })
+      .eq('id', trip.factory_id)
+  }
 }
 
 // ─── TRIP APPROVAL ───────────────────────────────────────────
