@@ -973,11 +973,14 @@ export async function syncTripPaymentStatus() {
 
 export async function getFactoryStatement(factory_id: string) {
   const supabase = createClient()
-  const [tripsRes, paymentsRes] = await Promise.all([
+  const [tripsRes, paymentsRes, factoryRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*').eq('factory_id', factory_id).order('created_at'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('*').eq('factory_id', factory_id).order('date'),
+    // نجلب الرصيد الفعلي من جدول المصانع (موجب = ذمة، سالب = رصيد دائن)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('factories').select('balance').eq('id', factory_id).single(),
   ])
   if (tripsRes.error) throw tripsRes.error
   if (paymentsRes.error) throw paymentsRes.error
@@ -986,9 +989,8 @@ export async function getFactoryStatement(factory_id: string) {
   const totalAmount = totalTrips * 50
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalPaid = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const creditTripsCount = (tripsRes.data || []).filter((t: any) => t.payment_status === 'credit').length
-  const balance = creditTripsCount * 50
+  // الرصيد من قاعدة البيانات: موجب = ذمة على المصنع، سالب = رصيد دائن للمصنع
+  const balance = Number(factoryRes.data?.balance ?? 0)
 
   return { trips: tripsRes.data, payments: paymentsRes.data, totalTrips, totalAmount, totalPaid, balance }
 }
