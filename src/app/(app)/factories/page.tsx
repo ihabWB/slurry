@@ -1,7 +1,7 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
 import { Plus, Search, MapPin, Phone, User, Edit2, BarChart2, Upload, FileSpreadsheet, Download, X, CheckCircle, AlertCircle } from 'lucide-react'
-import { getFactories, createFactory, updateFactory, checkTagExists } from '@/lib/api'
+import { getFactoriesWithBalance, createFactory, updateFactory, checkTagExists } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
@@ -109,7 +109,7 @@ export default function FactoriesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getFactories()
+      const data = await getFactoriesWithBalance()
       setFactories(data)
       setFiltered(data)
     } catch {
@@ -228,7 +228,7 @@ export default function FactoriesPage() {
           {filtered.map(f => {
             const isApproxCoords = f.lat === 31.5 && f.lng === 35.1
             return (
-            <Card key={f.id} className={`border-2 ${isApproxCoords ? 'border-amber-300' : f.balance > 0 ? 'border-red-100' : f.balance < 0 ? 'border-blue-100' : 'border-emerald-100'}`}>
+            <Card key={f.id} className={`border-2 ${isApproxCoords ? 'border-amber-300' : f.debt > 0 ? 'border-red-100' : f.creditBalance > 0 ? 'border-blue-100' : 'border-emerald-100'}`}>
               <CardBody>
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -256,9 +256,9 @@ export default function FactoriesPage() {
                       </span>
                     )}
                     <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      f.balance > 0 ? 'bg-red-50 text-red-600' : f.balance < 0 ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-600'
+                      f.debt > 0 ? 'bg-red-50 text-red-600' : f.creditBalance > 0 ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-600'
                     }`}>
-                      {f.balance > 0 ? `ذمة: ${f.balance} ₪` : f.balance < 0 ? `💳 رصيد دائن: ${Math.abs(f.balance)} ₪` : 'ملتزم ✓'}
+                      {f.debt > 0 ? `ذمة: ${f.debt} ₪` : f.creditBalance > 0 ? `💳 رصيد دائن: ${f.creditBalance} ₪` : 'ملتزم ✓'}
                     </span>
                   </div>
                 </div>

@@ -11,6 +11,40 @@ export async function getFactories() {
   return data as Factory[]
 }
 
+/**
+ * جلب المصانع مع حساب الذمم والرصيد الدائن الحقيقي من النقلات والمدفوعات مباشرةً.
+ * يُستخدم في صفحة قائمة المصانع لعرض الأرقام الصحيحة.
+ */
+export async function getFactoriesWithBalance(): Promise<(Factory & { debt: number; creditBalance: number })[]> {
+  const supabase = createClient()
+  const [factoriesRes, tripsRes, paymentsRes] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('factories').select('*').order('name'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('trips').select('factory_id, payment_status, payment_method, factory_contribution'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('payments').select('factory_id, amount_paid'),
+  ])
+  if (factoriesRes.error) throw factoriesRes.error
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (factoriesRes.data as any[]).map((f: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const trips = (tripsRes.data as any[] ?? []).filter((t: any) => t.factory_id === f.id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payments = (paymentsRes.data as any[] ?? []).filter((p: any) => p.factory_id === f.id)
+
+    const totalPaid = payments.reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+    const debt = trips.filter((t: any) => t.payment_status === 'credit')
+      .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
+    const coveredByPayments = trips.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
+      .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
+    const creditBalance = Math.max(0, totalPaid - coveredByPayments - debt)
+
+    return { ...f, debt, creditBalance } as Factory & { debt: number; creditBalance: number }
+  })
+}
+
 // جلب ملخص مالي شامل لكل المصانع (للتقارير)
 export async function getFactoriesSummary() {
   const supabase = createClient()
