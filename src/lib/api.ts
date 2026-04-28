@@ -870,12 +870,23 @@ export async function applyFactoryCreditToNewTrip(tripId: string, factoryId: str
   const contrib = Number(trip?.factory_contribution ?? 50)
 
   // رصيد دائن = balance سالب، وقيمته المطلقة تكفي النقلة
+  // ملاحظة: balance مقروء بعد trigger الإدراج (balance + contrib)،
+  // أي هو القيمة الصحيحة التي يجب أن يبقى عليها الرصيد بعد التغطية.
   if (balance < 0 && Math.abs(balance) >= contrib) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any)
       .from('trips')
       .update({ payment_status: 'paid', payment_method: 'later' })
       .eq('id', tripId)
+
+    // trigger credit→paid يطرح contrib مجدداً فيُلغي trigger الإدراج ويُبقي الرصيد كما كان.
+    // نُصحّح يدوياً: نضبط balance على القيمة التي قرأناها (وهي الصحيحة بعد استهلاك الرصيد).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('factories')
+      .update({ balance })
+      .eq('id', factoryId)
+
     return true // تمت التغطية التلقائية
   }
   return false
