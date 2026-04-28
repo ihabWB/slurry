@@ -1032,19 +1032,20 @@ export async function getFactoryStatement(factory_id: string) {
   const totalPaid = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
 
   // الذمة الحقيقية = مجموع اشتراكات النقلات غير المسواة فعلياً (credit)
-  // هذا هو مصدر الحقيقة الوحيد، بدلاً من الاعتماد على factories.balance
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const actualDebt = (tripsRes.data || []).reduce((sum: number, t: any) => {
+  const debt = (tripsRes.data || []).reduce((sum: number, t: any) => {
     if (t.payment_status === 'credit') return sum + Number(t.factory_contribution ?? 50)
     return sum
   }, 0)
 
-  // الرصيد الدائن (إذا المصنع دفع أكثر من كل الذمم) نجلبه من factories.balance
+  // الرصيد الدائن = المصنع دفع أكثر من كل ذممه (factories.balance سالب ولا توجد ذمم)
   const dbBalance = Number(factoryRes.data?.balance ?? 0)
-  // balance النهائي: إذا في ذمم فعلية → موجب (قيمة الذمم)، إذا لا ذمم وفي رصيد → سالب (رصيد دائن)
-  const balance = actualDebt > 0 ? actualDebt : dbBalance
+  const creditBalance = debt === 0 && dbBalance < 0 ? Math.abs(dbBalance) : 0
 
-  return { trips: tripsRes.data, payments: paymentsRes.data, totalTrips, totalAmount, totalPaid, balance }
+  // balance للتوافق مع الكود القديم
+  const balance = debt > 0 ? debt : dbBalance
+
+  return { trips: tripsRes.data, payments: paymentsRes.data, totalTrips, totalAmount, totalPaid, balance, debt, creditBalance }
 }
 
 // ─── DASHBOARD STATS ─────────────────────────────────────────

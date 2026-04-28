@@ -118,19 +118,36 @@ export default function FactoryDetailPage() {
             </div>
           </CardBody>
         </Card>
-        <Card className={statement?.balance > 0 ? 'border-red-100' : statement?.balance < 0 ? 'border-blue-200' : 'border-emerald-100'}>
+        {/* بطاقة الذمم غير المسواة */}
+        <Card className={statement?.debt > 0 ? 'border-red-200 bg-red-50/30' : 'border-emerald-100'}>
           <CardBody className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${statement?.balance > 0 ? 'bg-red-50' : statement?.balance < 0 ? 'bg-blue-50' : 'bg-emerald-50'}`}>
-              <DollarSign size={16} className={statement?.balance > 0 ? 'text-red-600' : statement?.balance < 0 ? 'text-blue-600' : 'text-emerald-600'} />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${statement?.debt > 0 ? 'bg-red-100' : 'bg-emerald-50'}`}>
+              <DollarSign size={16} className={statement?.debt > 0 ? 'text-red-600' : 'text-emerald-600'} />
             </div>
             <div>
-              <p className="text-xs text-slate-500">
-                {statement?.balance > 0 ? 'ذمة على المصنع' : statement?.balance < 0 ? '💳 رصيد دائن' : 'الرصيد المتبقي'}
+              <p className="text-xs text-slate-500">ذمم غير مسواة</p>
+              <p className={`font-bold text-lg ${statement?.debt > 0 ? 'text-red-700' : 'text-emerald-600'}`}>
+                {statement?.debt > 0 ? `${Number(statement.debt).toLocaleString()} ₪` : '—'}
               </p>
-              <p className={`font-bold ${statement?.balance > 0 ? 'text-red-700' : statement?.balance < 0 ? 'text-blue-700' : 'text-emerald-700'}`}>
-                {statement?.balance < 0 ? `${Math.abs(Number(statement?.balance ?? 0)).toLocaleString()} ₪` : `${Number(statement?.balance ?? 0).toLocaleString()} ₪`}
+              {(statement?.debt ?? 0) === 0 && (
+                <p className="text-xs text-emerald-500">لا ذمم معلّقة ✓</p>
+              )}
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* بطاقة الرصيد الدائن */}
+        <Card className={statement?.creditBalance > 0 ? 'border-blue-300 bg-blue-50/40' : 'border-slate-100'}>
+          <CardBody className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${statement?.creditBalance > 0 ? 'bg-blue-100' : 'bg-slate-50'}`}>
+              <span className="text-base">{statement?.creditBalance > 0 ? '💳' : <DollarSign size={16} className="text-slate-300" />}</span>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">رصيد دائن للمصنع</p>
+              <p className={`font-bold text-lg ${statement?.creditBalance > 0 ? 'text-blue-700' : 'text-slate-400'}`}>
+                {statement?.creditBalance > 0 ? `${Number(statement.creditBalance).toLocaleString()} ₪` : '—'}
               </p>
-              {(statement?.balance ?? 0) < 0 && (
+              {(statement?.creditBalance ?? 0) > 0 && (
                 <p className="text-xs text-blue-500 mt-0.5">يُغطى تلقائياً للنقلات القادمة</p>
               )}
             </div>
