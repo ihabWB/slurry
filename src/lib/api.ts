@@ -138,6 +138,7 @@ export async function getTrips(filters?: {
     .from('trips')
     .select('*, factories(name, region)')
     .order('trip_date', { ascending: false })
+    .limit(10000)
 
   if (filters?.factory_id) query = query.eq('factory_id', filters.factory_id)
   if (filters?.payment_status) query = query.eq('payment_status', filters.payment_status)
@@ -556,23 +557,22 @@ export async function getTripApprovalStats(): Promise<{
   unknown: number
 }> {
   const supabase = createClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from('trips')
-    .select('approval_status')
-  if (error) throw error
-  const stats = { draft: 0, pending_approval: 0, approved: 0, rejected: 0, unknown: 0 }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ;(data ?? []).forEach((r: any) => {
-    const s = r.approval_status
-    if (s === 'draft' || s === 'pending_approval' || s === 'approved' || s === 'rejected') {
-      stats[s]++
-    } else {
-      // null أو قيمة غير معروفة — نحسبها تحت unknown
-      stats.unknown++
-    }
-  })
-  return stats
+  // استخدام count queries منفصلة لتجنب حد 1000 صف الافتراضي
+  const [draft, pending, approved, rejected, total] = await Promise.all([
+    (supabase as any).from('trips').select('*', { count: 'exact', head: true }).eq('approval_status', 'draft'),
+    (supabase as any).from('trips').select('*', { count: 'exact', head: true }).eq('approval_status', 'pending_approval'),
+    (supabase as any).from('trips').select('*', { count: 'exact', head: true }).eq('approval_status', 'approved'),
+    (supabase as any).from('trips').select('*', { count: 'exact', head: true }).eq('approval_status', 'rejected'),
+    (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
+  ])
+  const knownCount = (draft.count ?? 0) + (pending.count ?? 0) + (approved.count ?? 0) + (rejected.count ?? 0)
+  return {
+    draft: draft.count ?? 0,
+    pending_approval: pending.count ?? 0,
+    approved: approved.count ?? 0,
+    rejected: rejected.count ?? 0,
+    unknown: (total.count ?? 0) - knownCount,
+  }
 }
 
 /** آخر N نقلة معتمدة — للأدمن لمراجعة الاعتماد */
