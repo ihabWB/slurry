@@ -553,6 +553,7 @@ export async function getTripApprovalStats(): Promise<{
   pending_approval: number
   approved: number
   rejected: number
+  unknown: number
 }> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -560,10 +561,16 @@ export async function getTripApprovalStats(): Promise<{
     .from('trips')
     .select('approval_status')
   if (error) throw error
-  const stats = { draft: 0, pending_approval: 0, approved: 0, rejected: 0 }
+  const stats = { draft: 0, pending_approval: 0, approved: 0, rejected: 0, unknown: 0 }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(data ?? []).forEach((r: any) => {
-    if (r.approval_status in stats) stats[r.approval_status as keyof typeof stats]++
+    const s = r.approval_status
+    if (s === 'draft' || s === 'pending_approval' || s === 'approved' || s === 'rejected') {
+      stats[s]++
+    } else {
+      // null أو قيمة غير معروفة — نحسبها تحت unknown
+      stats.unknown++
+    }
   })
   return stats
 }

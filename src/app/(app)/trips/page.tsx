@@ -304,7 +304,7 @@ export default function TripsPage() {
   const [showNew, setShowNew] = useState(false)
 
   // ── إحصائيات الاعتماد ───────────────────────────
-  const [stats, setStats] = useState({ draft: 0, pending_approval: 0, approved: 0, rejected: 0 })
+  const [stats, setStats] = useState({ draft: 0, pending_approval: 0, approved: 0, rejected: 0, unknown: 0 })
 
   // ── فلاتر ───────────────────────────────────────
   const [approvalFilter, setApprovalFilter] = useState<ApprovalStatus | 'all'>('all')
@@ -663,6 +663,16 @@ export default function TripsPage() {
           </button>
         ))}
       </div>
+
+      {/* تحذير: نقلات بدون approval_status صالح */}
+      {stats.unknown > 0 && (
+        <div className="flex items-center gap-3 bg-orange-50 border border-orange-300 rounded-xl px-4 py-3">
+          <AlertCircle size={18} className="text-orange-500 flex-shrink-0" />
+          <p className="text-sm text-orange-800">
+            تنبيه: يوجد <strong>{stats.unknown} نقلة</strong> بحالة غير معروفة (لا تظهر في أي تبويب). يُرجى مراجعة قاعدة البيانات وتعيين حالة الاعتماد لها.
+          </p>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
