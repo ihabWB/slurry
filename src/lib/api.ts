@@ -1113,26 +1113,29 @@ export async function getDashboardStats() {
   const supabase = createClient()
 
   const now = new Date()
-  const todayStr   = now.toISOString().slice(0, 10)
-  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  const todayStr        = now.toISOString().slice(0, 10)
+  const monthStart      = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  const prevMonthStart  = (() => {
+    const d = new Date(now); d.setMonth(d.getMonth() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  })()
+  const prevMonthEnd    = (() => {
+    const d = new Date(now); d.setMonth(d.getMonth() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })()
 
+  // القواعد الصغيرة نجلبها مباشرة — القواعد الكبيرة نستخدم RPC لتجاوز max_rows=1000
   const [
     allTripsRes,
     totalFactoriesRes,
     overdueFactoriesRes,
     overdueBalancesRes,
     allPaymentsRes,
-    paidTripsRes,       // نقلات مدفوعة — نأخذ factory_contribution منها
     creditTripsRes,
     todayTripsRes,
-    monthTripsRes,
-    costRes,            // كل النقلات: trip_cost + subsidy_amount
-    settingsRes,        // الإعدادات: project_budget + factory_contribution
-    disbursementsRes,   // الدفعات المقفلة: disbursed_amount
-    volumeAllRes,       // كل النقلات: waste_type + volume_m3
-    volumeMonthRes,     // نقلات الشهر: waste_type + volume_m3
-    activeFactoriesTotalRes, // مصانع نشطة (لها نقلات) إجمالاً
-    prevMonthTripsRes,  // نقلات الشهر الماضي (نفس الأيام)
+    settingsRes,
+    disbursementsRes,
+    aggregatesRes,
   ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
@@ -1142,214 +1145,137 @@ export async function getDashboardStats() {
     (supabase as any).from('factories').select('*', { count: 'exact', head: true }).gt('balance', 0),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('balance').gt('balance', 0),
-    // كل المدفوعات (تسديد ذمم)
+    // المدفوعات — جدول صغير لا يتجاوز 1000
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('payments').select('amount_paid').limit(10000),
-    // النقلات المدفوعة — نحتاج factory_contribution لكل منها
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_contribution').eq('payment_status', 'paid').limit(10000),
-    // عدد نقلات الذمة فقط
+    (supabase as any).from('payments').select('amount_paid'),
+    // عدد نقلات الذمة
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'credit'),
-    // نقلات اليوم
+    // نقلات اليوم — عادة أقل من 100
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_id, payment_status').eq('trip_date', todayStr),
-    // نقلات هذا الشهر
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart).limit(10000),
-    // كل النقلات: مجاميع التكاليف
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('trip_cost').limit(10000),
-    // الإعدادات العامة
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('settings').select('key, value').in('key', ['project_budget', 'factory_contribution']),
-    // الدفعات المقفلة — لمعرفة المبلغ الفعلي المصروف
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('disbursements').select('disbursed_amount, retention_amount, net_payment').eq('status', 'closed'),
-    // كل النقلات: waste_type + volume_m3 للإحصاءات
+    // RPC يحسب كل الإحصاءات المجمّعة على مستوى DB — يتجاوز max_rows
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km').limit(10000),
-    // نقلات هذا الشهر: waste_type + volume_m3
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km').gte('trip_date', monthStart).limit(10000),
-    // مصانع نشطة إجمالاً (distinct factory_id من trips)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_id').limit(10000),
-    // نقلات الشهر الماضي (نفس عدد الأيام) — لمؤشر الاتجاه
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('id').gte('trip_date', (() => {
-      const d = new Date(now); d.setMonth(d.getMonth() - 1);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-    })()).lte('trip_date', (() => {
-      const d = new Date(now); d.setMonth(d.getMonth() - 1);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    })()),
+    (supabase as any).rpc('get_dashboard_aggregates', {
+      p_month_start:      monthStart,
+      p_prev_month_start: prevMonthStart,
+      p_prev_month_end:   prevMonthEnd,
+    }),
   ])
 
-  // إجمالي تكاليف النقلات من جدول التسعيرة
+  // ── نتائج RPC ─────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const costData: any[] = costRes.data || []
-  const tripsWithCost = costData.filter((r: any) => r.trip_cost != null)
-  const tripsWithCostCount = tripsWithCost.length
-  const totalProjectCost = costData.reduce((s: number, r: any) => s + Number(r.trip_cost ?? 0), 0)
+  const agg: any = aggregatesRes.data ?? {}
 
-  // رصيد مساهمات المصانع المتراكم (مستقل عن التمويل)
-  // يُحسب لاحقاً بعد قراءة settingsMap لمعرفة factory_contribution
+  const tripsWithCostCount         = Number(agg.trips_with_cost                ?? 0)
+  const totalProjectCost           = Number(agg.total_project_cost             ?? 0)
+  const paidTripsCount             = Number(agg.paid_trips_count               ?? 0)
+  const collectedFromPaidTrips     = Number(agg.collected_factory_contribution ?? 0)
+  const activeFactoriesTotal       = Number(agg.active_factories_total         ?? 0)
+  const monthTripsCount            = Number(agg.month_trips_count              ?? 0)
+  const activeFactoriesThisMonth   = Number(agg.active_factories_this_month    ?? 0)
+  const totalVolume                = Number(agg.total_volume                   ?? 0)
+  const monthVolume                = Number(agg.month_volume                   ?? 0)
+  const liquidCount                = Number(agg.liquid_count                   ?? 0)
+  const liquidVolume               = Number(agg.liquid_volume                  ?? 0)
+  const dryCount                   = Number(agg.dry_count                      ?? 0)
+  const dryVolume                  = Number(agg.dry_volume                     ?? 0)
+  const liquidCountMonth           = Number(agg.liquid_count_month             ?? 0)
+  const liquidVolumeMonth          = Number(agg.liquid_volume_month            ?? 0)
+  const dryCountMonth              = Number(agg.dry_count_month                ?? 0)
+  const dryVolumeMonth             = Number(agg.dry_volume_month               ?? 0)
 
-  // ── المحصّل = مساهمات النقلات المدفوعة + مدفوعات الذمم المُسجَّلة ─
+  const dumpSiteStats = {
+    centralPress: {
+      count:       Number(agg.central_press_count          ?? 0),
+      volume:      Number(agg.central_press_volume         ?? 0),
+      countMonth:  Number(agg.central_press_count_month    ?? 0),
+      volumeMonth: Number(agg.central_press_volume_month   ?? 0),
+    },
+    khalletSharbati: {
+      count:       Number(agg.khallet_count                ?? 0),
+      volume:      Number(agg.khallet_volume               ?? 0),
+      countMonth:  Number(agg.khallet_count_month          ?? 0),
+      volumeMonth: Number(agg.khallet_volume_month         ?? 0),
+    },
+    sa3ir: {
+      count:       Number(agg.sa3ir_count                  ?? 0),
+      volume:      Number(agg.sa3ir_volume                 ?? 0),
+      countMonth:  Number(agg.sa3ir_count_month            ?? 0),
+      volumeMonth: Number(agg.sa3ir_volume_month           ?? 0),
+    },
+  }
+
+  // ── باقي الحسابات ─────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const paidTripsData: any[] = paidTripsRes.data || []
-  // كل نقلة مدفوعة: إن كان لديها factory_contribution نستخدمه، وإلا 50 كقيمة افتراضية
-  const collectedFromPaidTrips = paidTripsData.reduce(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (s: number, r: any) => s + Number(r.factory_contribution ?? 50), 0
-  )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const paymentsTotal = (allPaymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+  const paymentsTotal  = (allPaymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
   const totalCollected = collectedFromPaidTrips + paymentsTotal
 
-  // ── الذمم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalDebt = (overdueBalancesRes.data || []).reduce((s: number, f: any) => s + Number(f.balance), 0)
 
-  // ── الدفعات المقفلة ───────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const disbData: any[] = disbursementsRes.data || []
   const totalDisbursed           = disbData.reduce((s: number, d: any) => s + Number(d.net_payment), 0)
   const totalRetained            = disbData.reduce((s: number, d: any) => s + Number(d.retention_amount), 0)
   const closedDisbursementsCount = disbData.length
 
-  // ── ميزانية التمويل ───────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const settingsMap: Record<string, string> = Object.fromEntries(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (settingsRes.data || []).map((s: any) => [s.key, s.value])
   )
-  const projectBudget = Number(settingsMap['project_budget'] ?? 0)
+  const projectBudget       = Number(settingsMap['project_budget']      ?? 0)
   const contributionPerTrip = Number(settingsMap['factory_contribution'] ?? 50)
-  // رصيد مساهمات المصانع المتراكم = عدد جميع النقلات × مساهمة المصنع لكل نقلة
-  const totalFactoryShare = costData.length * contributionPerTrip
-  // المحصّل من مساهمات المصانع = نقلات مدفوعة × contributionPerTrip
-  const factoryShareCollected   = paidTripsData.length * contributionPerTrip
-  // غير المحصّل = نقلات ذمة × contributionPerTrip
+  const totalTrips          = allTripsRes.count ?? 0
+
+  const totalFactoryShare       = totalTrips * contributionPerTrip
+  const factoryShareCollected   = paidTripsCount * contributionPerTrip
   const factoryShareUncollected = (creditTripsRes.count ?? 0) * contributionPerTrip
-  // الصرف الفعلي من التمويل = مجموع net_payment من الدفعات المُقفلة
-  const spentFromBudget = totalDisbursed
-  const remainingBudget = Math.max(0, projectBudget - spentFromBudget)
-  const budgetSpentPct  = projectBudget > 0
+  const spentFromBudget         = totalDisbursed
+  const remainingBudget         = Math.max(0, projectBudget - spentFromBudget)
+  const budgetSpentPct          = projectBudget > 0
     ? Math.min(Math.round(spentFromBudget / projectBudget * 100), 100) : 0
 
-  // ── اليوم ─────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const todayData: any[] = todayTripsRes.data || []
   const todayTripsCount  = todayData.length
   const todayPaidCount   = todayData.filter((t: any) => t.payment_status === 'paid').length
   const todayCreditCount = todayData.filter((t: any) => t.payment_status === 'credit').length
 
-  // ── الشهر ─────────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const monthData: any[] = monthTripsRes.data || []
-  const monthTripsCount  = monthData.length
-  const activeFactoriesThisMonth = new Set(monthData.map((t: any) => t.factory_id)).size
   const avgTripsPerFactory = activeFactoriesThisMonth > 0
     ? Math.round(monthTripsCount / activeFactoriesThisMonth * 10) / 10 : 0
 
-  const totalTrips = allTripsRes.count ?? 0
-
-  // ── أحجام وأنواع النقلات ─────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const volumeAll: any[]   = volumeAllRes.data   || []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const volumeMonth: any[] = volumeMonthRes.data || []
-
-  const liquidAll   = volumeAll.filter((r: any) => r.waste_type === 'liquid')
-  const dryAll      = volumeAll.filter((r: any) => r.waste_type === 'solid')
-  const liquidMonth = volumeMonth.filter((r: any) => r.waste_type === 'liquid')
-  const dryMonth    = volumeMonth.filter((r: any) => r.waste_type === 'solid')
-
-  const totalVolume      = volumeAll.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
-  const monthVolume      = volumeMonth.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
-  const liquidCount      = liquidAll.length
-  const liquidVolume     = liquidAll.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
-  const dryCount         = dryAll.length
-  const dryVolume        = dryAll.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
-  const liquidCountMonth = liquidMonth.length
-  const liquidVolumeMonth= liquidMonth.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
-  const dryCountMonth    = dryMonth.length
-  const dryVolumeMonth   = dryMonth.reduce((s: number, r: any) => s + Number(r.volume_m3 ?? 0), 0)
-
-  // مصانع نشطة إجمالاً (لها نقلة واحدة على الأقل)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const activeFactoriesTotal = new Set((activeFactoriesTotalRes.data || []).map((r: any) => r.factory_id)).size
-
-  // ── إحصاءات وجهات النقل ──────────────────────────────
-  const getDumpKey = (r: any): string => {
-    if (r.dump_site === 'central_press') return 'central_press'
-    if (r.dump_site === 'municipal_dump') {
-      // distance_km هو العمود الفعلي في جدول trips
-      return Number(r.distance_km ?? 0) <= 7 ? 'khallet_sharbati' : 'sa3ir'
-    }
-    return 'unknown'
-  }
-
-  const dumpGroups: Record<string, { count: number; volume: number; countMonth: number; volumeMonth: number }> = {
-    central_press:    { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
-    khallet_sharbati: { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
-    sa3ir:            { count: 0, volume: 0, countMonth: 0, volumeMonth: 0 },
-  }
-
-  volumeAll.forEach((r: any) => {
-    const key = getDumpKey(r)
-    if (!dumpGroups[key]) return
-    dumpGroups[key].count++
-    dumpGroups[key].volume += Number(r.volume_m3 ?? 0)
-  })
-  volumeMonth.forEach((r: any) => {
-    const key = getDumpKey(r)
-    if (!dumpGroups[key]) return
-    dumpGroups[key].countMonth++
-    dumpGroups[key].volumeMonth += Number(r.volume_m3 ?? 0)
-  })
-
-  const dumpSiteStats = {
-    centralPress:    dumpGroups['central_press'],
-    khalletSharbati: dumpGroups['khallet_sharbati'],
-    sa3ir:           dumpGroups['sa3ir'],
-  }
-
   return {
-    // تشغيلي
     totalTrips,
     todayTripsCount,
     todayPaidCount,
     todayCreditCount,
-    paidTripsCount:   paidTripsData.length,
-    creditTripsCount: creditTripsRes.count ?? 0,
-    totalFactories:   totalFactoriesRes.count ?? 0,
-    overdueFactories: overdueFactoriesRes.count ?? 0,
-    // مالي — تحصيل
+    paidTripsCount,
+    creditTripsCount:  creditTripsRes.count ?? 0,
+    totalFactories:    totalFactoriesRes.count ?? 0,
+    overdueFactories:  overdueFactoriesRes.count ?? 0,
     totalCollected,
     totalDebt,
-    // مالي — تمويل المشروع
     totalProjectCost,
     totalFactoryShare,
     factoryShareCollected,
     factoryShareUncollected,
     tripsWithCostCount,
-    // ميزانية التمويل
     projectBudget,
     spentFromBudget,
     remainingBudget,
     budgetSpentPct,
-    // الدفعات المقفلة
     totalDisbursed,
     totalRetained,
     closedDisbursementsCount,
-    // شهري
     monthTripsCount,
     activeFactoriesThisMonth,
     avgTripsPerFactory,
-    // أحجام وأنواع
     totalVolume,
     monthVolume,
     liquidCount,
@@ -1360,12 +1286,9 @@ export async function getDashboardStats() {
     liquidVolumeMonth,
     dryCountMonth,
     dryVolumeMonth,
-    // وجهات النقل
     dumpSiteStats,
-    // مصانع نشطة إجمالاً
     activeFactoriesTotal,
-    // مؤشر الاتجاه الشهري
-    prevMonthTripsCount: (prevMonthTripsRes.data || []).length,
+    prevMonthTripsCount: Number(agg.prev_month_trips_count ?? 0),
     currentMonthDay: now.getDate(),
   }
 }
