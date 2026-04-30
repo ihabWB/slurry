@@ -1144,10 +1144,10 @@ export async function getDashboardStats() {
     (supabase as any).from('factories').select('balance').gt('balance', 0),
     // كل المدفوعات (تسديد ذمم)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('payments').select('amount_paid'),
+    (supabase as any).from('payments').select('amount_paid').limit(10000),
     // النقلات المدفوعة — نحتاج factory_contribution لكل منها
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_contribution').eq('payment_status', 'paid'),
+    (supabase as any).from('trips').select('factory_contribution').eq('payment_status', 'paid').limit(10000),
     // عدد نقلات الذمة فقط
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_status', 'credit'),
@@ -1156,10 +1156,10 @@ export async function getDashboardStats() {
     (supabase as any).from('trips').select('factory_id, payment_status').eq('trip_date', todayStr),
     // نقلات هذا الشهر
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart),
+    (supabase as any).from('trips').select('factory_id').gte('trip_date', monthStart).limit(10000),
     // كل النقلات: مجاميع التكاليف
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('trip_cost'),
+    (supabase as any).from('trips').select('trip_cost').limit(10000),
     // الإعدادات العامة
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('settings').select('key, value').in('key', ['project_budget', 'factory_contribution']),
@@ -1168,13 +1168,13 @@ export async function getDashboardStats() {
     (supabase as any).from('disbursements').select('disbursed_amount, retention_amount, net_payment').eq('status', 'closed'),
     // كل النقلات: waste_type + volume_m3 للإحصاءات
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km'),
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km').limit(10000),
     // نقلات هذا الشهر: waste_type + volume_m3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km').gte('trip_date', monthStart),
+    (supabase as any).from('trips').select('waste_type, volume_m3, factory_id, dump_site, distance_km').gte('trip_date', monthStart).limit(10000),
     // مصانع نشطة إجمالاً (distinct factory_id من trips)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_id'),
+    (supabase as any).from('trips').select('factory_id').limit(10000),
     // نقلات الشهر الماضي (نفس عدد الأيام) — لمؤشر الاتجاه
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('id').gte('trip_date', (() => {
