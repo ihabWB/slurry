@@ -2,7 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-type UserRole = 'admin' | 'manager' | 'viewer';
+type UserRole = 'admin' | 'manager' | 'viewer' | 'approver';
 
 // Admin client — uses service_role key, runs server-side only
 function adminClient() {

@@ -7,7 +7,7 @@ import { createUser, listUsers, updateUserRole, deleteUser, getLoginLogs } from 
 import { UserPlus, Trash2, RefreshCw, Shield, Users, Eye, Monitor, Smartphone, Tablet, LogIn } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
 
-type UserRole = 'admin' | 'manager' | 'viewer';
+type UserRole = 'admin' | 'manager' | 'viewer' | 'approver';
 
 interface UserRow {
   id: string;
@@ -31,18 +31,21 @@ const roleLabels: Record<UserRole, string> = {
   admin: 'مدير النظام',
   manager: 'مدير مشروع',
   viewer: 'مستخدم عادي',
+  approver: 'مراجع اعتماد',
 };
 
 const roleColors: Record<UserRole, string> = {
   admin: 'bg-red-100 text-red-700',
   manager: 'bg-blue-100 text-blue-700',
   viewer: 'bg-slate-100 text-slate-600',
+  approver: 'bg-amber-100 text-amber-700',
 };
 
 const roleIcons: Record<UserRole, React.ReactNode> = {
   admin: <Shield size={13} />,
   manager: <Users size={13} />,
   viewer: <Eye size={13} />,
+  approver: <Shield size={13} />,
 };
 
 export default function UsersPage() {
@@ -200,6 +203,7 @@ export default function UsersPage() {
               >
                 <option value="viewer">مستخدم عادي — عرض لوحة التحكم والخريطة</option>
                 <option value="manager">مدير مشروع — إدخال البيانات والتقارير</option>
+                <option value="approver">مراجع اعتماد — مراجعة واعتماد النقلات فقط</option>
                 <option value="admin">مدير النظام — صلاحية كاملة</option>
               </select>
             </div>
@@ -262,6 +266,7 @@ export default function UsersPage() {
                     >
                       <option value="viewer">مستخدم عادي</option>
                       <option value="manager">مدير مشروع</option>
+                      <option value="approver">مراجع اعتماد</option>
                       <option value="admin">مدير النظام</option>
                     </select>
                   </td>
@@ -288,7 +293,7 @@ export default function UsersPage() {
       <div className="mt-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
         <h3 className="text-sm font-medium text-slate-600 mb-3">مستويات الصلاحيات</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {(['admin', 'manager', 'viewer'] as UserRole[]).map((r) => (
+          {(['admin', 'manager', 'approver', 'viewer'] as UserRole[]).map((r) => (
             <div key={r} className={`rounded-lg p-3 ${roleColors[r]} flex gap-2`}>
               {roleIcons[r]}
               <div>
@@ -296,6 +301,7 @@ export default function UsersPage() {
                 <p className="text-xs opacity-75 mt-0.5">
                   {r === 'admin' && 'وصول كامل + إدارة المستخدمين'}
                   {r === 'manager' && 'إدخال البيانات والتقارير والخريطة'}
+                  {r === 'approver' && 'مراجعة واعتماد النقلات فقط'}
                   {r === 'viewer' && 'عرض لوحة التحكم والخريطة'}
                 </p>
               </div>
