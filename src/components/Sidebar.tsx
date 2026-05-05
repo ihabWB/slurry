@@ -12,7 +12,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const { user, signOut, isAdmin, canEdit } = useAuth()
+  const { user, signOut, isAdmin, canEdit, isApprover } = useAuth()
   const { lang, setLang, dir } = useLang()
   const [pendingCount, setPendingCount] = useState(0)
 
@@ -28,7 +28,9 @@ export default function Sidebar() {
     router.replace('/login')
   }
 
-  function canShow(show: string) {
+  function canShow(show: string, href?: string) {
+    // approver: يرى الداشبورد والنقلات فقط
+    if (isApprover) return href === '/' || href === '/trips'
     if (show === 'always') return true
     if (show === 'edit') return canEdit
     if (show === 'admin') return isAdmin
@@ -75,7 +77,7 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
         {groups.map(group => {
-          const visible = group.items.filter((i: any) => canShow(i.show))
+          const visible = group.items.filter((i: any) => canShow(i.show, i.href))
           if (!visible.length) return null
           return (
             <div key={group.label}>

@@ -115,7 +115,7 @@ function KpiCard({
 }
 
 export default function DashboardPage() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, isApprover } = useAuth()
   const { lang, dir } = useLang()
   const dateLocale = lang === 'ar' ? ar : enUS
 
@@ -403,7 +403,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── الملخص المالي السريع (3/5) ─────────────────── */}
-        <div className="lg:col-span-3 bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {!isApprover && <div className="lg:col-span-3 bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
             <span className="text-base">💰</span>
             <h2 className="font-semibold text-slate-700 text-sm">الملخص المالي</h2>
@@ -512,7 +512,7 @@ export default function DashboardPage() {
               </Link>
             </div>
           )}
-        </div>
+        </div>}
 
       </div>{/* ── end صف النشاط + الملخص السريع ───────────────── */}
 

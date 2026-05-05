@@ -297,7 +297,7 @@ function NewTripModal({ onClose, onSuccess, isAdmin }: { onClose: () => void; on
 
 // ─── الصفحة الرئيسية ─────────────────────────────────────────
 export default function TripsPage() {
-  const { canEdit, isAdmin } = useAuth()
+  const { canEdit, isAdmin, canApprove, canApprove } = useAuth()
   const searchParams = useSearchParams()
   const [trips, setTrips]   = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
@@ -477,7 +477,7 @@ export default function TripsPage() {
     setSaving(true)
     try {
       // الأدمن يعدل نقلة pending → تُعتمد تلقائياً
-      if (isAdmin && editTrip.approval_status === 'pending_approval') {
+      if (canApproveove && editTrip.approval_status === 'pending_approval') {
         await editAndApproveTrip(editTrip.id, {
           trip_date:     editForm.trip_date || undefined,
           notes:         editForm.notes || null,
@@ -687,8 +687,8 @@ export default function TripsPage() {
               <SendHorizonal size={15} /> رفع {stats.draft} نقلة للاعتماد
             </Button>
           )}
-          {/* زر اعتماد الكل — للأدمن فقط */}
-          {isAdmin && stats.pending_approval > 0 && (
+          {/* زر اعتماد الكل — لمن لديه صلاحية الاعتماد */}
+          {canApprove && stats.pending_approval > 0 && (
             <Button variant="secondary" size="lg" onClick={handleApproveAll} loading={approvingAll}
               className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
               <ThumbsUp size={15} /> اعتماد الكل ({stats.pending_approval})
@@ -864,7 +864,7 @@ export default function TripsPage() {
                       <td className="px-4 py-3 text-slate-500 text-xs">{t.coupon_number ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-400 text-xs max-w-[120px] truncate">{t.notes ?? '—'}</td>
                       <td className="px-4 py-3 min-w-[120px]">
-                        {isAdmin && apStatus === 'pending_approval' ? (
+                        {canApproveove && apStatus === 'pending_approval' ? (
                           /* للأدمن على pending: صفين من الأزرار */
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-1">
@@ -901,7 +901,7 @@ export default function TripsPage() {
                               </button>
                             )}
                             {/* زر رفع للاعتماد — للمدير على المرفوضات */}
-                            {!isAdmin && apStatus === 'rejected' && (
+                            {!canApprove && apStatus === 'rejected' && (
                               <button
                                 onClick={() => handleSubmitTrip(t.id)}
                                 disabled={submittingId === t.id}
@@ -915,7 +915,7 @@ export default function TripsPage() {
                                 <Trash2 size={13} />
                               </button>
                             )}
-                            {isAdmin && apStatus === 'rejected' && (
+                            {canApproveove && apStatus === 'rejected' && (
                               <button onClick={() => handleApprove(t)} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="اعتماد">
                                 <ThumbsUp size={13} />
                               </button>
@@ -1030,11 +1030,11 @@ export default function TripsPage() {
         <Modal
           open={!!editTrip}
           onClose={() => setEditTrip(null)}
-          title={`${isAdmin && editTrip.approval_status === 'pending_approval' ? 'مراجعة واعتماد' : 'تعديل'} نقلة — ${editTrip.factories?.name ?? ''}`}
-          size={isAdmin && editTrip.approval_status === 'pending_approval' ? '2xl' : !isAdmin && editTrip.approval_status === 'rejected' ? 'lg' : 'md'}
+          title={`${canApproveove && editTrip.approval_status === 'pending_approval' ? 'مراجعة واعتماد' : 'تعديل'} نقلة — ${editTrip.factories?.name ?? ''}`}
+          size={canApprove && editTrip.approval_status === 'pending_approval' ? '2xl' : !canApprovepprove && editTrip.approval_status === 'rejected' ? 'lg' : 'md'}
         >
           {/* للأدمن على pending: عمودان (تفاصيل + تعديل) */}
-          {isAdmin && editTrip.approval_status === 'pending_approval' ? (
+          {canApproveove && editTrip.approval_status === 'pending_approval' ? (
             <div className="flex gap-6" dir="rtl">
 
               {/* ── العمود الأيمن: عرض كامل للبيانات ── */}
@@ -1276,7 +1276,7 @@ export default function TripsPage() {
               </div>
             </div>
 
-          ) : !isAdmin && editTrip.approval_status === 'rejected' ? (
+          ) : !canApproveove && editTrip.approval_status === 'rejected' ? (
             /* مدير المشروع يعدل نقلة مرفوضة — نموذج كامل */
             <div className="space-y-3 overflow-y-auto max-h-[75dvh]" dir="rtl">
 

@@ -4,19 +4,31 @@ import ToastContainer from '@/components/ui/Toast'
 import { useAuth } from '@/context/AuthContext'
 import { useLang } from '@/context/LangContext'
 import { translations as T, t } from '@/lib/i18n'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 
+// المسارات المسموح بها للـ approver فقط
+const APPROVER_ALLOWED = ['/', '/trips']
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, loading, isApprover } = useAuth()
   const { lang, dir } = useLang()
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace('/login')
     }
   }, [loading, user, router])
+
+  // approver: إعادة توجيه لأي مسار غير مسموح
+  useEffect(() => {
+    if (!loading && user && isApprover) {
+      const allowed = APPROVER_ALLOWED.some(p => pathname === p || pathname.startsWith(p + '/'))
+      if (!allowed) router.replace('/trips')
+    }
+  }, [loading, user, isApprover, pathname, router])
 
   if (loading) {
     return (
