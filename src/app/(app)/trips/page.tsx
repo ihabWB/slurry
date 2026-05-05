@@ -297,7 +297,7 @@ function NewTripModal({ onClose, onSuccess, isAdmin }: { onClose: () => void; on
 
 // ─── الصفحة الرئيسية ─────────────────────────────────────────
 export default function TripsPage() {
-  const { canEdit, isAdmin, canApprove, canApprove } = useAuth()
+  const { canEdit, isAdmin, canApprove } = useAuth()
   const searchParams = useSearchParams()
   const [trips, setTrips]   = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
