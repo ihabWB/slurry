@@ -531,7 +531,7 @@ export default function ReportsPage() {
   // مجاميع مالية
   const cfTotalCost = useMemo(() => cfTrips.reduce((s: number, t: AnyData) => s + Number(t.trip_cost ?? 0), 0), [cfTrips])
   const cfTotalDisbursed = useMemo(() =>
-    cfDisbursements.filter((d: AnyData) => d.status === 'closed').reduce((s: number, d: AnyData) => s + Number(d.net_amount ?? d.total_amount ?? 0), 0),
+    cfDisbursements.filter((d: AnyData) => d.status === 'closed').reduce((s: number, d: AnyData) => s + Number(d.net_payment ?? d.disbursed_amount ?? 0), 0),
     [cfDisbursements])
   const cfAvgCostPerTrip = useMemo(() => {
     const priced = cfTrips.filter((t: AnyData) => t.trip_cost)
