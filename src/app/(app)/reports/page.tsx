@@ -2,12 +2,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import {
   FileText, FileSpreadsheet, Filter, BarChart2, Droplets, Package,
-  Building2, AlertTriangle, DollarSign, TrendingUp, Truck, Users,
-  MapPin, Coins
+  Building2, AlertTriangle, DollarSign, TrendingUp, TrendingDown, Truck, Users,
+  MapPin, Coins, Activity
 } from 'lucide-react'
 import {
   getTrips, getFactoriesSummary, getPayments,
-  getTripsForCosts, getTripsForContributions, getSettings
+  getTripsForCosts, getTripsForContributions, getSettings, getDisbursements
 } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -15,7 +15,8 @@ import { Select, Input } from '@/components/ui/Input'
 import { format } from 'date-fns'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, PieChart, Pie, Cell, Legend
+  CartesianGrid, PieChart, Pie, Cell, Legend,
+  LineChart, Line, ComposedChart, Area
 } from 'recharts'
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
@@ -37,7 +38,7 @@ function getDumpSiteLabel(t: AnyData): string {
   return t.dump_site ?? '—'
 }
 
-type Tab = 'active_factories' | 'trips' | 'costs' | 'contributions' | 'overdue' | 'payments'
+type Tab = 'active_factories' | 'trips' | 'costs' | 'contributions' | 'overdue' | 'payments' | 'cashflow'
 
 // Quick month buttons helper
 function getMonthRange(monthsAgo: number): { from: string; to: string } {
@@ -182,6 +183,7 @@ export default function ReportsPage() {
   const totalTrips = filtered.length
   const totalAmount = filtered.reduce((s: number, t: AnyData) => s + Number(t.amount), 0)
   const totalVolume = filtered.reduce((s: number, t: AnyData) => s + (t.volume_m3 ? Number(t.volume_m3) : 0), 0)
+  const totalTripCost = filtered.reduce((s: number, t: AnyData) => s + Number(t.trip_cost ?? 0), 0)
   const liquidTrips = filtered.filter((t: AnyData) => t.waste_type === 'liquid')
   const solidTrips = filtered.filter((t: AnyData) => t.waste_type === 'solid')
   const liquidVolume = liquidTrips.reduce((s: number, t: AnyData) => s + (t.volume_m3 ? Number(t.volume_m3) : 0), 0)
@@ -235,7 +237,7 @@ export default function ReportsPage() {
       '#': i + 1, 'المصنع': t.factories?.name ?? '', 'المنطقة': t.factories?.region ?? '',
       'رقم القسيمة': t.coupon_number ?? '', 'اسم السائق': t.driver_name ?? '',
       'نوع الربو': t.waste_type ? WASTE_LABEL[t.waste_type] : 'غير محدد',
-      'الحجم (م³)': t.volume_m3 ?? '', 'المبلغ (₪)': t.amount,
+      'الحجم (م³)': t.volume_m3 ?? '', 'تكلفة النقلة (₪)': t.trip_cost ?? '', 'المبلغ (₪)': t.amount,
       'حالة الدفع': t.payment_status === 'paid' ? 'مدفوع' : 'ذمة',
       'وجهة النقل': getDumpSiteLabel(t),
       'تاريخ النقلة': t.trip_date ?? '', 'ملاحظات': t.notes ?? '',
@@ -442,6 +444,128 @@ export default function ReportsPage() {
     XLSX.writeFile(wb, `payments-${payFrom}-to-${payTo}.xlsx`)
   }
 
+  // ── Tab 7: التدفق النقدي ──
+  const [cfTrips, setCfTrips] = useState<AnyData[]>([])
+  const [cfDisbursements, setCfDisbursements] = useState<AnyData[]>([])
+  const [cfBudget, setCfBudget] = useState(0)
+  const [cfLoading, setCfLoading] = useState(false)
+  const [cfLoaded, setCfLoaded] = useState(false)
+
+  const loadCashFlow = useCallback(async () => {
+    setCfLoading(true)
+    try {
+      const [trips, disbs, settings] = await Promise.all([
+        getTripsForCosts(),
+        getDisbursements(),
+        getSettings(),
+      ])
+      setCfTrips(trips || [])
+      setCfDisbursements(disbs || [])
+      const budgetSetting = settings.find((s: AnyData) => s.key === 'project_budget')
+      setCfBudget(Number(budgetSetting?.value ?? 0))
+      setCfLoaded(true)
+    } catch (e) { console.error(e) }
+    finally { setCfLoading(false) }
+  }, [])
+
+  // تجميع شهري تاريخي
+  const cfMonthlyHistory = useMemo(() => {
+    const map: Record<string, { trips: number; cost: number; liquid: number; solid: number }> = {}
+    cfTrips.forEach((t: AnyData) => {
+      if (!t.trip_date) return
+      const mon = t.trip_date.substring(0, 7)
+      if (!map[mon]) map[mon] = { trips: 0, cost: 0, liquid: 0, solid: 0 }
+      map[mon].trips++
+      map[mon].cost += Number(t.trip_cost ?? 0)
+      if (t.waste_type === 'liquid') map[mon].liquid++
+      else if (t.waste_type === 'solid') map[mon].solid++
+    })
+    let cumulative = 0
+    return Object.entries(map)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, v]) => {
+        cumulative += v.cost
+        return { month, ...v, cumulative: +cumulative.toFixed(0), forecast: false }
+      })
+  }, [cfTrips])
+
+  // متوسط آخر 3 أشهر للتوقع
+  const cfAvgMonthly = useMemo(() => {
+    const last3 = cfMonthlyHistory.slice(-3)
+    if (last3.length === 0) return { trips: 0, cost: 0 }
+    return {
+      trips: Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length),
+      cost: Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length),
+    }
+  }, [cfMonthlyHistory])
+
+  // توقعات 6 أشهر قادمة
+  const cfForecast = useMemo(() => {
+    const lastCumulative = cfMonthlyHistory.length > 0 ? cfMonthlyHistory[cfMonthlyHistory.length - 1].cumulative : 0
+    let cumulative = lastCumulative
+    const results = []
+    const now = new Date()
+    for (let i = 1; i <= 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      cumulative += cfAvgMonthly.cost
+      results.push({
+        month,
+        trips: cfAvgMonthly.trips,
+        cost: cfAvgMonthly.cost,
+        liquid: 0, solid: 0,
+        cumulative: Math.round(cumulative),
+        forecast: true,
+        budgetRemaining: Math.max(0, cfBudget - cumulative),
+      })
+    }
+    return results
+  }, [cfMonthlyHistory, cfAvgMonthly, cfBudget])
+
+  // بيانات الرسم البياني (تاريخي + توقع)
+  const cfChartData = useMemo(() => [
+    ...cfMonthlyHistory.map(m => ({ ...m, forecastCost: null, forecastCumulative: null })),
+    ...cfForecast.map(m => ({ ...m, forecastCost: m.cost, forecastCumulative: m.cumulative, cost: null, cumulative: null })),
+  ], [cfMonthlyHistory, cfForecast])
+
+  // مجاميع مالية
+  const cfTotalCost = useMemo(() => cfTrips.reduce((s: number, t: AnyData) => s + Number(t.trip_cost ?? 0), 0), [cfTrips])
+  const cfTotalDisbursed = useMemo(() =>
+    cfDisbursements.filter((d: AnyData) => d.status === 'closed').reduce((s: number, d: AnyData) => s + Number(d.net_amount ?? d.total_amount ?? 0), 0),
+    [cfDisbursements])
+  const cfAvgCostPerTrip = useMemo(() => {
+    const priced = cfTrips.filter((t: AnyData) => t.trip_cost)
+    return priced.length > 0 ? cfTotalCost / priced.length : 0
+  }, [cfTrips, cfTotalCost])
+  const cfEstimatedTotalCost = useMemo(() => {
+    const lastForecast = cfForecast[cfForecast.length - 1]
+    return lastForecast ? lastForecast.cumulative : cfTotalCost
+  }, [cfForecast, cfTotalCost])
+  const cfGap = cfBudget > 0 ? cfBudget - cfEstimatedTotalCost : null
+  const cfRunwayMonths = cfAvgMonthly.cost > 0 && cfBudget > 0
+    ? Math.max(0, Math.floor((cfBudget - cfTotalCost) / cfAvgMonthly.cost))
+    : null
+
+  const exportCfExcel = () => {
+    const histRows = cfMonthlyHistory.map(m => ({
+      '\u0627\u0644\u0634\u0647\u0631': m.month, '\u0639\u062f\u062f \u0627\u0644\u0646\u0642\u0644\u0627\u062a': m.trips,
+      '\u0633\u0627\u0626\u0644': m.liquid, '\u062c\u0627\u0641': m.solid,
+      '\u062a\u0643\u0644\u0641\u0629 \u0627\u0644\u0634\u0647\u0631 (\u20aa)': +m.cost.toFixed(0),
+      '\u062a\u0643\u0644\u0641\u0629 \u062a\u0631\u0627\u0643\u0645\u064a\u0629 (\u20aa)': m.cumulative,
+    }))
+    const foreRows = cfForecast.map(m => ({
+      '\u0627\u0644\u0634\u0647\u0631': m.month,
+      '\u0646\u0642\u0644\u0627\u062a \u0645\u062a\u0648\u0642\u0639\u0629': m.trips,
+      '\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629 (\u20aa)': m.cost,
+      '\u062a\u0631\u0627\u0643\u0645\u064a \u0645\u062a\u0648\u0642\u0639 (\u20aa)': m.cumulative,
+      '\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0645\u062a\u0628\u0642\u064a\u0629 (\u20aa)': m.budgetRemaining,
+    }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(histRows), '\u0627\u0644\u062a\u0627\u0631\u064a\u062e\u064a')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(foreRows), '\u0627\u0644\u062a\u0648\u0642\u0639\u0627\u062a')
+    XLSX.writeFile(wb, 'cashflow-analysis.xlsx')
+  }
+
   // ── Tabs ──
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'active_factories', label: 'المصانع النشطة', icon: <Building2 size={15} /> },
@@ -450,6 +574,7 @@ export default function ReportsPage() {
     { id: 'contributions', label: 'المساهمات', icon: <Coins size={15} /> },
     { id: 'overdue', label: 'الذمم', icon: <AlertTriangle size={15} /> },
     { id: 'payments', label: 'الدفعات', icon: <DollarSign size={15} /> },
+    { id: 'cashflow', label: 'التدفق النقدي', icon: <Activity size={15} /> },
   ]
 
   return (
@@ -638,12 +763,13 @@ export default function ReportsPage() {
 
           {tripsLoaded && (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 {[
                   { label: 'إجمالي النقلات', value: totalTrips, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
                   { label: 'سائل / جاف', value: `${liquidTrips.length} / ${solidTrips.length}`, color: 'text-violet-600', bg: 'bg-violet-50 border-violet-100' },
                   { label: 'إجمالي الحجم', value: `${totalVolume.toFixed(1)} م³`, color: 'text-cyan-600', bg: 'bg-cyan-50 border-cyan-100' },
                   { label: 'مدفوع / ذمة', value: `${paidTrips.length} / ${creditTripsFiltered.length}`, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-100' },
+                  { label: 'إجمالي تكلفة النقلات', value: totalTripCost > 0 ? `${Math.round(totalTripCost).toLocaleString()} ₪` : '—', color: 'text-orange-600', bg: 'bg-orange-50 border-orange-100' },
                 ].map(({ label, value, color, bg }) => (
                   <Card key={label} className={`border ${bg}`}><CardBody className="text-center py-4">
                     <p className={`text-2xl font-bold ${color}`}>{value}</p>
@@ -769,6 +895,7 @@ export default function ReportsPage() {
                         <th className="text-right px-3 py-3 text-xs text-slate-500 font-semibold">السائق</th>
                         <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold">نوع الربو</th>
                         <th className="text-center px-3 py-3 text-xs text-cyan-600 font-semibold">الحجم</th>
+                        <th className="text-center px-3 py-3 text-xs text-orange-500 font-semibold">تكلفة النقلة</th>
                         <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold">المبلغ</th>
                         <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold">الحالة</th>
                         <th className="text-center px-3 py-3 text-xs text-purple-600 font-semibold">الوجهة</th>
@@ -777,7 +904,7 @@ export default function ReportsPage() {
                     </thead>
                     <tbody>
                       {filtered.length === 0 ? (
-                        <tr><td colSpan={10} className="text-center py-10 text-slate-400">لا توجد بيانات في هذه الفترة</td></tr>
+                        <tr><td colSpan={11} className="text-center py-10 text-slate-400">لا توجد بيانات في هذه الفترة</td></tr>
                       ) : filtered.map((t: AnyData, i: number) => (
                         <tr key={t.id} className={`border-b border-slate-50 hover:bg-blue-50/20 ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                           <td className="px-3 py-2.5 text-slate-400 text-xs">{i + 1}</td>
@@ -790,6 +917,7 @@ export default function ReportsPage() {
                                 : <span className="text-slate-300 text-xs">—</span>}
                           </td>
                           <td className="px-3 py-2.5 text-center text-cyan-700 font-medium text-xs">{t.volume_m3 ? `${t.volume_m3} م³` : '—'}</td>
+                          <td className="px-3 py-2.5 text-center font-semibold text-orange-600 text-xs">{t.trip_cost ? `${Number(t.trip_cost).toLocaleString()} ₪` : <span className="text-slate-300">—</span>}</td>
                           <td className="px-3 py-2.5 text-center font-semibold text-slate-700">{t.amount} ₪</td>
                           <td className="px-3 py-2.5 text-center">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
@@ -1253,6 +1381,235 @@ export default function ReportsPage() {
                   </table>
                 </div>
               </Card>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══ TAB 7: التدفق النقدي ══ */}
+      {activeTab === 'cashflow' && (
+        <div className="space-y-5">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Activity size={16} /> تحليل التدفق النقدي والتوقعات</h2>
+                {cfLoaded && (
+                  <Button variant="success" size="sm" onClick={exportCfExcel}><FileSpreadsheet size={14} /> تصدير Excel</Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardBody>
+              <p className="text-xs text-slate-500 mb-4">يحلل التكاليف التاريخية لكل النقلات ويسقط توقعات الصرف للـ 6 أشهر القادمة بناءً على متوسط آخر 3 أشهر.</p>
+              <Button onClick={loadCashFlow} loading={cfLoading} size="lg"><Activity size={16} /> توليد التحليل</Button>
+            </CardBody>
+          </Card>
+
+          {cfLoaded && (
+            <>
+              {/* ── بطاقات الميزانية الكلية ── */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: '\u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0627\u0644\u0643\u0644\u064a\u0629', value: cfBudget > 0 ? `${cfBudget.toLocaleString()} \u20aa` : '\u063a\u064a\u0631 \u0645\u062d\u062f\u062f\u0629', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', icon: '\ud83d\udcb0' },
+                  { label: '\u062a\u0643\u0644\u0641\u0629 \u0645\u0646\u0641\u0630\u0629 \u062d\u062a\u0649 \u0627\u0644\u0622\u0646', value: `${Math.round(cfTotalCost).toLocaleString()} \u20aa`, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-100', icon: '\ud83d\udcca' },
+                  { label: '\u0645\u0635\u0631\u0648\u0641 (\u062f\u0641\u0639\u0627\u062a \u0645\u063a\u0644\u0642\u0629)', value: `${Math.round(cfTotalDisbursed).toLocaleString()} \u20aa`, color: 'text-teal-700', bg: 'bg-teal-50 border-teal-100', icon: '\u2705' },
+                  { label: cfGap !== null ? (cfGap >= 0 ? '\u0641\u0627\u0626\u0636 \u0645\u062a\u0648\u0642\u0639' : '\u0639\u062c\u0632 \u0645\u062a\u0648\u0642\u0639') : '\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629 (6 \u0623\u0634\u0647\u0631)', value: cfGap !== null ? `${Math.abs(Math.round(cfGap)).toLocaleString()} \u20aa` : `${Math.round(cfEstimatedTotalCost).toLocaleString()} \u20aa`, color: cfGap !== null ? (cfGap >= 0 ? 'text-emerald-700' : 'text-red-700') : 'text-violet-700', bg: cfGap !== null ? (cfGap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-violet-50 border-violet-100', icon: cfGap !== null ? (cfGap >= 0 ? '\ud83d\udfe2' : '\ud83d\udd34') : '\ud83d\udd2e' },
+                ].map(({ label, value, color, bg, icon }) => (
+                  <Card key={label} className={`border ${bg}`}>
+                    <CardBody className="text-center py-4">
+                      <p className="text-2xl mb-1">{icon}</p>
+                      <p className={`text-xl font-bold ${color}`}>{value}</p>
+                      <p className="text-xs text-slate-500 mt-1">{label}</p>
+                    </CardBody>
+                  </Card>
+                ))}
+              </div>
+
+              {/* ── بطاقات الأداء الشهري ── */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <Card className="border bg-slate-50 border-slate-100">
+                  <CardBody className="py-3 text-center">
+                    <p className="text-lg font-bold text-slate-700">{cfMonthlyHistory.length}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">أشهر بيانات فعلية</p>
+                  </CardBody>
+                </Card>
+                <Card className="border bg-slate-50 border-slate-100">
+                  <CardBody className="py-3 text-center">
+                    <p className="text-lg font-bold text-slate-700">{cfAvgMonthly.trips.toLocaleString()} نقلة</p>
+                    <p className="text-xs text-slate-500 mt-0.5">متوسط النقلات / الشهر (آخر 3)</p>
+                  </CardBody>
+                </Card>
+                <Card className="border bg-slate-50 border-slate-100">
+                  <CardBody className="py-3 text-center">
+                    <p className="text-lg font-bold text-slate-700">{Math.round(cfAvgMonthly.cost).toLocaleString()} ₪</p>
+                    <p className="text-xs text-slate-500 mt-0.5">متوسط التكلفة / الشهر (آخر 3)</p>
+                  </CardBody>
+                </Card>
+                {cfAvgCostPerTrip > 0 && (
+                  <Card className="border bg-slate-50 border-slate-100">
+                    <CardBody className="py-3 text-center">
+                      <p className="text-lg font-bold text-slate-700">{Math.round(cfAvgCostPerTrip).toLocaleString()} ₪</p>
+                      <p className="text-xs text-slate-500 mt-0.5">متوسط تكلفة النقلة الواحدة</p>
+                    </CardBody>
+                  </Card>
+                )}
+                {cfRunwayMonths !== null && (
+                  <Card className={`border ${cfRunwayMonths <= 2 ? 'bg-red-50 border-red-100' : cfRunwayMonths <= 4 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                    <CardBody className="py-3 text-center">
+                      <p className={`text-lg font-bold ${cfRunwayMonths <= 2 ? 'text-red-700' : cfRunwayMonths <= 4 ? 'text-amber-700' : 'text-emerald-700'}`}>{cfRunwayMonths} شهر</p>
+                      <p className="text-xs text-slate-500 mt-0.5">رصيد الميزانية المتبقي (runway)</p>
+                    </CardBody>
+                  </Card>
+                )}
+                {cfBudget > 0 && cfTotalCost > 0 && (
+                  <Card className="border bg-violet-50 border-violet-100">
+                    <CardBody className="py-3 text-center">
+                      <p className="text-lg font-bold text-violet-700">{Math.min(100, Math.round(cfTotalCost / cfBudget * 100))}%</p>
+                      <p className="text-xs text-slate-500 mt-0.5">نسبة الصرف من الميزانية</p>
+                    </CardBody>
+                  </Card>
+                )}
+              </div>
+
+              {/* ── الرسم البياني التاريخي + التوقع ── */}
+              {cfChartData.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <h2 className="font-semibold text-slate-800 text-sm">التكلفة الشهرية + التراكمي (تاريخي وتوقع)</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">الأعمدة الصلبة = فعلي · الأعمدة المشطبة = توقع · الخط = تراكمي</p>
+                  </CardHeader>
+                  <CardBody>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <ComposedChart data={cfChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                        <Tooltip formatter={(value) => [`${Math.round(Number(value ?? 0)).toLocaleString()} ₪`]} />
+                        <Legend />
+                        <Bar yAxisId="left" dataKey="cost" name="تكلفة فعلية" fill="#f97316" radius={[3,3,0,0]} />
+                        <Bar yAxisId="left" dataKey="forecastCost" name="تكلفة متوقعة" fill="#fdba74" radius={[3,3,0,0]} />
+                        <Line yAxisId="right" type="monotone" dataKey="cumulative" name="تراكمي فعلي" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="forecastCumulative" name="تراكمي متوقع" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                        {cfBudget > 0 && (
+                          <Line yAxisId="right" type="monotone" dataKey={() => cfBudget} name="الميزانية" stroke="#10b981" strokeWidth={1.5} strokeDasharray="8 4" dot={false} />
+                        )}
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </CardBody>
+                </Card>
+              )}
+
+              {/* ── جدول التاريخي ── */}
+              {cfMonthlyHistory.length > 0 && (
+                <Card>
+                  <CardHeader><h2 className="font-semibold text-slate-800 text-sm">البيانات الشهرية الفعلية</h2></CardHeader>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">الشهر</th>
+                          <th className="text-center px-4 py-3 text-xs text-blue-600 font-semibold">النقلات</th>
+                          <th className="text-center px-4 py-3 text-xs text-blue-400 font-semibold">💧 سائل</th>
+                          <th className="text-center px-4 py-3 text-xs text-amber-500 font-semibold">🪨 جاف</th>
+                          <th className="text-center px-4 py-3 text-xs text-orange-600 font-semibold">تكلفة الشهر</th>
+                          <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">تراكمي</th>
+                          {cfBudget > 0 && <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">متبقي من الميزانية</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cfMonthlyHistory.map((m, i) => {
+                          const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
+                          const isLow = remaining !== null && remaining < cfAvgMonthly.cost * 2
+                          return (
+                            <tr key={m.month} className={`border-b border-slate-50 hover:bg-slate-50 ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
+                              <td className="px-4 py-2.5 font-medium text-slate-700">{m.month}</td>
+                              <td className="px-4 py-2.5 text-center font-bold text-blue-600">{m.trips}</td>
+                              <td className="px-4 py-2.5 text-center text-blue-500">{m.liquid || '—'}</td>
+                              <td className="px-4 py-2.5 text-center text-amber-600">{m.solid || '—'}</td>
+                              <td className="px-4 py-2.5 text-center font-semibold text-orange-600">{Math.round(m.cost).toLocaleString()} ₪</td>
+                              <td className="px-4 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
+                              {cfBudget > 0 && (
+                                <td className={`px-4 py-2.5 text-center font-semibold ${isLow ? 'text-red-600' : 'text-emerald-600'}`}>
+                                  {remaining !== null ? `${Math.round(remaining).toLocaleString()} ₪` : '—'}
+                                </td>
+                              )}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 font-bold border-t-2 border-slate-200">
+                          <td className="px-4 py-3 text-slate-700">الإجمالي</td>
+                          <td className="px-4 py-3 text-center text-blue-600">{cfTrips.length}</td>
+                          <td className="px-4 py-3 text-center text-blue-500">{cfTrips.filter((t: AnyData) => t.waste_type === 'liquid').length}</td>
+                          <td className="px-4 py-3 text-center text-amber-600">{cfTrips.filter((t: AnyData) => t.waste_type === 'solid').length}</td>
+                          <td className="px-4 py-3 text-center text-orange-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-violet-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
+                          {cfBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(cfBudget - cfTotalCost).toLocaleString()} ₪</td>}
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </Card>
+              )}
+
+              {/* ── جدول التوقعات ── */}
+              {cfForecast.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                      <TrendingDown size={15} className="text-violet-600" /> توقعات الصرف — 6 أشهر قادمة
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">مبني على متوسط آخر 3 أشهر: {Math.round(cfAvgMonthly.trips)} نقلة/شهر · {Math.round(cfAvgMonthly.cost).toLocaleString()} ₪/شهر</p>
+                  </CardHeader>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-violet-50 border-b border-violet-100">
+                          <th className="text-right px-4 py-3 text-xs text-violet-600 font-semibold">الشهر</th>
+                          <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">نقلات متوقعة</th>
+                          <th className="text-center px-4 py-3 text-xs text-orange-500 font-semibold">تكلفة متوقعة</th>
+                          <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">تراكمي متوقع</th>
+                          {cfBudget > 0 && <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">ميزانية متبقية</th>}
+                          {cfBudget > 0 && <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">الحالة</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cfForecast.map((m, i) => {
+                          const isDeficit = cfBudget > 0 && m.cumulative > cfBudget
+                          const isWarning = cfBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
+                          return (
+                            <tr key={m.month} className={`border-b border-slate-50 ${isDeficit ? 'bg-red-50/60' : isWarning ? 'bg-amber-50/40' : i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
+                              <td className="px-4 py-2.5 font-medium text-slate-600">{m.month}</td>
+                              <td className="px-4 py-2.5 text-center text-blue-600 font-semibold">{m.trips}</td>
+                              <td className="px-4 py-2.5 text-center text-orange-600 font-semibold">{Math.round(m.cost).toLocaleString()} ₪</td>
+                              <td className="px-4 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
+                              {cfBudget > 0 && (
+                                <td className={`px-4 py-2.5 text-center font-semibold ${isDeficit ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                  {isDeficit ? `−${Math.round(m.cumulative - cfBudget).toLocaleString()} ₪` : `${Math.round(m.budgetRemaining).toLocaleString()} ₪`}
+                                </td>
+                              )}
+                              {cfBudget > 0 && (
+                                <td className="px-4 py-2.5 text-center">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isDeficit ? 'bg-red-100 text-red-700' : isWarning ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                    {isDeficit ? '🔴 عجز' : isWarning ? '🟡 تحذير' : '🟢 كافية'}
+                                  </span>
+                                </td>
+                              )}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {cfBudget === 0 && (
+                    <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700 flex items-center gap-2">
+                      ⚠️ لم يتم تحديد ميزانية المشروع في الإعدادات — لا يمكن حساب الفجوة التمويلية.
+                      <Link href="/settings" className="font-semibold underline">تعديل الإعدادات</Link>
+                    </div>
+                  )}
+                </Card>
+              )}
             </>
           )}
         </div>
