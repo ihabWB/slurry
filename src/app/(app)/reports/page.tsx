@@ -1848,18 +1848,18 @@ export default function ReportsPage() {
                       {cfProjection2027.tripsToExhaust !== null && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100">
                           <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
-                            <p className="text-xs text-slate-500 mb-1">النقلات المتبقية لاستنفاد التمويل</p>
+                            <p className="text-xs text-slate-500 mb-1">عدد النقلات التي يكفّيها التمويل المتبقي</p>
                             <p className="text-xl font-bold text-slate-700">{cfProjection2027.tripsToExhaust.toLocaleString()} نقلة</p>
                             {cfProjection2027.tripsPerMonthNeeded !== null && (
-                              <p className="text-xs text-slate-400 mt-0.5">{cfProjection2027.tripsPerMonthNeeded} نقلة/شهر خلال {cfProjection2027.monthsRemaining} شهراً</p>
+                              <p className="text-xs text-slate-400 mt-0.5">أي {cfProjection2027.tripsPerMonthNeeded} نقلة/شهر لاستنفادها بنهاية 2027</p>
                             )}
                           </div>
                           {cfProjection2027.volumeToExhaust !== null && cfProjection2027.volumeToExhaust > 0 && cfProjection2027.tripsToExhaust !== null && (
                             <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
-                              <p className="text-xs text-slate-500 mb-1">كمية الربو المطلوبة لاستنفاد التمويل</p>
+                              <p className="text-xs text-slate-500 mb-1">كمية الربو التي يكفّيها التمويل المتبقي</p>
                               <p className="text-xl font-bold text-slate-700">{cfProjection2027.volumeToExhaust.toLocaleString()} م³</p>
                               <p className="text-xs text-slate-400 mt-0.5">
-                                لنقلها على {cfProjection2027.tripsToExhaust.toLocaleString()} نقلة · {(cfProjection2027.volumeToExhaust / cfProjection2027.tripsToExhaust).toFixed(1)} م³/نقلة
+                                عبر {cfProjection2027.tripsToExhaust.toLocaleString()} نقلة إضافية · {(cfProjection2027.volumeToExhaust / cfProjection2027.tripsToExhaust).toFixed(1)} م³/نقلة
                               </p>
                             </div>
                           )}
