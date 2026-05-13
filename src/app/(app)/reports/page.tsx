@@ -1856,10 +1856,10 @@ export default function ReportsPage() {
                           </div>
                           {cfProjection2027.volumeToExhaust !== null && cfProjection2027.volumeToExhaust > 0 && cfProjection2027.tripsToExhaust !== null && (
                             <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
-                              <p className="text-xs text-slate-500 mb-1">حجم النفايات للنقلات المتبقية</p>
+                              <p className="text-xs text-slate-500 mb-1">كمية الربو المطلوبة لاستنفاد التمويل</p>
                               <p className="text-xl font-bold text-slate-700">{cfProjection2027.volumeToExhaust.toLocaleString()} م³</p>
                               <p className="text-xs text-slate-400 mt-0.5">
-                                {(cfProjection2027.volumeToExhaust / cfProjection2027.tripsToExhaust).toFixed(1)} م³/نقلة × {cfProjection2027.tripsToExhaust.toLocaleString()} نقلة
+                                لنقلها على {cfProjection2027.tripsToExhaust.toLocaleString()} نقلة · {(cfProjection2027.volumeToExhaust / cfProjection2027.tripsToExhaust).toFixed(1)} م³/نقلة
                               </p>
                             </div>
                           )}
