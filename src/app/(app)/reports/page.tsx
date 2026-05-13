@@ -573,8 +573,67 @@ export default function ReportsPage() {
       ? pricedWithVol.reduce((s: number, t: AnyData) => s + Number(t.volume_m3 ?? 0), 0) / pricedWithVol.length
       : 0
     const volumeToExhaust = tripsToExhaust !== null && avgVol > 0 ? Math.round(tripsToExhaust * avgVol) : null
-    return { monthsRemaining: months, estimatedTotal, budgetRemaining2027, tripsToExhaust, tripsPerMonthNeeded, volumeToExhaust }
+    // تاريخ نفاد التمويل بالمعدل الحالي
+    const remainingBudgetNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalCost) : 0
+    const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+    const monthsToExhaust = cfAvgMonthly.cost > 0 && cfBudget > 0 ? remainingBudgetNow / cfAvgMonthly.cost : null
+    const exhaustionDateObj = monthsToExhaust !== null
+      ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1)
+      : null
+    const exhaustionDate = exhaustionDateObj
+      ? `${arabicMonthNames[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}`
+      : null
+    const exhaustionIsBeforeEnd2027 = exhaustionDateObj !== null
+      && (exhaustionDateObj.getFullYear() < 2027
+          || (exhaustionDateObj.getFullYear() === 2027 && exhaustionDateObj.getMonth() <= 11))
+    const monthsBefore2027End = exhaustionIsBeforeEnd2027 && monthsToExhaust !== null
+      ? Math.max(0, months - Math.ceil(monthsToExhaust))
+      : 0
+    // المعدل الشهري المطلوب لاستنفاد بنهاية 2027
+    const requiredMonthlyCost = months > 0 && remainingBudgetNow > 0 ? Math.round(remainingBudgetNow / months) : null
+    const requiredMonthlyTrips = requiredMonthlyCost !== null && cfAvgCostPerTrip > 0
+      ? Math.ceil(requiredMonthlyCost / cfAvgCostPerTrip)
+      : null
+    const costDiff = requiredMonthlyCost !== null ? requiredMonthlyCost - cfAvgMonthly.cost : null
+    const tripsDiff = requiredMonthlyTrips !== null ? requiredMonthlyTrips - cfAvgMonthly.trips : null
+    return {
+      monthsRemaining: months, estimatedTotal, budgetRemaining2027,
+      tripsToExhaust, tripsPerMonthNeeded, volumeToExhaust,
+      exhaustionDate, exhaustionIsBeforeEnd2027, monthsBefore2027End,
+      requiredMonthlyCost, requiredMonthlyTrips, costDiff, tripsDiff,
+      remainingBudgetNow,
+    }
   }, [cfTotalCost, cfAvgMonthly, cfBudget, cfTrips, cfAvgCostPerTrip])
+
+  // بيانات شارت 2027 (فعلي + توقع حتى ديسمبر 2027)
+  const cf2027ChartData = useMemo(() => {
+    const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[] = []
+    cfMonthlyHistory.forEach(m => {
+      data.push({
+        month: m.month,
+        cost: Math.round(m.cost),
+        forecastCost: null,
+        remaining: cfBudget > 0 ? Math.max(0, Math.round(cfBudget - m.cumulative)) : null,
+      })
+    })
+    const now = new Date()
+    const lastCumulative = cfMonthlyHistory.length > 0 ? cfMonthlyHistory[cfMonthlyHistory.length - 1].cumulative : 0
+    let cumulative = lastCumulative
+    for (let i = 1; i <= 60; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      if (d.getFullYear() > 2027) break
+      cumulative += cfAvgMonthly.cost
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      data.push({
+        month,
+        cost: null,
+        forecastCost: Math.round(cfAvgMonthly.cost),
+        remaining: cfBudget > 0 ? Math.max(0, Math.round(cfBudget - cumulative)) : null,
+      })
+      if (d.getFullYear() === 2027 && d.getMonth() === 11) break
+    }
+    return data
+  }, [cfMonthlyHistory, cfAvgMonthly, cfBudget])
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
@@ -1693,51 +1752,125 @@ export default function ReportsPage() {
                     <TrendingDown size={15} className="text-blue-600" /> توقع الاستنفاد حتى نهاية عام 2027
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    {cfProjection2027.monthsRemaining} شهراً متبقية · متوسط شهري {Math.round(cfAvgMonthly.cost).toLocaleString()} ₪
+                    {cfProjection2027.monthsRemaining} شهراً متبقية · متوسط شهري حالي {Math.round(cfAvgMonthly.cost).toLocaleString()} ₪
                   </p>
                 </CardHeader>
                 <CardBody>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-                    <div className="text-center bg-blue-50 border border-blue-100 rounded-xl p-3">
-                      <p className="text-xl font-bold text-blue-700">{cfProjection2027.monthsRemaining}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">أشهر متبقية حتى 12/2027</p>
-                    </div>
-                    <div className="text-center bg-orange-50 border border-orange-100 rounded-xl p-3">
-                      <p className="text-xl font-bold text-orange-700">{Math.round(cfProjection2027.estimatedTotal).toLocaleString()} ₪</p>
-                      <p className="text-xs text-slate-500 mt-0.5">إجمالي التكلفة المتوقعة بنهاية 2027</p>
-                    </div>
-                    {cfBudget > 0 && cfProjection2027.budgetRemaining2027 !== null && (
-                      <div className={`text-center border rounded-xl p-3 ${cfProjection2027.budgetRemaining2027 >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
-                        <p className={`text-xl font-bold ${cfProjection2027.budgetRemaining2027 >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                          {cfProjection2027.budgetRemaining2027 >= 0 ? '' : '−'}{Math.abs(Math.round(cfProjection2027.budgetRemaining2027)).toLocaleString()} ₪
-                        </p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {cfProjection2027.budgetRemaining2027 >= 0 ? '✅ فائض متوقع بنهاية 2027' : '⚠️ عجز متوقع بنهاية 2027'}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  {cfProjection2027.tripsToExhaust !== null && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100">
-                      <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
-                        <p className="text-xl font-bold text-slate-700">{cfProjection2027.tripsToExhaust.toLocaleString()}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">عدد النقلات لاستنفاد التمويل كلياً</p>
-                      </div>
-                      {cfProjection2027.tripsPerMonthNeeded !== null && (
-                        <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
-                          <p className="text-xl font-bold text-slate-700">{cfProjection2027.tripsPerMonthNeeded} نقلة/شهر</p>
-                          <p className="text-xs text-slate-500 mt-0.5">المعدل الشهري لاستنفاد التمويل بنهاية 2027</p>
+                  {cfBudget > 0 ? (
+                    <>
+                      {/* بانر الحالة */}
+                      {cfProjection2027.exhaustionDate && (
+                        <div className={`rounded-xl px-4 py-3 mb-4 flex items-start gap-3 ${
+                          cfProjection2027.exhaustionIsBeforeEnd2027
+                            ? 'bg-red-50 border border-red-200'
+                            : 'bg-emerald-50 border border-emerald-200'
+                        }`}>
+                          <span className="text-xl mt-0.5">{cfProjection2027.exhaustionIsBeforeEnd2027 ? '⚠️' : '✅'}</span>
+                          <div>
+                            <p className={`font-bold text-sm ${
+                              cfProjection2027.exhaustionIsBeforeEnd2027 ? 'text-red-700' : 'text-emerald-700'
+                            }`}>
+                              {cfProjection2027.exhaustionIsBeforeEnd2027
+                                ? `بالمعدل الحالي، سينفد التمويل في ${cfProjection2027.exhaustionDate}`
+                                : `بالمعدل الحالي، التمويل كافٍ حتى ${cfProjection2027.exhaustionDate}`}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {cfProjection2027.exhaustionIsBeforeEnd2027
+                                ? `قبل نهاية 2027 بـ ${cfProjection2027.monthsBefore2027End} شهراً — لازم رفع معدل الصرف`
+                                : `سيتبقى ${cfProjection2027.budgetRemaining2027 !== null ? Math.abs(Math.round(cfProjection2027.budgetRemaining2027)).toLocaleString() : '—'} ₪ فائض بنهاية ديسمبر 2027`}
+                            </p>
+                          </div>
                         </div>
                       )}
-                      {cfProjection2027.volumeToExhaust !== null && cfProjection2027.volumeToExhaust > 0 && (
-                        <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
-                          <p className="text-xl font-bold text-slate-700">{cfProjection2027.volumeToExhaust.toLocaleString()} م³</p>
-                          <p className="text-xs text-slate-500 mt-0.5">الحجم الكلي للنفايات المقابل</p>
+
+                      {/* شبكة الأرقام المفتاحية */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
+                          <p className="text-xs text-slate-500 mb-1">تاريخ نفاد التمويل</p>
+                          <p className={`text-base font-bold ${
+                            cfProjection2027.exhaustionIsBeforeEnd2027 ? 'text-red-600' : 'text-emerald-600'
+                          }`}>{cfProjection2027.exhaustionDate ?? '—'}</p>
+                          <p className="text-xs text-slate-400">بالمعدل الحالي</p>
+                        </div>
+                        {cfProjection2027.requiredMonthlyCost !== null && (
+                          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                            <p className="text-xs text-slate-500 mb-1">المعدل الشهري المطلوب</p>
+                            <p className="text-base font-bold text-blue-700">{cfProjection2027.requiredMonthlyCost.toLocaleString()} ₪</p>
+                            {cfProjection2027.requiredMonthlyTrips !== null && (
+                              <p className="text-xs text-blue-500">{cfProjection2027.requiredMonthlyTrips} نقلة/شهر</p>
+                            )}
+                          </div>
+                        )}
+                        {cfProjection2027.costDiff !== null && (
+                          <div className={`border rounded-xl p-3 text-center ${
+                            cfProjection2027.costDiff > 0 ? 'bg-amber-50 border-amber-100' : 'bg-violet-50 border-violet-100'
+                          }`}>
+                            <p className="text-xs text-slate-500 mb-1">الفارق عن المعدل الحالي</p>
+                            <p className={`text-base font-bold ${
+                              cfProjection2027.costDiff > 0 ? 'text-amber-700' : 'text-violet-700'
+                            }`}>
+                              {cfProjection2027.costDiff > 0 ? '▲' : '▼'} {Math.abs(cfProjection2027.costDiff).toLocaleString()} ₪/شهر
+                            </p>
+                            {cfProjection2027.tripsDiff !== null && (
+                              <p className={`text-xs ${
+                                cfProjection2027.costDiff > 0 ? 'text-amber-600' : 'text-violet-600'
+                              }`}>
+                                {cfProjection2027.costDiff > 0
+                                  ? `+${cfProjection2027.tripsDiff} نقلة/شهر للاستنفاد`
+                                  : `${cfProjection2027.tripsDiff} نقلة/شهر أقل كافية`}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* شارت: أعمدة شهرية + خط الميزانية المتبقية */}
+                      {cf2027ChartData.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-xs text-slate-400 mb-2">🟠 تكلفة فعلية · 🟡 تكلفة متوقعة · خط أزرق: ميزانية متبقية</p>
+                          <ResponsiveContainer width="100%" height={220}>
+                            <ComposedChart data={cf2027ChartData}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                              <XAxis dataKey="month" tick={{ fontSize: 9 }} />
+                              <YAxis yAxisId="left" tick={{ fontSize: 9 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                              <Tooltip formatter={(value) => [`${Math.round(Number(value ?? 0)).toLocaleString()} ₪`]} />
+                              <Legend />
+                              <Bar yAxisId="left" dataKey="cost" name="تكلفة فعلية" fill="#f97316" radius={[2,2,0,0]} />
+                              <Bar yAxisId="left" dataKey="forecastCost" name="تكلفة متوقعة" fill="#fbbf24" radius={[2,2,0,0]} />
+                              <Line yAxisId="right" type="monotone" dataKey="remaining" name="ميزانية متبقية" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                            </ComposedChart>
+                          </ResponsiveContainer>
                         </div>
                       )}
-                    </div>
-                  )}
-                  {cfBudget === 0 && (
+
+                      {/* النقلات والحجم */}
+                      {cfProjection2027.tripsToExhaust !== null && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100">
+                          <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
+                            <p className="text-xs text-slate-500 mb-1">النقلات المتبقية لاستنفاد التمويل</p>
+                            <p className="text-xl font-bold text-slate-700">{cfProjection2027.tripsToExhaust.toLocaleString()} نقلة</p>
+                            {cfProjection2027.tripsPerMonthNeeded !== null && (
+                              <p className="text-xs text-slate-400 mt-0.5">{cfProjection2027.tripsPerMonthNeeded} نقلة/شهر خلال {cfProjection2027.monthsRemaining} شهراً</p>
+                            )}
+                          </div>
+                          {cfProjection2027.volumeToExhaust !== null && cfProjection2027.volumeToExhaust > 0 && (
+                            <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
+                              <p className="text-xs text-slate-500 mb-1">الحجم الكلي للنفايات المقابل</p>
+                              <p className="text-xl font-bold text-slate-700">{cfProjection2027.volumeToExhaust.toLocaleString()} م³</p>
+                            </div>
+                          )}
+                          <div className="text-center bg-slate-50 border border-slate-100 rounded-xl p-3">
+                            <p className="text-xs text-slate-500 mb-1">الميزانية المتبقية الآن</p>
+                            <p className="text-xl font-bold text-slate-700">{Math.round(cfProjection2027.remainingBudgetNow).toLocaleString()} ₪</p>
+                            {cfBudget > 0 && (
+                              <p className="text-xs text-slate-400 mt-0.5">{Math.round((cfProjection2027.remainingBudgetNow / cfBudget) * 100)}% من الميزانية الكلية</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
                     <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
                       ⚠️ حدد ميزانية المشروع في{' '}
                       <Link href="/settings" className="font-semibold underline">الإعدادات</Link>{' '}
