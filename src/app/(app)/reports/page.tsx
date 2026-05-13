@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   FileText, FileSpreadsheet, Filter, BarChart2, Droplets, Package,
   Building2, AlertTriangle, DollarSign, TrendingUp, TrendingDown, Truck, Users,
@@ -20,6 +20,7 @@ import {
 } from 'recharts'
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
+import { Document, Paragraph, Table, TableRow, TableCell, TextRun, HeadingLevel, AlignmentType, WidthType, BorderStyle, ImageRun, ShadingType, Packer } from 'docx'
 import Link from 'next/link'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -452,6 +453,8 @@ export default function ReportsPage() {
   const [cfLoaded, setCfLoaded] = useState(false)
   const [cfLongTripPerMonth, setCfLongTripPerMonth] = useState(0)
   const [cfLongTripCost, setCfLongTripCost] = useState(0)
+  const cfMainChartRef = useRef<HTMLDivElement>(null)
+  const cf2027ChartRef = useRef<HTMLDivElement>(null)
 
   const loadCashFlow = useCallback(async () => {
     setCfLoading(true)
@@ -634,6 +637,263 @@ export default function ReportsPage() {
     }
     return data
   }, [cfMonthlyHistory, cfAvgMonthly, cfBudget])
+
+  // ── Word export ──
+  const exportCfWord = useCallback(async () => {
+    const html2canvas = (await import('html2canvas')).default
+
+    // Capture chart images
+    const captureChart = async (ref: React.RefObject<HTMLDivElement | null>): Promise<string | null> => {
+      if (!ref.current) return null
+      try {
+        const canvas = await html2canvas(ref.current, { backgroundColor: '#ffffff', scale: 1.5 })
+        return canvas.toDataURL('image/png')
+      } catch { return null }
+    }
+
+    const [mainChartImg, chart2027Img] = await Promise.all([
+      captureChart(cfMainChartRef),
+      captureChart(cf2027ChartRef),
+    ])
+
+    const dataUrlToUint8 = (dataUrl: string | null): Uint8Array | null => {
+      if (!dataUrl) return null
+      const base64 = dataUrl.split(',')[1]
+      const binary = atob(base64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      return bytes
+    }
+
+    const mainChartBytes = dataUrlToUint8(mainChartImg)
+    const chart2027Bytes = dataUrlToUint8(chart2027Img)
+
+    const fmt = (n: number) => Math.round(n).toLocaleString('en-US')
+    const now = new Date()
+    const reportDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+
+    // ── Helper builders ──
+    const h1 = (text: string) => new Paragraph({ text, heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } })
+    const h2 = (text: string) => new Paragraph({ text, heading: HeadingLevel.HEADING_2, spacing: { before: 300, after: 150 } })
+    const h3 = (text: string) => new Paragraph({ text, heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 100 } })
+    const p = (text: string, opts?: { bold?: boolean; color?: string; size?: number }) => new Paragraph({
+      children: [new TextRun({ text, bold: opts?.bold, color: opts?.color, size: opts?.size ?? 22 })],
+      spacing: { after: 100 },
+    })
+    const blank = () => new Paragraph({ text: '' })
+
+    const cell = (text: string, opts?: { bold?: boolean; color?: string; shading?: string; width?: number }) =>
+      new TableCell({
+        children: [new Paragraph({
+          children: [new TextRun({ text, bold: opts?.bold ?? false, color: opts?.color, size: 20 })],
+          alignment: AlignmentType.CENTER,
+        })],
+        shading: opts?.shading ? { type: ShadingType.CLEAR, fill: opts.shading } : undefined,
+        width: opts?.width ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
+        margins: { top: 80, bottom: 80, left: 100, right: 100 },
+      })
+
+    const hdrRow = (cols: string[]) => new TableRow({
+      children: cols.map(c => cell(c, { bold: true, shading: '1e3a5f', color: 'FFFFFF' })),
+      tableHeader: true,
+    })
+
+    const dataRow = (cols: string[], shade?: boolean) => new TableRow({
+      children: cols.map(c => cell(c)),
+      ...(shade ? {} : {}),
+    })
+
+    const tbl = (rows: TableRow[]) => new Table({
+      rows,
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: {
+        top: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+        left: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+        right: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      },
+    })
+
+    const imgPara = (bytes: Uint8Array, w = 580, h = 250) => new Paragraph({
+      children: [new ImageRun({ data: bytes, transformation: { width: w, height: h }, type: 'png' })],
+      spacing: { before: 150, after: 150 },
+    })
+
+    // ── Document sections ──
+    const children: (Paragraph | Table)[] = [
+      // Cover
+      new Paragraph({ text: 'Cash Flow Analysis Report', heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER, spacing: { after: 200 } }),
+      new Paragraph({ children: [new TextRun({ text: `Generated: ${reportDate}`, size: 22, color: '64748B' })], alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
+      blank(),
+
+      // 1. Executive Summary
+      h1('1. Executive Summary'),
+      p('This report provides a comprehensive analysis of the project cash flow, including historical trip costs, disbursements, monthly trends, 6-month forecasts, and a full projection to the end of 2027.'),
+      blank(),
+
+      // KPI summary table
+      tbl([
+        hdrRow(['Indicator', 'Value']),
+        dataRow(['Total Project Budget', cfBudget > 0 ? `${fmt(cfBudget)} ₪` : 'Not Set']),
+        dataRow(['Total Cost Executed (All Time)', `${fmt(cfTotalCost)} ₪`]),
+        dataRow(['Total Disbursed (Closed Claims)', `${fmt(cfTotalDisbursed)} ₪`]),
+        dataRow(['Avg Monthly Cost (Last 3 Months)', `${fmt(cfAvgMonthly.cost)} ₪`]),
+        dataRow(['Avg Trips per Month (Last 3 Months)', `${cfAvgMonthly.trips} trips`]),
+        dataRow(['Avg Cost per Trip', cfAvgCostPerTrip > 0 ? `${fmt(cfAvgCostPerTrip)} ₪` : 'N/A']),
+        dataRow(['Months of Historical Data', `${cfMonthlyHistory.length} months`]),
+        ...(cfBudget > 0 ? [
+          dataRow(['Budget Remaining (Current)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`]),
+          dataRow(['% of Budget Spent', `${Math.min(100, Math.round(cfTotalCost / cfBudget * 100))}%`]),
+        ] : []),
+      ]),
+      blank(),
+
+      // 2. Budget Overview
+      h1('2. Budget Overview'),
+      p('The following table summarizes the financial position of the project against the allocated budget.'),
+      blank(),
+      ...(cfBudget > 0 ? [
+        tbl([
+          hdrRow(['Item', 'Amount (₪)', 'Notes']),
+          dataRow(['Project Budget', `${fmt(cfBudget)} ₪`, 'Configured in Settings']),
+          dataRow(['Total Cost Executed', `${fmt(cfTotalCost)} ₪`, 'Sum of all trip costs']),
+          dataRow(['Total Disbursed', `${fmt(cfTotalDisbursed)} ₪`, 'Closed disbursement claims']),
+          dataRow(['Budget Remaining', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, `${Math.round(cfProjection2027.remainingBudgetNow / cfBudget * 100)}% of total`]),
+        ]),
+      ] : [p('No budget configured. Please set project_budget in Settings.', { color: 'EF4444' })]),
+      blank(),
+
+      // 3. Monthly Historical Data
+      h1('3. Monthly Historical Performance'),
+      p(`Historical trip cost data aggregated by month. The current month (${cfCurrentYM}) is partial and excluded from forecasting averages.`),
+      blank(),
+      tbl([
+        hdrRow(['Month', 'Trips', 'Liquid', 'Solid', 'Monthly Cost (₪)', 'Cumulative (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        ...cfMonthlyHistory.map(m => {
+          const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
+          return dataRow([
+            m.month + (m.month === cfCurrentYM ? ' (current)' : ''),
+            String(m.trips),
+            String(m.liquid || 0),
+            String(m.solid || 0),
+            fmt(m.cost),
+            fmt(m.cumulative),
+            ...(cfBudget > 0 && remaining !== null ? [fmt(remaining)] : []),
+          ])
+        }),
+        dataRow([
+          'TOTAL',
+          String(cfTrips.length),
+          String(cfTrips.filter((t: AnyData) => t.waste_type === 'liquid').length),
+          String(cfTrips.filter((t: AnyData) => t.waste_type === 'solid').length),
+          fmt(cfTotalCost),
+          fmt(cfTotalCost),
+          ...(cfBudget > 0 ? [fmt(cfProjection2027.remainingBudgetNow)] : []),
+        ]),
+      ]),
+      blank(),
+
+      // Chart 1
+      h2('Chart: Monthly Cost & Cumulative Trend'),
+      p('Orange bars = actual monthly cost. Light orange bars = forecast. Blue line = cumulative cost. Green dashed line = budget ceiling.'),
+      ...(mainChartBytes ? [imgPara(mainChartBytes, 580, 260)] : [p('(Chart not available)', { color: '94A3B8' })]),
+      blank(),
+
+      // 4. 6-Month Forecast
+      h1('4. Six-Month Forecast'),
+      p(`Forecast is based on the average of the last 3 completed months: ${fmt(cfAvgMonthly.trips)} trips/month at ${fmt(cfAvgMonthly.cost)} ₪/month.${cfLongTripPerMonth > 0 ? ` Includes an adjustment of +${cfLongTripPerMonth} long-distance trips (>7 km) at ${fmt(cfLongTripCost)} ₪/trip.` : ''}`),
+      blank(),
+      tbl([
+        hdrRow(['Month', 'Expected Trips', 'Expected Cost (₪)', 'Cumulative (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
+        ...cfForecast.map(m => {
+          const isDeficit = cfBudget > 0 && m.cumulative > cfBudget
+          const isWarning = cfBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
+          return dataRow([
+            m.month,
+            String(m.trips),
+            fmt(m.cost),
+            fmt(m.cumulative),
+            ...(cfBudget > 0 ? [
+              isDeficit ? `-${fmt(m.cumulative - cfBudget)}` : fmt(m.budgetRemaining),
+              isDeficit ? 'DEFICIT' : isWarning ? 'WARNING' : 'OK',
+            ] : []),
+          ])
+        }),
+      ]),
+      blank(),
+
+      // 5. Projection to End of 2027
+      h1('5. Projection to End of 2027'),
+      p(`This section projects the financial trajectory from now until December 2027 (${cfProjection2027.monthsRemaining} months remaining).`),
+      blank(),
+      tbl([
+        hdrRow(['Indicator', 'Value', 'Explanation']),
+        dataRow(['Months Remaining to Dec 2027', `${cfProjection2027.monthsRemaining}`, 'From next month to Dec 2027']),
+        dataRow(['Estimated Total Cost by End 2027', `${fmt(cfProjection2027.estimatedTotal)} ₪`, 'Current cost + (months × avg monthly cost)']),
+        ...(cfBudget > 0 && cfProjection2027.budgetRemaining2027 !== null ? [
+          dataRow([
+            cfProjection2027.budgetRemaining2027 >= 0 ? 'Expected Surplus' : 'Expected Deficit',
+            `${cfProjection2027.budgetRemaining2027 >= 0 ? '' : '-'}${fmt(Math.abs(cfProjection2027.budgetRemaining2027))} ₪`,
+            cfProjection2027.budgetRemaining2027 >= 0 ? 'Budget sufficient through end of 2027' : 'Budget will be exhausted before end of 2027',
+          ]),
+          dataRow(['Funding Exhaustion Date (Current Rate)', cfProjection2027.exhaustionDate ?? 'N/A', 'Date budget runs out at current spending rate']),
+          ...(cfProjection2027.requiredMonthlyCost !== null ? [
+            dataRow(['Required Monthly Spend (to exhaust by Dec 2027)', `${fmt(cfProjection2027.requiredMonthlyCost)} ₪`, `${cfProjection2027.requiredMonthlyTrips ?? '?'} trips/month`]),
+            dataRow(['Difference from Current Rate', `${cfProjection2027.costDiff !== null && cfProjection2027.costDiff > 0 ? '+' : ''}${fmt(cfProjection2027.costDiff ?? 0)} ₪/month`, cfProjection2027.costDiff !== null && cfProjection2027.costDiff > 0 ? 'Need to increase spending' : 'Current rate already sufficient']),
+          ] : []),
+          ...(cfProjection2027.tripsToExhaust !== null ? [
+            dataRow(['Remaining Trips Budget Can Fund', `${cfProjection2027.tripsToExhaust.toLocaleString('en-US')} trips`, 'At current avg cost per trip']),
+          ] : []),
+          ...(cfProjection2027.volumeToExhaust !== null && cfProjection2027.volumeToExhaust > 0 ? [
+            dataRow(['Sludge Volume Covered by Remaining Budget', `${cfProjection2027.volumeToExhaust.toLocaleString('en-US')} m³`, 'Based on avg m³/trip from historical data']),
+          ] : []),
+        ] : []),
+      ]),
+      blank(),
+
+      // Chart 2
+      h2('Chart: Monthly Cost & Budget Remaining — Full 2027 View'),
+      p('Orange bars = actual. Yellow bars = forecast. Blue line = remaining budget (descending to zero).'),
+      ...(chart2027Bytes ? [imgPara(chart2027Bytes, 580, 230)] : [p('(Chart not available)', { color: '94A3B8' })]),
+      blank(),
+
+      // 5. Full 2027 monthly table
+      h2('Detailed Monthly Breakdown to December 2027'),
+      tbl([
+        hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        ...cf2027ChartData.map(row => dataRow([
+          row.month,
+          row.cost !== null ? 'Actual' : 'Forecast',
+          fmt(row.cost ?? row.forecastCost ?? 0),
+          ...(cfBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfBudget > 0 ? ['—'] : []),
+        ])),
+      ]),
+      blank(),
+
+      // Footer
+      new Paragraph({
+        children: [new TextRun({ text: `Report generated on ${reportDate} | Slurry Management System`, size: 18, color: '94A3B8' })],
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 400 },
+      }),
+    ]
+
+    const doc = new Document({
+      title: 'Cash Flow Analysis Report',
+      description: 'Full cash flow analysis with historical data, forecasts, and 2027 projections',
+      sections: [{ children }],
+    })
+
+    const blob = await Packer.toBlob(doc)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cashflow-report-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}.docx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [cfBudget, cfTotalCost, cfTotalDisbursed, cfAvgMonthly, cfAvgCostPerTrip, cfMonthlyHistory,
+      cfTrips, cfForecast, cfProjection2027, cf2027ChartData, cfCurrentYM,
+      cfLongTripPerMonth, cfLongTripCost, cfMainChartRef, cf2027ChartRef])
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
@@ -1483,7 +1743,10 @@ export default function ReportsPage() {
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Activity size={16} /> تحليل التدفق النقدي والتوقعات</h2>
                 {cfLoaded && (
-                  <Button variant="success" size="sm" onClick={exportCfExcel}><FileSpreadsheet size={14} /> تصدير Excel</Button>
+                  <div className="flex gap-2">
+                    <Button variant="success" size="sm" onClick={exportCfExcel}><FileSpreadsheet size={14} /> تصدير Excel</Button>
+                    <Button variant="secondary" size="sm" onClick={exportCfWord}><FileText size={14} /> تصدير Word</Button>
+                  </div>
                 )}
               </div>
             </CardHeader>
@@ -1604,7 +1867,7 @@ export default function ReportsPage() {
               {cfChartData.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <h2 className="font-semibold text-slate-800 text-sm">التكلفة الشهرية + التراكمي (تاريخي وتوقع)</h2>
+                    <h2 className="font-semibold text-slate-800 text-sm" ref={cfMainChartRef}>التكلفة الشهرية + التراكمي (تاريخي وتوقع)</h2>
                     <p className="text-xs text-slate-400 mt-0.5">الأعمدة الصلبة = فعلي · الأعمدة المشطبة = توقع · الخط = تراكمي</p>
                   </CardHeader>
                   <CardBody>
@@ -1826,7 +2089,7 @@ export default function ReportsPage() {
 
                       {/* شارت: أعمدة شهرية + خط الميزانية المتبقية */}
                       {cf2027ChartData.length > 0 && (
-                        <div className="mb-4">
+                        <div className="mb-4" ref={cf2027ChartRef}>
                           <p className="text-xs text-slate-400 mb-2">🟠 تكلفة فعلية · 🟡 تكلفة متوقعة · خط أزرق: ميزانية متبقية</p>
                           <ResponsiveContainer width="100%" height={220}>
                             <ComposedChart data={cf2027ChartData}>
