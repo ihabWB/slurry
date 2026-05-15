@@ -644,6 +644,46 @@ export default function ReportsPage() {
     return { sa3irMonthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, monthsRemaining }
   }, [cfTotalCost, cfBudget, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
+  // مقارنة شاملة للثلاث سيناريوهات (مستقل عن السيناريو المختار حالياً)
+  const cfAllScenarios = useMemo(() => {
+    const completedMonths = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
+    const last3 = completedMonths.slice(-3)
+    const now = new Date()
+    const monthsRemaining = Math.max(0, (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1)))
+    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalCost) : 0
+    const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+    const getMetrics = (monthly: { trips: number; cost: number }) => {
+      const estimatedTotal = Math.round(cfTotalCost + monthsRemaining * monthly.cost)
+      const budgetRemaining2027 = cfBudget > 0 ? Math.round(cfBudget - estimatedTotal) : null
+      const monthsToExhaust = monthly.cost > 0 && cfBudget > 0 ? remainingNow / monthly.cost : null
+      const exhaustionDateObj = monthsToExhaust !== null
+        ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1) : null
+      const exhaustionDate = exhaustionDateObj
+        ? `${arabicMonthNames[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}` : null
+      const tripsToExhaust = monthly.cost > 0 && monthly.trips > 0 && cfBudget > 0
+        ? Math.floor(remainingNow / (monthly.cost / monthly.trips)) : null
+      const costPerTrip = monthly.trips > 0 ? Math.round(monthly.cost / monthly.trips) : 0
+      return { monthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, costPerTrip }
+    }
+    let baseTrips = 0, baseCost = 0, regularCostPerTrip = 0
+    if (last3.length > 0) {
+      baseTrips = Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length)
+      baseCost  = Math.round(last3.reduce((s, m) => s + m.cost,  0) / last3.length)
+      regularCostPerTrip = baseTrips > 0 ? baseCost / baseTrips : 0
+    }
+    const current = getMetrics({ trips: baseTrips, cost: baseCost })
+    const sa3irTripsP = Math.min(cfLongTripPerMonth, baseTrips)
+    const regularTripsP = baseTrips - sa3irTripsP
+    const partialCost = cfLongTripPerMonth > 0 && cfLongTripCost > 0
+      ? Math.round(regularTripsP * regularCostPerTrip + sa3irTripsP * cfLongTripCost)
+      : baseCost
+    const partial = getMetrics({ trips: baseTrips, cost: partialCost })
+    const partialReady = cfLongTripPerMonth > 0 && cfLongTripCost > 0
+    const full = getMetrics({ trips: cfSa3irTripsPerMonth, cost: cfSa3irTripsPerMonth * cfSa3irCostPerTrip })
+    const fullReady = cfSa3irTripsPerMonth > 0 && cfSa3irCostPerTrip > 0
+    return { current, partial, partialReady, full, fullReady, regularCostPerTrip: Math.round(regularCostPerTrip) }
+  }, [cfMonthlyHistory, cfCurrentYM, cfBudget, cfTotalCost, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+
   // بيانات شارت 2027 (فعلي + توقع حتى ديسمبر 2027)
   const cf2027ChartData = useMemo(() => {
     const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[] = []
@@ -2056,139 +2096,272 @@ export default function ReportsPage() {
                   </div>
                 </Card>
               )}
-              {/* â”€â”€ Ø¬Ø¯ÙˆÙ„ Ù…Ù‚Ø§Ø±Ù†Ø© Ø´Ø§Ù…Ù„ Ù„Ù„Ø«Ù„Ø§Ø« Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆÙ‡Ø§Øª â”€â”€ */}
-              {cfLoaded && (cfAllScenarios.partialReady || cfAllScenarios.fullReady) && (
-                <div className="rounded-2xl border-2 border-violet-200 bg-gradient-to-br from-violet-50/60 to-white overflow-hidden">
-                  <div className="px-4 py-3 border-b border-violet-100 bg-violet-50">
-                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">âš–ï¸ Ù…Ù‚Ø§Ø±Ù†Ø© Ø´Ø§Ù…Ù„Ø© â€” Ø§Ù„Ø«Ù„Ø§Ø« Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆÙ‡Ø§Øª</h2>
-                    <p className="text-xs text-slate-400 mt-0.5">Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ù…Ø­Ø³ÙˆØ¨Ø© Ø¨Ø´ÙƒÙ„ Ù…Ø³ØªÙ‚Ù„ Ø¨ØºØ¶ Ø§Ù„Ù†Ø¸Ø± Ø¹Ù† Ø§Ù„Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆ Ø§Ù„Ù…Ø®ØªØ§Ø± Ø­Ø§Ù„ÙŠØ§Ù‹</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr>
-                          <th className="text-right px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold w-40">Ø§Ù„Ù…Ù‚ÙŠØ§Ø³</th>
-                          <th className="text-center px-3 py-2.5 bg-blue-50 border-b border-blue-100 text-blue-700 font-bold">ðŸ“Š Ø§Ù„ÙˆØ¶Ø¹ Ø§Ù„Ø­Ø§Ù„ÙŠ</th>
-                          <th className={`text-center px-3 py-2.5 border-b font-bold ${cfAllScenarios.partialReady ? 'bg-amber-50 border-amber-100 text-amber-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-                            ðŸ”¶ Ø³Ø¹ÙŠØ± Ø¬Ø²Ø¦ÙŠ
-                            {!cfAllScenarios.partialReady && <div className="text-xs font-normal opacity-60">Ø£Ø¯Ø®Ù„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª</div>}
-                          </th>
-                          <th className={`text-center px-3 py-2.5 border-b font-bold ${cfAllScenarios.fullReady ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-                            ðŸ”´ Ø³Ø¹ÙŠØ± ÙƒØ§Ù…Ù„
-                            {!cfAllScenarios.fullReady && <div className="text-xs font-normal opacity-60">Ø£Ø¯Ø®Ù„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª</div>}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {/* Ø§Ù„ØªÙƒÙ„ÙØ© Ø§Ù„Ø´Ù‡Ø±ÙŠØ© */}
-                        <tr className="hover:bg-slate-50/60">
-                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ø§Ù„ØªÙƒÙ„ÙØ© Ø§Ù„Ø´Ù‡Ø±ÙŠØ©</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.monthly.cost.toLocaleString()} â‚ª</td>
-                          <td className={`text-center px-3 py-2.5 font-bold ${cfAllScenarios.partialReady ? (cfAllScenarios.partial.monthly.cost > cfAllScenarios.current.monthly.cost ? 'text-amber-700' : 'text-green-600') : 'text-slate-300'}`}>
-                            {cfAllScenarios.partialReady ? `${cfAllScenarios.partial.monthly.cost.toLocaleString()} â‚ª` : 'â€”'}
-                            {cfAllScenarios.partialReady && cfAllScenarios.partial.monthly.cost !== cfAllScenarios.current.monthly.cost && (
-                              <div className="text-xs font-normal opacity-70">{cfAllScenarios.partial.monthly.cost > cfAllScenarios.current.monthly.cost ? '+' : ''}{(cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost).toLocaleString()}</div>
-                            )}
-                          </td>
-                          <td className={`text-center px-3 py-2.5 font-bold ${cfAllScenarios.fullReady ? (cfAllScenarios.full.monthly.cost > cfAllScenarios.current.monthly.cost ? 'text-rose-700' : 'text-green-600') : 'text-slate-300'}`}>
-                            {cfAllScenarios.fullReady ? `${cfAllScenarios.full.monthly.cost.toLocaleString()} â‚ª` : 'â€”'}
-                            {cfAllScenarios.fullReady && cfAllScenarios.full.monthly.cost !== cfAllScenarios.current.monthly.cost && (
-                              <div className="text-xs font-normal opacity-70">{cfAllScenarios.full.monthly.cost > cfAllScenarios.current.monthly.cost ? '+' : ''}{(cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost).toLocaleString()}</div>
-                            )}
-                          </td>
-                        </tr>
-                        {/* Ù†Ù‚Ù„Ø§Øª Ø´Ù‡Ø±ÙŠØ§Ù‹ */}
-                        <tr className="hover:bg-slate-50/60 bg-slate-50/30">
-                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ù†Ù‚Ù„Ø§Øª Ø´Ù‡Ø±ÙŠØ§Ù‹</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.monthly.trips}</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-amber-700">
-                            {cfAllScenarios.partialReady ? cfAllScenarios.partial.monthly.trips : 'â€”'}
-                            {cfAllScenarios.partialReady && cfLongTripPerMonth > 0 && (
-                              <div className="text-xs font-normal text-slate-400">({Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} Ø³Ø¹ÙŠØ± + {cfAllScenarios.current.monthly.trips - Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} Ø¹Ø§Ø¯ÙŠ)</div>
-                            )}
-                          </td>
-                          <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? cfAllScenarios.full.monthly.trips : 'â€”'}</td>
-                        </tr>
-                        {/* Ù…ØªÙˆØ³Ø· ØªÙƒÙ„ÙØ© Ø§Ù„Ù†Ù‚Ù„Ø© */}
-                        <tr className="hover:bg-slate-50/60">
-                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ù…ØªÙˆØ³Ø· ØªÙƒÙ„ÙØ© Ø§Ù„Ù†Ù‚Ù„Ø©</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.costPerTrip.toLocaleString()} â‚ª</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? `${cfAllScenarios.partial.costPerTrip.toLocaleString()} â‚ª` : 'â€”'}</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? `${cfAllScenarios.full.costPerTrip.toLocaleString()} â‚ª` : 'â€”'}</td>
-                        </tr>
-                        {/* Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø­ØªÙ‰ Ø¯ÙŠØ³Ù…Ø¨Ø± 2027 */}
-                        <tr className="hover:bg-slate-50/60 bg-slate-50/30">
-                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø­ØªÙ‰ Ø¯ÙŠØ³Ù…Ø¨Ø± 2027</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.estimatedTotal.toLocaleString()} â‚ª</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? `${cfAllScenarios.partial.estimatedTotal.toLocaleString()} â‚ª` : 'â€”'}</td>
-                          <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? `${cfAllScenarios.full.estimatedTotal.toLocaleString()} â‚ª` : 'â€”'}</td>
-                        </tr>
-                        {/* Ù…ØªØ¨Ù‚ÙŠ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© Ù†Ù‡Ø§ÙŠØ© 2027 */}
-                        {cfBudget > 0 && (
-                          <tr className="hover:bg-slate-50/60">
-                            <td className="px-4 py-2.5 text-slate-600 font-medium">Ù…ØªØ¨Ù‚ÙŠ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© Ù†Ù‡Ø§ÙŠØ© 2027</td>
-                            <td className={`text-center px-3 py-2.5 font-bold ${(cfAllScenarios.current.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {cfAllScenarios.current.budgetRemaining2027 !== null ? `${cfAllScenarios.current.budgetRemaining2027.toLocaleString()} â‚ª` : 'â€”'}
-                            </td>
-                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.partialReady ? 'text-slate-300' : (cfAllScenarios.partial.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {cfAllScenarios.partialReady && cfAllScenarios.partial.budgetRemaining2027 !== null ? `${cfAllScenarios.partial.budgetRemaining2027.toLocaleString()} â‚ª` : 'â€”'}
-                            </td>
-                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.fullReady ? 'text-slate-300' : (cfAllScenarios.full.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {cfAllScenarios.fullReady && cfAllScenarios.full.budgetRemaining2027 !== null ? `${cfAllScenarios.full.budgetRemaining2027.toLocaleString()} â‚ª` : 'â€”'}
-                            </td>
-                          </tr>
-                        )}
-                        {/* ØªØ§Ø±ÙŠØ® Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© */}
-                        {cfBudget > 0 && (
-                          <tr className="hover:bg-slate-50/60 bg-slate-50/30">
-                            <td className="px-4 py-2.5 text-slate-600 font-medium">ØªØ§Ø±ÙŠØ® Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ©</td>
-                            <td className="text-center px-3 py-2.5 font-bold text-blue-700">{cfAllScenarios.current.exhaustionDate ?? 'Ø¨Ø¹Ø¯ 2027'}</td>
-                            <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? (cfAllScenarios.partial.exhaustionDate ?? 'Ø¨Ø¹Ø¯ 2027') : 'â€”'}</td>
-                            <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? (cfAllScenarios.full.exhaustionDate ?? 'Ø¨Ø¹Ø¯ 2027') : 'â€”'}</td>
-                          </tr>
-                        )}
-                        {/* Ù†Ù‚Ù„Ø§Øª Ø­ØªÙ‰ Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© */}
-                        {cfBudget > 0 && (
-                          <tr className="hover:bg-slate-50/60">
-                            <td className="px-4 py-2.5 text-slate-600 font-medium">Ù†Ù‚Ù„Ø§Øª Ø­ØªÙ‰ Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ©</td>
-                            <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.tripsToExhaust?.toLocaleString() ?? 'â€”'}</td>
-                            <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? (cfAllScenarios.partial.tripsToExhaust?.toLocaleString() ?? 'â€”') : 'â€”'}</td>
-                            <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? (cfAllScenarios.full.tripsToExhaust?.toLocaleString() ?? 'â€”') : 'â€”'}</td>
-                          </tr>
-                        )}
-                        {/* Ø§Ù„ÙØ±Ù‚ Ø§Ù„Ø´Ù‡Ø±ÙŠ Ø¹Ù† Ø§Ù„Ø­Ø§Ù„ÙŠ */}
-                        <tr className="bg-amber-50/40 hover:bg-amber-50/60">
-                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ø§Ù„ÙØ±Ù‚ Ø¹Ù† Ø§Ù„ÙˆØ¶Ø¹ Ø§Ù„Ø­Ø§Ù„ÙŠ</td>
-                          <td className="text-center px-3 py-2.5 text-slate-400">â€”</td>
-                          <td className="text-center px-3 py-2.5 font-bold">
-                            {cfAllScenarios.partialReady ? (() => {
-                              const d = cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost
-                              const pc = cfAllScenarios.current.monthly.cost > 0 ? Math.round(Math.abs(d) / cfAllScenarios.current.monthly.cost * 100) : 0
-                              return <span className={d > 0 ? 'text-amber-700' : 'text-green-600'}>{d > 0 ? '+' : ''}{d.toLocaleString()} â‚ª ({pc}%)</span>
-                            })() : 'â€”'}
-                          </td>
-                          <td className="text-center px-3 py-2.5 font-bold">
-                            {cfAllScenarios.fullReady ? (() => {
-                              const d = cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost
-                              const pc = cfAllScenarios.current.monthly.cost > 0 ? Math.round(Math.abs(d) / cfAllScenarios.current.monthly.cost * 100) : 0
-                              return <span className={d > 0 ? 'text-rose-700' : 'text-green-600'}>{d > 0 ? '+' : ''}{d.toLocaleString()} â‚ª ({pc}%)</span>
-                            })() : 'â€”'}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  {(!cfAllScenarios.partialReady || !cfAllScenarios.fullReady) && (
-                    <div className="px-4 py-2 text-xs text-slate-400 border-t border-violet-100 bg-violet-50/40 flex items-center gap-2">
-                      â„¹ï¸ <span>
-                        {!cfAllScenarios.partialReady && <span>Ø£Ø¯Ø®Ù„ Ø¨ÙŠØ§Ù†Ø§Øª <strong>Ø³Ø¹ÙŠØ± Ø¬Ø²Ø¦ÙŠ</strong> Ù„Ù…Ù„Ø¡ Ø¹Ù…ÙˆØ¯Ù‡</span>}
-                        {!cfAllScenarios.partialReady && !cfAllScenarios.fullReady && ' Â· '}
-                        {!cfAllScenarios.fullReady && <span>Ø£Ø¯Ø®Ù„ Ø¨ÙŠØ§Ù†Ø§Øª <strong>Ø³Ø¹ÙŠØ± ÙƒØ§Ù…Ù„</strong> Ù„Ù…Ù„Ø¡ Ø¹Ù…ÙˆØ¯Ù‡</span>}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* â”€â”€ Ø¬Ø¯ÙˆÙ„ Ù…Ù‚Ø§Ø±Ù†Ø© Ø´Ø§Ù…Ù„ Ù„Ù„Ø«Ù„Ø§Ø« Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆÙ‡Ø§Øª â”€â”€ */}
+
+              {cfLoaded && (cfAllScenarios.partialReady || cfAllScenarios.fullReady) && (
+
+                <div className="rounded-2xl border-2 border-violet-200 bg-gradient-to-br from-violet-50/60 to-white overflow-hidden">
+
+                  <div className="px-4 py-3 border-b border-violet-100 bg-violet-50">
+
+                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">âš–ï¸ Ù…Ù‚Ø§Ø±Ù†Ø© Ø´Ø§Ù…Ù„Ø© â€” Ø§Ù„Ø«Ù„Ø§Ø« Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆÙ‡Ø§Øª</h2>
+
+                    <p className="text-xs text-slate-400 mt-0.5">Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ù…Ø­Ø³ÙˆØ¨Ø© Ø¨Ø´ÙƒÙ„ Ù…Ø³ØªÙ‚Ù„ Ø¨ØºØ¶ Ø§Ù„Ù†Ø¸Ø± Ø¹Ù† Ø§Ù„Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆ Ø§Ù„Ù…Ø®ØªØ§Ø± Ø­Ø§Ù„ÙŠØ§Ù‹</p>
+
+                  </div>
+
+                  <div className="overflow-x-auto">
+
+                    <table className="w-full text-xs">
+
+                      <thead>
+
+                        <tr>
+
+                          <th className="text-right px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold w-40">Ø§Ù„Ù…Ù‚ÙŠØ§Ø³</th>
+
+                          <th className="text-center px-3 py-2.5 bg-blue-50 border-b border-blue-100 text-blue-700 font-bold">ðŸ“Š Ø§Ù„ÙˆØ¶Ø¹ Ø§Ù„Ø­Ø§Ù„ÙŠ</th>
+
+                          <th className={`text-center px-3 py-2.5 border-b font-bold ${cfAllScenarios.partialReady ? 'bg-amber-50 border-amber-100 text-amber-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+
+                            ðŸ”¶ Ø³Ø¹ÙŠØ± Ø¬Ø²Ø¦ÙŠ
+
+                            {!cfAllScenarios.partialReady && <div className="text-xs font-normal opacity-60">Ø£Ø¯Ø®Ù„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª</div>}
+
+                          </th>
+
+                          <th className={`text-center px-3 py-2.5 border-b font-bold ${cfAllScenarios.fullReady ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+
+                            ðŸ”´ Ø³Ø¹ÙŠØ± ÙƒØ§Ù…Ù„
+
+                            {!cfAllScenarios.fullReady && <div className="text-xs font-normal opacity-60">Ø£Ø¯Ø®Ù„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª</div>}
+
+                          </th>
+
+                        </tr>
+
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-100">
+
+                        {/* Ø§Ù„ØªÙƒÙ„ÙØ© Ø§Ù„Ø´Ù‡Ø±ÙŠØ© */}
+
+                        <tr className="hover:bg-slate-50/60">
+
+                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ø§Ù„ØªÙƒÙ„ÙØ© Ø§Ù„Ø´Ù‡Ø±ÙŠØ©</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.monthly.cost.toLocaleString()} â‚ª</td>
+
+                          <td className={`text-center px-3 py-2.5 font-bold ${cfAllScenarios.partialReady ? (cfAllScenarios.partial.monthly.cost > cfAllScenarios.current.monthly.cost ? 'text-amber-700' : 'text-green-600') : 'text-slate-300'}`}>
+
+                            {cfAllScenarios.partialReady ? `${cfAllScenarios.partial.monthly.cost.toLocaleString()} â‚ª` : 'â€”'}
+
+                            {cfAllScenarios.partialReady && cfAllScenarios.partial.monthly.cost !== cfAllScenarios.current.monthly.cost && (
+
+                              <div className="text-xs font-normal opacity-70">{cfAllScenarios.partial.monthly.cost > cfAllScenarios.current.monthly.cost ? '+' : ''}{(cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost).toLocaleString()}</div>
+
+                            )}
+
+                          </td>
+
+                          <td className={`text-center px-3 py-2.5 font-bold ${cfAllScenarios.fullReady ? (cfAllScenarios.full.monthly.cost > cfAllScenarios.current.monthly.cost ? 'text-rose-700' : 'text-green-600') : 'text-slate-300'}`}>
+
+                            {cfAllScenarios.fullReady ? `${cfAllScenarios.full.monthly.cost.toLocaleString()} â‚ª` : 'â€”'}
+
+                            {cfAllScenarios.fullReady && cfAllScenarios.full.monthly.cost !== cfAllScenarios.current.monthly.cost && (
+
+                              <div className="text-xs font-normal opacity-70">{cfAllScenarios.full.monthly.cost > cfAllScenarios.current.monthly.cost ? '+' : ''}{(cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost).toLocaleString()}</div>
+
+                            )}
+
+                          </td>
+
+                        </tr>
+
+                        {/* Ù†Ù‚Ù„Ø§Øª Ø´Ù‡Ø±ÙŠØ§Ù‹ */}
+
+                        <tr className="hover:bg-slate-50/60 bg-slate-50/30">
+
+                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ù†Ù‚Ù„Ø§Øª Ø´Ù‡Ø±ÙŠØ§Ù‹</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.monthly.trips}</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-amber-700">
+
+                            {cfAllScenarios.partialReady ? cfAllScenarios.partial.monthly.trips : 'â€”'}
+
+                            {cfAllScenarios.partialReady && cfLongTripPerMonth > 0 && (
+
+                              <div className="text-xs font-normal text-slate-400">({Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} Ø³Ø¹ÙŠØ± + {cfAllScenarios.current.monthly.trips - Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} Ø¹Ø§Ø¯ÙŠ)</div>
+
+                            )}
+
+                          </td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? cfAllScenarios.full.monthly.trips : 'â€”'}</td>
+
+                        </tr>
+
+                        {/* Ù…ØªÙˆØ³Ø· ØªÙƒÙ„ÙØ© Ø§Ù„Ù†Ù‚Ù„Ø© */}
+
+                        <tr className="hover:bg-slate-50/60">
+
+                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ù…ØªÙˆØ³Ø· ØªÙƒÙ„ÙØ© Ø§Ù„Ù†Ù‚Ù„Ø©</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.costPerTrip.toLocaleString()} â‚ª</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? `${cfAllScenarios.partial.costPerTrip.toLocaleString()} â‚ª` : 'â€”'}</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? `${cfAllScenarios.full.costPerTrip.toLocaleString()} â‚ª` : 'â€”'}</td>
+
+                        </tr>
+
+                        {/* Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø­ØªÙ‰ Ø¯ÙŠØ³Ù…Ø¨Ø± 2027 */}
+
+                        <tr className="hover:bg-slate-50/60 bg-slate-50/30">
+
+                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø­ØªÙ‰ Ø¯ÙŠØ³Ù…Ø¨Ø± 2027</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.estimatedTotal.toLocaleString()} â‚ª</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? `${cfAllScenarios.partial.estimatedTotal.toLocaleString()} â‚ª` : 'â€”'}</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? `${cfAllScenarios.full.estimatedTotal.toLocaleString()} â‚ª` : 'â€”'}</td>
+
+                        </tr>
+
+                        {/* Ù…ØªØ¨Ù‚ÙŠ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© Ù†Ù‡Ø§ÙŠØ© 2027 */}
+
+                        {cfBudget > 0 && (
+
+                          <tr className="hover:bg-slate-50/60">
+
+                            <td className="px-4 py-2.5 text-slate-600 font-medium">Ù…ØªØ¨Ù‚ÙŠ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© Ù†Ù‡Ø§ÙŠØ© 2027</td>
+
+                            <td className={`text-center px-3 py-2.5 font-bold ${(cfAllScenarios.current.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+
+                              {cfAllScenarios.current.budgetRemaining2027 !== null ? `${cfAllScenarios.current.budgetRemaining2027.toLocaleString()} â‚ª` : 'â€”'}
+
+                            </td>
+
+                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.partialReady ? 'text-slate-300' : (cfAllScenarios.partial.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+
+                              {cfAllScenarios.partialReady && cfAllScenarios.partial.budgetRemaining2027 !== null ? `${cfAllScenarios.partial.budgetRemaining2027.toLocaleString()} â‚ª` : 'â€”'}
+
+                            </td>
+
+                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.fullReady ? 'text-slate-300' : (cfAllScenarios.full.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+
+                              {cfAllScenarios.fullReady && cfAllScenarios.full.budgetRemaining2027 !== null ? `${cfAllScenarios.full.budgetRemaining2027.toLocaleString()} â‚ª` : 'â€”'}
+
+                            </td>
+
+                          </tr>
+
+                        )}
+
+                        {/* ØªØ§Ø±ÙŠØ® Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© */}
+
+                        {cfBudget > 0 && (
+
+                          <tr className="hover:bg-slate-50/60 bg-slate-50/30">
+
+                            <td className="px-4 py-2.5 text-slate-600 font-medium">ØªØ§Ø±ÙŠØ® Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ©</td>
+
+                            <td className="text-center px-3 py-2.5 font-bold text-blue-700">{cfAllScenarios.current.exhaustionDate ?? 'Ø¨Ø¹Ø¯ 2027'}</td>
+
+                            <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? (cfAllScenarios.partial.exhaustionDate ?? 'Ø¨Ø¹Ø¯ 2027') : 'â€”'}</td>
+
+                            <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? (cfAllScenarios.full.exhaustionDate ?? 'Ø¨Ø¹Ø¯ 2027') : 'â€”'}</td>
+
+                          </tr>
+
+                        )}
+
+                        {/* Ù†Ù‚Ù„Ø§Øª Ø­ØªÙ‰ Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© */}
+
+                        {cfBudget > 0 && (
+
+                          <tr className="hover:bg-slate-50/60">
+
+                            <td className="px-4 py-2.5 text-slate-600 font-medium">Ù†Ù‚Ù„Ø§Øª Ø­ØªÙ‰ Ù†ÙØ§Ø¯ Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ©</td>
+
+                            <td className="text-center px-3 py-2.5 font-bold text-blue-800">{cfAllScenarios.current.tripsToExhaust?.toLocaleString() ?? 'â€”'}</td>
+
+                            <td className="text-center px-3 py-2.5 font-bold text-amber-700">{cfAllScenarios.partialReady ? (cfAllScenarios.partial.tripsToExhaust?.toLocaleString() ?? 'â€”') : 'â€”'}</td>
+
+                            <td className="text-center px-3 py-2.5 font-bold text-rose-700">{cfAllScenarios.fullReady ? (cfAllScenarios.full.tripsToExhaust?.toLocaleString() ?? 'â€”') : 'â€”'}</td>
+
+                          </tr>
+
+                        )}
+
+                        {/* Ø§Ù„ÙØ±Ù‚ Ø§Ù„Ø´Ù‡Ø±ÙŠ Ø¹Ù† Ø§Ù„Ø­Ø§Ù„ÙŠ */}
+
+                        <tr className="bg-amber-50/40 hover:bg-amber-50/60">
+
+                          <td className="px-4 py-2.5 text-slate-600 font-medium">Ø§Ù„ÙØ±Ù‚ Ø¹Ù† Ø§Ù„ÙˆØ¶Ø¹ Ø§Ù„Ø­Ø§Ù„ÙŠ</td>
+
+                          <td className="text-center px-3 py-2.5 text-slate-400">â€”</td>
+
+                          <td className="text-center px-3 py-2.5 font-bold">
+
+                            {cfAllScenarios.partialReady ? (() => {
+
+                              const d = cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost
+
+                              const pc = cfAllScenarios.current.monthly.cost > 0 ? Math.round(Math.abs(d) / cfAllScenarios.current.monthly.cost * 100) : 0
+
+                              return <span className={d > 0 ? 'text-amber-700' : 'text-green-600'}>{d > 0 ? '+' : ''}{d.toLocaleString()} â‚ª ({pc}%)</span>
+
+                            })() : 'â€”'}
+
+                          </td>
+
+                          <td className="text-center px-3 py-2.5 font-bold">
+
+                            {cfAllScenarios.fullReady ? (() => {
+
+                              const d = cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost
+
+                              const pc = cfAllScenarios.current.monthly.cost > 0 ? Math.round(Math.abs(d) / cfAllScenarios.current.monthly.cost * 100) : 0
+
+                              return <span className={d > 0 ? 'text-rose-700' : 'text-green-600'}>{d > 0 ? '+' : ''}{d.toLocaleString()} â‚ª ({pc}%)</span>
+
+                            })() : 'â€”'}
+
+                          </td>
+
+                        </tr>
+
+                      </tbody>
+
+                    </table>
+
+                  </div>
+
+                  {(!cfAllScenarios.partialReady || !cfAllScenarios.fullReady) && (
+
+                    <div className="px-4 py-2 text-xs text-slate-400 border-t border-violet-100 bg-violet-50/40 flex items-center gap-2">
+
+                      â„¹ï¸ <span>
+
+                        {!cfAllScenarios.partialReady && <span>Ø£Ø¯Ø®Ù„ Ø¨ÙŠØ§Ù†Ø§Øª <strong>Ø³Ø¹ÙŠØ± Ø¬Ø²Ø¦ÙŠ</strong> Ù„Ù…Ù„Ø¡ Ø¹Ù…ÙˆØ¯Ù‡</span>}
+
+                        {!cfAllScenarios.partialReady && !cfAllScenarios.fullReady && ' Â· '}
+
+                        {!cfAllScenarios.fullReady && <span>Ø£Ø¯Ø®Ù„ Ø¨ÙŠØ§Ù†Ø§Øª <strong>Ø³Ø¹ÙŠØ± ÙƒØ§Ù…Ù„</strong> Ù„Ù…Ù„Ø¡ Ø¹Ù…ÙˆØ¯Ù‡</span>}
+
+                      </span>
+
+                    </div>
+
+                  )}
+
+                </div>
+
+              )}
+
 
               {/* ── تنبيه عند تفعيل سيناريو سعير ── */}
               {cfScenario !== 'current' && (
