@@ -511,17 +511,17 @@ export default function ReportsPage() {
       return { trips: cfSa3irTripsPerMonth, cost }
     }
     if (last3.length === 0) {
-      const extra = cfScenario === 'partial' ? cfLongTripPerMonth * cfLongTripCost : 0
-      return { trips: cfScenario === 'partial' ? cfLongTripPerMonth : 0, cost: extra }
+      return { trips: 0, cost: 0 }
     }
     const baseTrips = Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length)
     const baseCost = Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length)
     if (cfScenario === 'partial') {
-      // سعير جزئي: أضف نقلات سعير فوق المعدل الحالي
-      return {
-        trips: baseTrips + cfLongTripPerMonth,
-        cost: baseCost + cfLongTripPerMonth * cfLongTripCost,
-      }
+      // سعير جزئي: نفس عدد النقلات الإجمالي، X منها تحل محل نقلات عادية وتروح لسعير
+      const regularCostPerTrip = baseTrips > 0 ? baseCost / baseTrips : 0
+      const sa3irTrips = Math.min(cfLongTripPerMonth, baseTrips)
+      const regularTrips = baseTrips - sa3irTrips
+      const newCost = Math.round(regularTrips * regularCostPerTrip + sa3irTrips * cfLongTripCost)
+      return { trips: baseTrips, cost: newCost }
     }
     // الوضع الحالي: متوسط تاريخي فقط
     return { trips: baseTrips, cost: baseCost }
@@ -1895,7 +1895,7 @@ export default function ReportsPage() {
                   {cfScenario === 'partial' && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-amber-50 rounded-xl border border-amber-200">
                       <div>
-                        <label className="block text-xs text-slate-600 mb-1 font-medium">نقلات سعير الإضافية شهرياً</label>
+                        <label className="block text-xs text-slate-600 mb-1 font-medium">عدد نقلات سعير من الإجمالي شهرياً</label>
                         <input
                           type="number" min={0}
                           value={cfLongTripPerMonth}
@@ -1903,7 +1903,7 @@ export default function ReportsPage() {
                           className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white"
                           placeholder="0"
                         />
-                        <p className="text-xs text-slate-400 mt-1">تُضاف فوق المعدل التاريخي الحالي</p>
+                        <p className="text-xs text-slate-400 mt-1">جزء من النقلات الشهرية المعتادة — لا تُضاف فوقها</p>
                       </div>
                       <div>
                         <label className="block text-xs text-slate-600 mb-1 font-medium">تكلفة نقلة سعير (₪)</label>
@@ -1915,11 +1915,15 @@ export default function ReportsPage() {
                           placeholder="0"
                         />
                       </div>
-                      {cfLongTripPerMonth > 0 && cfLongTripCost > 0 && (
-                        <p className="col-span-full text-xs text-amber-700 bg-amber-100 rounded-lg px-3 py-2">
-                          📌 تأثير: +{cfLongTripPerMonth} نقلة/شهر · +{(cfLongTripPerMonth * cfLongTripCost).toLocaleString()} ₪/شهر إضافي
-                        </p>
-                      )}
+                      {cfLongTripPerMonth > 0 && cfLongTripCost > 0 && (() => {
+                        const baseT = cfAvgMonthly.trips
+                        const sa3T = Math.min(cfLongTripPerMonth, baseT)
+                        return (
+                          <p className="col-span-full text-xs text-amber-700 bg-amber-100 rounded-lg px-3 py-2">
+                            📌 {sa3T} نقلة بسعر سعير + {baseT - sa3T} نقلة بالتكلفة المعتادة = {cfAvgMonthly.cost.toLocaleString()} ₪/شهر
+                          </p>
+                        )
+                      })()}
                     </div>
                   )}
 
