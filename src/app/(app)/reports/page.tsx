@@ -453,6 +453,10 @@ export default function ReportsPage() {
   const [cfLoaded, setCfLoaded] = useState(false)
   const [cfLongTripPerMonth, setCfLongTripPerMonth] = useState(0)
   const [cfLongTripCost, setCfLongTripCost] = useState(0)
+  // وضع السيناريو: 'current' | 'partial' | 'full'
+  const [cfScenario, setCfScenario] = useState<'current' | 'partial' | 'full'>('current')
+  const [cfSa3irTripsPerMonth, setCfSa3irTripsPerMonth] = useState(0)
+  const [cfSa3irCostPerTrip, setCfSa3irCostPerTrip] = useState(0)
   const cfMainChartRef = useRef<HTMLDivElement>(null)
   const cf2027ChartRef = useRef<HTMLDivElement>(null)
 
@@ -501,15 +505,27 @@ export default function ReportsPage() {
   const cfAvgMonthly = useMemo(() => {
     const completedMonths = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
     const last3 = completedMonths.slice(-3)
-    const longTripExtra = cfLongTripPerMonth * cfLongTripCost
-    if (last3.length === 0) return { trips: cfLongTripPerMonth, cost: longTripExtra }
+    if (cfScenario === 'full') {
+      // سعير مفعّل كلياً: تجاهل التاريخ، كل النقلات بسعر سعير
+      const cost = cfSa3irTripsPerMonth * cfSa3irCostPerTrip
+      return { trips: cfSa3irTripsPerMonth, cost }
+    }
+    if (last3.length === 0) {
+      const extra = cfScenario === 'partial' ? cfLongTripPerMonth * cfLongTripCost : 0
+      return { trips: cfScenario === 'partial' ? cfLongTripPerMonth : 0, cost: extra }
+    }
     const baseTrips = Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length)
     const baseCost = Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length)
-    return {
-      trips: baseTrips + cfLongTripPerMonth,
-      cost: baseCost + longTripExtra,
+    if (cfScenario === 'partial') {
+      // سعير جزئي: أضف نقلات سعير فوق المعدل الحالي
+      return {
+        trips: baseTrips + cfLongTripPerMonth,
+        cost: baseCost + cfLongTripPerMonth * cfLongTripCost,
+      }
     }
-  }, [cfMonthlyHistory, cfCurrentYM, cfLongTripPerMonth, cfLongTripCost])
+    // الوضع الحالي: متوسط تاريخي فقط
+    return { trips: baseTrips, cost: baseCost }
+  }, [cfMonthlyHistory, cfCurrentYM, cfScenario, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
   // توقعات 6 أشهر قادمة
   const cfForecast = useMemo(() => {
@@ -607,6 +623,26 @@ export default function ReportsPage() {
       remainingBudgetNow,
     }
   }, [cfTotalCost, cfAvgMonthly, cfBudget, cfTrips, cfAvgCostPerTrip])
+
+  // مقارنة سيناريو سعير الكامل لأغراض العرض الجانبي (A+C)
+  const cfSa3irComparison = useMemo(() => {
+    if (!cfSa3irTripsPerMonth || !cfSa3irCostPerTrip) return null
+    const sa3irMonthly = { trips: cfSa3irTripsPerMonth, cost: cfSa3irTripsPerMonth * cfSa3irCostPerTrip }
+    const now = new Date()
+    const monthsRemaining = Math.max(0, (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1)))
+    const estimatedTotal = cfTotalCost + monthsRemaining * sa3irMonthly.cost
+    const budgetRemaining2027 = cfBudget > 0 ? cfBudget - estimatedTotal : null
+    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalCost) : 0
+    const arabicMonthNames = ['\u064a\u0646\u0627\u064a\u0631','\u0641\u0628\u0631\u0627\u064a\u0631','\u0645\u0627\u0631\u0633','\u0623\u0628\u0631\u064a\u0644','\u0645\u0627\u064a\u0648','\u064a\u0648\u0646\u064a\u0648','\u064a\u0648\u0644\u064a\u0648','\u0623\u063a\u0633\u0637\u0633','\u0633\u0628\u062a\u0645\u0628\u0631','\u0623\u0643\u062a\u0648\u0628\u0631','\u0646\u0648\u0641\u0645\u0628\u0631','\u062f\u064a\u0633\u0645\u0628\u0631']
+    const monthsToExhaust = sa3irMonthly.cost > 0 && cfBudget > 0 ? remainingNow / sa3irMonthly.cost : null
+    const exhaustionDateObj = monthsToExhaust !== null
+      ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1) : null
+    const exhaustionDate = exhaustionDateObj
+      ? `${arabicMonthNames[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}` : null
+    const tripsToExhaust = cfSa3irCostPerTrip > 0 && cfBudget > 0
+      ? Math.floor(remainingNow / cfSa3irCostPerTrip) : null
+    return { sa3irMonthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, monthsRemaining }
+  }, [cfTotalCost, cfBudget, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
   // بيانات شارت 2027 (فعلي + توقع حتى ديسمبر 2027)
   const cf2027ChartData = useMemo(() => {
@@ -801,7 +837,7 @@ export default function ReportsPage() {
 
       // 4. 6-Month Forecast
       h1('4. Six-Month Forecast'),
-      p(`Forecast is based on the average of the last 3 completed months: ${fmt(cfAvgMonthly.trips)} trips/month at ${fmt(cfAvgMonthly.cost)} ₪/month.${cfLongTripPerMonth > 0 ? ` Includes an adjustment of +${cfLongTripPerMonth} long-distance trips (>7 km) at ${fmt(cfLongTripCost)} ₪/trip.` : ''}`),
+      p(`Forecast scenario: ${cfScenario === 'full' ? 'Sa3ir Full (all trips long-distance)' : cfScenario === 'partial' ? 'Sa3ir Partial (extra long-distance trips added)' : 'Current average'}. Rate: ${fmt(cfAvgMonthly.trips)} trips/month at ${fmt(cfAvgMonthly.cost)} ₪/month.`),
       blank(),
       tbl([
         hdrRow(['Month', 'Expected Trips', 'Expected Cost (₪)', 'Cumulative (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
@@ -893,7 +929,7 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url)
   }, [cfBudget, cfTotalCost, cfTotalDisbursed, cfAvgMonthly, cfAvgCostPerTrip, cfMonthlyHistory,
       cfTrips, cfForecast, cfProjection2027, cf2027ChartData, cfCurrentYM,
-      cfLongTripPerMonth, cfLongTripCost, cfMainChartRef, cf2027ChartRef])
+      cfScenario, cfMainChartRef, cf2027ChartRef])
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
@@ -1822,44 +1858,111 @@ export default function ReportsPage() {
                 )}
               </div>
 
-              {/* ── تعديل متوسط التوقع — نقلات أكثر من 7 كم ── */}
-              <Card className="border border-violet-100 bg-violet-50/40">
+              {/* ── محاكاة السيناريو — الوضع الحالي / سعير جزئي / سعير كامل ── */}
+              <Card className="border border-violet-200 bg-gradient-to-br from-violet-50/60 to-white">
                 <CardHeader>
                   <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                    🚛 نقلات متوقعة أكثر من 7 كم (تعديل يدوي)
+                    🎯 سيناريو التوقع المستقبلي
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">أضف النقلات عالية التكلفة المتوقعة — ستُضاف إلى المتوسط الشهري في التوقعات</p>
+                  <p className="text-xs text-slate-400 mt-0.5">اختر الوضع بناءً على خطة تشغيل موقع سعير (أكثر من 7 كم)</p>
                 </CardHeader>
                 <CardBody>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-slate-600 mb-1 font-medium">عدد النقلات &gt; 7 كم المتوقعة شهرياً</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={cfLongTripPerMonth}
-                        onChange={e => setCfLongTripPerMonth(Math.max(0, Number(e.target.value)))}
-                        className="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white"
-                        placeholder="0"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-600 mb-1 font-medium">متوسط تكلفة النقلة &gt; 7 كم (₪)</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={cfLongTripCost}
-                        onChange={e => setCfLongTripCost(Math.max(0, Number(e.target.value)))}
-                        className="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 bg-white"
-                        placeholder="0"
-                      />
-                    </div>
+                  {/* أزرار السيناريو */}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {([
+                      { key: 'current', label: '📊 الوضع الحالي', desc: 'متوسط آخر 3 أشهر', color: 'blue' },
+                      { key: 'partial', label: '🔶 سعير جزئي', desc: 'بعض النقلات بعيدة', color: 'amber' },
+                      { key: 'full',    label: '🔴 سعير كامل',  desc: 'كل النقلات لسعير',  color: 'rose' },
+                    ] as const).map(s => (
+                      <button
+                        key={s.key}
+                        onClick={() => setCfScenario(s.key)}
+                        className={`flex-1 min-w-[120px] rounded-xl px-3 py-2.5 text-left border-2 transition-all ${
+                          cfScenario === s.key
+                            ? s.color === 'blue'  ? 'border-blue-500  bg-blue-50  text-blue-800'
+                            : s.color === 'amber' ? 'border-amber-500 bg-amber-50 text-amber-800'
+                            : 'border-rose-500  bg-rose-50  text-rose-800'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="font-semibold text-sm">{s.label}</div>
+                        <div className="text-xs opacity-70 mt-0.5">{s.desc}</div>
+                      </button>
+                    ))}
                   </div>
-                  {cfLongTripPerMonth > 0 && cfLongTripCost > 0 && (
-                    <p className="mt-3 text-xs text-violet-700 bg-violet-100 rounded-lg px-3 py-2">
-                      📌 تأثير: +{cfLongTripPerMonth} نقلة/شهر · +{(cfLongTripPerMonth * cfLongTripCost).toLocaleString()} ₪/شهر إضافي في التوقعات
-                    </p>
+
+                  {/* حقول سعير الجزئي */}
+                  {cfScenario === 'partial' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-amber-50 rounded-xl border border-amber-200">
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1 font-medium">نقلات سعير الإضافية شهرياً</label>
+                        <input
+                          type="number" min={0}
+                          value={cfLongTripPerMonth}
+                          onChange={e => setCfLongTripPerMonth(Math.max(0, Number(e.target.value)))}
+                          className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white"
+                          placeholder="0"
+                        />
+                        <p className="text-xs text-slate-400 mt-1">تُضاف فوق المعدل التاريخي الحالي</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1 font-medium">تكلفة نقلة سعير (₪)</label>
+                        <input
+                          type="number" min={0}
+                          value={cfLongTripCost}
+                          onChange={e => setCfLongTripCost(Math.max(0, Number(e.target.value)))}
+                          className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white"
+                          placeholder="0"
+                        />
+                      </div>
+                      {cfLongTripPerMonth > 0 && cfLongTripCost > 0 && (
+                        <p className="col-span-full text-xs text-amber-700 bg-amber-100 rounded-lg px-3 py-2">
+                          📌 تأثير: +{cfLongTripPerMonth} نقلة/شهر · +{(cfLongTripPerMonth * cfLongTripCost).toLocaleString()} ₪/شهر إضافي
+                        </p>
+                      )}
+                    </div>
                   )}
+
+                  {/* حقول سعير الكامل */}
+                  {cfScenario === 'full' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-rose-50 rounded-xl border border-rose-200">
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1 font-medium">عدد نقلات سعير شهرياً</label>
+                        <input
+                          type="number" min={0}
+                          value={cfSa3irTripsPerMonth}
+                          onChange={e => setCfSa3irTripsPerMonth(Math.max(0, Number(e.target.value)))}
+                          className="w-full border border-rose-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300 bg-white"
+                          placeholder="0"
+                        />
+                        <p className="text-xs text-slate-400 mt-1">يستبدل المعدل التاريخي كلياً</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1 font-medium">تكلفة نقلة سعير (₪)</label>
+                        <input
+                          type="number" min={0}
+                          value={cfSa3irCostPerTrip}
+                          onChange={e => setCfSa3irCostPerTrip(Math.max(0, Number(e.target.value)))}
+                          className="w-full border border-rose-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300 bg-white"
+                          placeholder="0"
+                        />
+                      </div>
+                      {cfSa3irTripsPerMonth > 0 && cfSa3irCostPerTrip > 0 && (
+                        <div className="col-span-full text-xs text-rose-700 bg-rose-100 rounded-lg px-3 py-2 space-y-0.5">
+                          <p>🔴 كل التوقعات محسوبة بسعر سعير — التاريخ السابق لا يُؤثر</p>
+                          <p>💰 التكلفة الشهرية المتوقعة: {(cfSa3irTripsPerMonth * cfSa3irCostPerTrip).toLocaleString()} ₪</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ملخص السيناريو الحالي */}
+                  <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                    <span className="font-medium text-slate-700">المعدل المستخدم في التوقعات:</span>
+                    <span className="text-slate-800 font-bold">{cfAvgMonthly.trips} نقلة/شهر</span>
+                    <span>·</span>
+                    <span className="text-slate-800 font-bold">{cfAvgMonthly.cost.toLocaleString()} ₪/شهر</span>
+                  </div>
                 </CardBody>
               </Card>
 
@@ -1948,6 +2051,98 @@ export default function ReportsPage() {
                     </table>
                   </div>
                 </Card>
+              )}
+
+              {/* ── مقارنة سيناريوهات سعير (يظهر عند إدخال بيانات سعير) ── */}
+              {cfSa3irComparison && cfProjection2027 && (
+                <div className="rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-white p-4 space-y-3">
+                  <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    ⚖️ مقارنة السيناريوهات — الوضع الحالي مقابل سعير الكامل
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* الوضع الحالي */}
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
+                      <div className="text-xs font-bold text-blue-700 flex items-center gap-1">📊 الوضع الحالي (متوسط تاريخي)</div>
+                      <div className="text-xs text-slate-600 space-y-1">
+                        <div className="flex justify-between">
+                          <span>التكلفة الشهرية</span>
+                          <span className="font-semibold text-slate-800">{cfProjection2027.requiredMonthlyCost !== null ? cfProjection2027.requiredMonthlyCost.toLocaleString() : cfAvgMonthly.cost.toLocaleString()} ₪</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>نقلات/شهر</span>
+                          <span className="font-semibold text-slate-800">{cfAvgMonthly.trips}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>تاريخ نفاد الميزانية</span>
+                          <span className="font-semibold text-blue-700">{cfProjection2027.exhaustionDate ?? 'بعد 2027'}</span>
+                        </div>
+                        {cfBudget > 0 && (
+                          <div className="flex justify-between">
+                            <span>الميزانية المتبقية نهاية 2027</span>
+                            <span className={`font-semibold ${(cfProjection2027.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {cfProjection2027.budgetRemaining2027 !== null ? `${cfProjection2027.budgetRemaining2027.toLocaleString()} ₪` : '—'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* سعير الكامل */}
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-2">
+                      <div className="text-xs font-bold text-rose-700 flex items-center gap-1">🔴 سعير الكامل (كل النقلات بعيدة)</div>
+                      <div className="text-xs text-slate-600 space-y-1">
+                        <div className="flex justify-between">
+                          <span>التكلفة الشهرية</span>
+                          <span className="font-semibold text-slate-800">{cfSa3irComparison.sa3irMonthly.cost.toLocaleString()} ₪</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>نقلات/شهر</span>
+                          <span className="font-semibold text-slate-800">{cfSa3irComparison.sa3irMonthly.trips}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>تاريخ نفاد الميزانية</span>
+                          <span className="font-semibold text-rose-700">{cfSa3irComparison.exhaustionDate ?? 'بعد 2027'}</span>
+                        </div>
+                        {cfBudget > 0 && (
+                          <div className="flex justify-between">
+                            <span>الميزانية المتبقية نهاية 2027</span>
+                            <span className={`font-semibold ${(cfSa3irComparison.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {cfSa3irComparison.budgetRemaining2027 !== null ? `${cfSa3irComparison.budgetRemaining2027.toLocaleString()} ₪` : '—'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* شريط الفرق */}
+                  {(() => {
+                    const costDiff = cfSa3irComparison.sa3irMonthly.cost - cfAvgMonthly.cost
+                    const pct = cfAvgMonthly.cost > 0 ? Math.round((costDiff / cfAvgMonthly.cost) * 100) : 0
+                    return costDiff !== 0 ? (
+                      <div className={`text-xs rounded-lg px-3 py-2 flex items-center gap-2 ${costDiff > 0 ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>
+                        {costDiff > 0 ? '⚠️' : '✅'}
+                        <span>سعير الكامل <strong>{costDiff > 0 ? 'أعلى' : 'أقل'}</strong> بـ {Math.abs(costDiff).toLocaleString()} ₪/شهر ({Math.abs(pct)}%) مقارنةً بالوضع الحالي</span>
+                      </div>
+                    ) : null
+                  })()}
+                </div>
+              )}
+
+              {/* ── تنبيه عند تفعيل سيناريو سعير ── */}
+              {cfScenario !== 'current' && (
+                <div className={`rounded-xl px-4 py-2.5 text-xs flex items-center gap-2 ${
+                  cfScenario === 'full'
+                    ? 'bg-rose-100 border border-rose-300 text-rose-800'
+                    : 'bg-amber-100 border border-amber-300 text-amber-800'
+                }`}>
+                  {cfScenario === 'full' ? '🔴' : '🔶'}
+                  <span>
+                    {cfScenario === 'full'
+                      ? 'التوقعات أدناه محسوبة بسيناريو سعير الكامل — التاريخ السابق لا يُؤثر في الحساب'
+                      : 'التوقعات أدناه تتضمن نقلات سعير الإضافية فوق المعدل التاريخي'}
+                  </span>
+                </div>
               )}
 
               {/* ── جدول التوقعات ── */}
