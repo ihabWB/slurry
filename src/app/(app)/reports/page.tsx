@@ -946,6 +946,162 @@ export default function ReportsPage() {
       ]),
       blank(),
 
+      // 6. Sa3ir Scenario Analysis
+      h1('6. Sa3ir Scenario Analysis — تحليل سيناريوهات سعير'),
+      p('This section compares three independent operational scenarios for waste transport cost planning. All figures are computed independently of the currently selected scenario.'),
+      blank(),
+
+      // 6.1 Scenario Definitions
+      h2('6.1 Scenario Definitions — تعريف السيناريوهات'),
+      tbl([
+        hdrRow(['Scenario / السيناريو', 'Description / الوصف', 'Configuration / الإعدادات']),
+        dataRow([
+          'Current (Baseline) — الوضع الحالي',
+          'Based on the 3-month historical average. No changes to current collection routes or distances.',
+          `${cfAllScenarios.current.monthly.trips} trips/month at ${fmt(cfAllScenarios.current.monthly.cost)} ₪/month (avg last 3 completed months)`,
+        ]),
+        dataRow([
+          cfAllScenarios.partialReady ? 'Partial Sa3ir — سعير جزئي ✓' : 'Partial Sa3ir — سعير جزئي (Not Configured)',
+          `A subset of monthly trips are replaced by long-distance Sa3ir routes at a higher cost per trip. Remaining trips continue at the historical average rate.`,
+          cfAllScenarios.partialReady
+            ? `${Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} sa3ir trips @ ${fmt(cfLongTripCost)} ₪ + ${cfAllScenarios.current.monthly.trips - Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} regular = ${cfAllScenarios.partial.monthly.trips} trips/month total`
+            : 'Requires: long_trip_per_month and long_trip_cost in Settings',
+        ]),
+        dataRow([
+          cfAllScenarios.fullReady ? 'Full Sa3ir — سعير كامل ✓' : 'Full Sa3ir — سعير كامل (Not Configured)',
+          'All collection trips are converted to long-distance Sa3ir routes. This completely replaces the current collection model with a new transport configuration.',
+          cfAllScenarios.fullReady
+            ? `${cfSa3irTripsPerMonth} trips/month × ${fmt(cfSa3irCostPerTrip)} ₪/trip = ${fmt(cfAllScenarios.full.monthly.cost)} ₪/month total`
+            : 'Requires: sa3ir_trips_per_month and sa3ir_cost_per_trip in Settings',
+        ]),
+      ]),
+      blank(),
+
+      // 6.2 Comprehensive Comparison Table
+      h2('6.2 Comprehensive Scenario Comparison — مقارنة شاملة للثلاث سيناريوهات'),
+      p('All projected values use current year-to-date actuals plus the scenario monthly rate extrapolated to December 2027.'),
+      blank(),
+      tbl([
+        hdrRow([
+          'Metric — المقياس',
+          'Current — الوضع الحالي',
+          cfAllScenarios.partialReady ? 'Partial Sa3ir — سعير جزئي' : 'Partial Sa3ir (N/A)',
+          cfAllScenarios.fullReady ? 'Full Sa3ir — سعير كامل' : 'Full Sa3ir (N/A)',
+        ]),
+        dataRow([
+          'Monthly Cost — التكلفة الشهرية',
+          `${fmt(cfAllScenarios.current.monthly.cost)} ₪`,
+          cfAllScenarios.partialReady ? `${fmt(cfAllScenarios.partial.monthly.cost)} ₪` : '—',
+          cfAllScenarios.fullReady ? `${fmt(cfAllScenarios.full.monthly.cost)} ₪` : '—',
+        ]),
+        dataRow([
+          'Monthly Trips — نقلات شهرياً',
+          String(cfAllScenarios.current.monthly.trips),
+          cfAllScenarios.partialReady
+            ? `${cfAllScenarios.partial.monthly.trips} (${Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} sa3ir + ${cfAllScenarios.current.monthly.trips - Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} regular)`
+            : '—',
+          cfAllScenarios.fullReady ? String(cfAllScenarios.full.monthly.trips) : '—',
+        ]),
+        dataRow([
+          'Avg Cost/Trip — متوسط تكلفة النقلة',
+          `${fmt(cfAllScenarios.current.costPerTrip)} ₪`,
+          cfAllScenarios.partialReady ? `${fmt(cfAllScenarios.partial.costPerTrip)} ₪` : '—',
+          cfAllScenarios.fullReady ? `${fmt(cfAllScenarios.full.costPerTrip)} ₪` : '—',
+        ]),
+        dataRow([
+          'Estimated Total to Dec 2027 — الإجمالي حتى ديسمبر 2027',
+          `${fmt(cfAllScenarios.current.estimatedTotal)} ₪`,
+          cfAllScenarios.partialReady ? `${fmt(cfAllScenarios.partial.estimatedTotal)} ₪` : '—',
+          cfAllScenarios.fullReady ? `${fmt(cfAllScenarios.full.estimatedTotal)} ₪` : '—',
+        ]),
+        ...(cfBudget > 0 ? [
+          dataRow([
+            'Budget Remaining End 2027 — متبقي الميزانية نهاية 2027',
+            cfAllScenarios.current.budgetRemaining2027 !== null ? `${fmt(cfAllScenarios.current.budgetRemaining2027)} ₪` : '—',
+            cfAllScenarios.partialReady && cfAllScenarios.partial.budgetRemaining2027 !== null ? `${fmt(cfAllScenarios.partial.budgetRemaining2027)} ₪` : '—',
+            cfAllScenarios.fullReady && cfAllScenarios.full.budgetRemaining2027 !== null ? `${fmt(cfAllScenarios.full.budgetRemaining2027)} ₪` : '—',
+          ]),
+          dataRow([
+            'Budget Exhaustion Date — تاريخ نفاد الميزانية',
+            cfAllScenarios.current.exhaustionDate ?? 'After Dec 2027',
+            cfAllScenarios.partialReady ? (cfAllScenarios.partial.exhaustionDate ?? 'After Dec 2027') : '—',
+            cfAllScenarios.fullReady ? (cfAllScenarios.full.exhaustionDate ?? 'After Dec 2027') : '—',
+          ]),
+          dataRow([
+            'Trips Until Budget Exhausted — نقلات حتى نفاد الميزانية',
+            cfAllScenarios.current.tripsToExhaust?.toLocaleString('en-US') ?? '—',
+            cfAllScenarios.partialReady ? (cfAllScenarios.partial.tripsToExhaust?.toLocaleString('en-US') ?? '—') : '—',
+            cfAllScenarios.fullReady ? (cfAllScenarios.full.tripsToExhaust?.toLocaleString('en-US') ?? '—') : '—',
+          ]),
+        ] : []),
+        dataRow([
+          'Monthly Difference vs Baseline — الفرق الشهري عن الحالي',
+          '— (baseline)',
+          cfAllScenarios.partialReady
+            ? `${cfAllScenarios.partial.monthly.cost > cfAllScenarios.current.monthly.cost ? '+' : ''}${fmt(cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost)} ₪`
+            : '—',
+          cfAllScenarios.fullReady
+            ? `${cfAllScenarios.full.monthly.cost > cfAllScenarios.current.monthly.cost ? '+' : ''}${fmt(cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost)} ₪`
+            : '—',
+        ]),
+        ...(cfAllScenarios.current.monthly.cost > 0 ? [
+          dataRow([
+            '% Change vs Baseline — نسبة التغيير عن الحالي',
+            '0%',
+            cfAllScenarios.partialReady
+              ? `${cfAllScenarios.partial.monthly.cost >= cfAllScenarios.current.monthly.cost ? '+' : ''}${Math.round((cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost) / cfAllScenarios.current.monthly.cost * 100)}%`
+              : '—',
+            cfAllScenarios.fullReady
+              ? `${cfAllScenarios.full.monthly.cost >= cfAllScenarios.current.monthly.cost ? '+' : ''}${Math.round((cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost) / cfAllScenarios.current.monthly.cost * 100)}%`
+              : '—',
+          ]),
+        ] : []),
+      ]),
+      blank(),
+
+      // 6.3 Per-scenario detail
+      h2('6.3 Scenario Detail Notes — تفاصيل وملاحظات'),
+      p(`Current Scenario (Baseline): The average over the last 3 completed months yields ${cfAllScenarios.current.monthly.trips} trips/month at a total of ${fmt(cfAllScenarios.current.monthly.cost)} ₪/month (avg ${fmt(cfAllScenarios.current.costPerTrip)} ₪/trip). Extrapolated to December 2027, the estimated total expenditure is ${fmt(cfAllScenarios.current.estimatedTotal)} ₪.`),
+      blank(),
+      ...(cfAllScenarios.partialReady ? [
+        p(`Partial Sa3ir Scenario: ${Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} of the ${cfAllScenarios.current.monthly.trips} regular trips per month are replaced by long-distance Sa3ir trips at ${fmt(cfLongTripCost)} ₪/trip. The remaining ${cfAllScenarios.current.monthly.trips - Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} trips continue at the historical average of ${fmt(cfAllScenarios.regularCostPerTrip)} ₪/trip. Result: ${fmt(cfAllScenarios.partial.monthly.cost)} ₪/month — a ${cfAllScenarios.partial.monthly.cost > cfAllScenarios.current.monthly.cost ? 'cost increase' : 'cost reduction'} of ${fmt(Math.abs(cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost))} ₪/month (${cfAllScenarios.current.monthly.cost > 0 ? Math.round(Math.abs(cfAllScenarios.partial.monthly.cost - cfAllScenarios.current.monthly.cost) / cfAllScenarios.current.monthly.cost * 100) : 0}%) versus the baseline. Estimated total to Dec 2027: ${fmt(cfAllScenarios.partial.estimatedTotal)} ₪.`),
+        blank(),
+      ] : [
+        p('Partial Sa3ir Scenario: Not yet configured. To activate, enter long_trip_per_month (number of Sa3ir trips/month) and long_trip_cost (₪ per Sa3ir trip) in the Settings section.', { color: '64748B' }),
+        blank(),
+      ]),
+      ...(cfAllScenarios.fullReady ? [
+        p(`Full Sa3ir Scenario: The entire collection operation is replaced with ${cfSa3irTripsPerMonth} long-distance Sa3ir trips per month at ${fmt(cfSa3irCostPerTrip)} ₪/trip, totaling ${fmt(cfAllScenarios.full.monthly.cost)} ₪/month — a ${cfAllScenarios.full.monthly.cost > cfAllScenarios.current.monthly.cost ? 'cost increase' : 'cost reduction'} of ${fmt(Math.abs(cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost))} ₪/month (${cfAllScenarios.current.monthly.cost > 0 ? Math.round(Math.abs(cfAllScenarios.full.monthly.cost - cfAllScenarios.current.monthly.cost) / cfAllScenarios.current.monthly.cost * 100) : 0}%) versus the baseline. Estimated total to Dec 2027: ${fmt(cfAllScenarios.full.estimatedTotal)} ₪.`),
+        blank(),
+      ] : [
+        p('Full Sa3ir Scenario: Not yet configured. To activate, enter sa3ir_trips_per_month and sa3ir_cost_per_trip in the Settings section.', { color: '64748B' }),
+        blank(),
+      ]),
+
+      // 6.4 Monthly projection per scenario (if data available)
+      ...(cfAllScenarios.partialReady || cfAllScenarios.fullReady ? [
+        h2('6.4 Monthly Cost Projection to December 2027 — توقعات التكلفة الشهرية لكل سيناريو'),
+        p(`Breakdown of projected monthly cost from now to December 2027. Past months show actual data; future months show the scenario-specific projected cost.`),
+        blank(),
+        tbl([
+          hdrRow([
+            'Month — الشهر',
+            'Type — النوع',
+            'Current — الحالي (₪)',
+            ...(cfAllScenarios.partialReady ? ['Partial Sa3ir — جزئي (₪)'] : []),
+            ...(cfAllScenarios.fullReady ? ['Full Sa3ir — كامل (₪)'] : []),
+          ]),
+          ...cf2027ChartData.map(row => dataRow([
+            row.month,
+            row.cost !== null ? 'Actual' : 'Forecast',
+            fmt(row.cost ?? cfAllScenarios.current.monthly.cost),
+            ...(cfAllScenarios.partialReady ? [row.cost !== null ? fmt(row.cost) : fmt(cfAllScenarios.partial.monthly.cost)] : []),
+            ...(cfAllScenarios.fullReady ? [row.cost !== null ? fmt(row.cost) : fmt(cfAllScenarios.full.monthly.cost)] : []),
+          ])),
+        ]),
+        blank(),
+      ] : []),
+
       // Footer
       new Paragraph({
         children: [new TextRun({ text: `Report generated on ${reportDate} | Slurry Management System`, size: 18, color: '94A3B8' })],
@@ -969,7 +1125,8 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url)
   }, [cfBudget, cfTotalCost, cfTotalDisbursed, cfAvgMonthly, cfAvgCostPerTrip, cfMonthlyHistory,
       cfTrips, cfForecast, cfProjection2027, cf2027ChartData, cfCurrentYM,
-      cfScenario, cfMainChartRef, cf2027ChartRef])
+      cfScenario, cfMainChartRef, cf2027ChartRef,
+      cfAllScenarios, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
