@@ -51,6 +51,14 @@ function getMonthRange(monthsAgo: number): { from: string; to: string } {
   return { from: format(d, 'yyyy-MM-dd'), to: end }
 }
 
+const BUDGET_TRANCHES = [
+  { label: 'الربع الأخير 2025', from: '2025-10-01', to: '2025-12-31', planned: 844440 },
+  { label: 'الربع الأول 2026',  from: '2026-01-01', to: '2026-03-31', planned: 538890 },
+  { label: 'الربع الثاني 2026', from: '2026-04-01', to: '2026-06-30', planned: 418890 },
+  { label: 'الربع الثالث 2026', from: '2026-07-01', to: '2026-09-30', planned: 418890 },
+  { label: 'الربع الرابع 2026', from: '2026-10-01', to: '2026-12-31', planned: 418890 },
+] as const
+
 export default function ReportsPage() {
   const today = format(new Date(), 'yyyy-MM-dd')
   const firstOfMonth = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd')
@@ -451,6 +459,10 @@ export default function ReportsPage() {
   const [cfBudget, setCfBudget] = useState(0)
   const [cfLoading, setCfLoading] = useState(false)
   const [cfLoaded, setCfLoaded] = useState(false)
+  const [cfWordExporting, setCfWordExporting] = useState(false)
+  const [cfTranchesReceived, setCfTranchesReceived] = useState<boolean[]>(
+    () => BUDGET_TRANCHES.map(t => new Date(t.to) < new Date())
+  )
   const [cfLongTripPerMonth, setCfLongTripPerMonth] = useState(0)
   const [cfLongTripCost, setCfLongTripCost] = useState(0)
   // وضع السيناريو: 'current' | 'partial' | 'full'
@@ -551,10 +563,18 @@ export default function ReportsPage() {
   }, [cfMonthlyHistory, cfAvgMonthly, cfBudget])
 
   // بيانات الرسم البياني (تاريخي + توقع)
-  const cfChartData = useMemo(() => [
-    ...cfMonthlyHistory.map(m => ({ ...m, forecastCost: null, forecastCumulative: null })),
-    ...cfForecast.map(m => ({ ...m, forecastCost: m.cost, forecastCumulative: m.cumulative, cost: null, cumulative: null })),
-  ], [cfMonthlyHistory, cfForecast])
+  const cfChartData = useMemo(() => {
+    const rows = [
+      ...cfMonthlyHistory.map(m => ({ ...m, forecastCost: null, forecastCumulative: null })),
+      ...cfForecast.map(m => ({ ...m, forecastCost: m.cost, forecastCumulative: m.cumulative, cost: null, cumulative: null })),
+    ]
+    return rows.map(r => {
+      const received = BUDGET_TRANCHES.reduce(
+        (s, t, i) => s + (cfTranchesReceived[i] && r.month >= t.from.slice(0, 7) ? t.planned : 0), 0
+      )
+      return { ...r, receivedBudget: received > 0 ? received : null }
+    })
+  }, [cfMonthlyHistory, cfForecast, cfTranchesReceived])
 
   // مجاميع مالية
   const cfTotalCost = useMemo(() => cfTrips.reduce((s: number, t: AnyData) => s + Number(t.trip_cost ?? 0), 0), [cfTrips])
@@ -684,6 +704,31 @@ export default function ReportsPage() {
     return { current, partial, partialReady, full, fullReady, regularCostPerTrip: Math.round(regularCostPerTrip) }
   }, [cfMonthlyHistory, cfCurrentYM, cfBudget, cfTotalCost, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
+  const cfQuarterlyAnalysis = useMemo(() =>
+    BUDGET_TRANCHES.map((t, i) => {
+      const actualCost = cfTrips
+        .filter((trip: AnyData) => {
+          const d: string = trip.trip_date ?? ''
+          return d >= t.from && d <= t.to
+        })
+        .reduce((s: number, trip: AnyData) => s + Number(trip.trip_cost ?? 0), 0)
+      const balance = (cfTranchesReceived[i] ? t.planned : 0) - actualCost
+      return { label: t.label, planned: t.planned, actualCost, balance }
+    })
+  , [cfTrips, cfTranchesReceived])
+
+  const cfLiquidity = useMemo(() => {
+    const totalReceived = BUDGET_TRANCHES.reduce(
+      (s, t, i) => s + (cfTranchesReceived[i] ? t.planned : 0), 0
+    )
+    const liquidityNow = totalReceived - cfTotalCost
+    const idx = cfTranchesReceived.findIndex(v => !v)
+    const nextTranche = idx >= 0
+      ? { label: BUDGET_TRANCHES[idx].label, planned: BUDGET_TRANCHES[idx].planned }
+      : null
+    return { totalReceived, liquidityNow, nextTranche }
+  }, [cfTranchesReceived, cfTotalCost])
+
   // بيانات شارت 2027 (فعلي + توقع حتى ديسمبر 2027)
   const cf2027ChartData = useMemo(() => {
     const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[] = []
@@ -716,6 +761,9 @@ export default function ReportsPage() {
 
   // ── Word export ──
   const exportCfWord = useCallback(async () => {
+    if (cfWordExporting) return
+    setCfWordExporting(true)
+    try {
     const html2canvas = (await import('html2canvas')).default
 
     // Capture chart images
@@ -1123,10 +1171,17 @@ export default function ReportsPage() {
     a.download = `cashflow-report-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}.docx`
     a.click()
     URL.revokeObjectURL(url)
-  }, [cfBudget, cfTotalCost, cfTotalDisbursed, cfAvgMonthly, cfAvgCostPerTrip, cfMonthlyHistory,
+    } catch (err) {
+      console.error('Word export failed:', err)
+      alert(`فشل تصدير Word: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setCfWordExporting(false)
+    }
+  }, [cfWordExporting, cfBudget, cfTotalCost, cfTotalDisbursed, cfAvgMonthly, cfAvgCostPerTrip, cfMonthlyHistory,
       cfTrips, cfForecast, cfProjection2027, cf2027ChartData, cfCurrentYM,
       cfScenario, cfMainChartRef, cf2027ChartRef,
-      cfAllScenarios, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+      cfAllScenarios, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip,
+      cfTranchesReceived, cfQuarterlyAnalysis, cfLiquidity])
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
@@ -1978,7 +2033,7 @@ export default function ReportsPage() {
                 {cfLoaded && (
                   <div className="flex gap-2">
                     <Button variant="success" size="sm" onClick={exportCfExcel}><FileSpreadsheet size={14} /> تصدير Excel</Button>
-                    <Button variant="secondary" size="sm" onClick={exportCfWord}><FileText size={14} /> تصدير Word</Button>
+                    <Button variant="secondary" size="sm" onClick={exportCfWord} disabled={cfWordExporting}><FileText size={14} /> {cfWordExporting ? 'جاري التصدير...' : 'تصدير Word'}</Button>
                   </div>
                 )}
               </div>
@@ -2190,6 +2245,9 @@ export default function ReportsPage() {
                         {cfBudget > 0 && (
                           <Line yAxisId="right" type="monotone" dataKey={() => cfBudget} name="الميزانية" stroke="#10b981" strokeWidth={1.5} strokeDasharray="8 4" dot={false} />
                         )}
+                        {cfTranchesReceived.some(Boolean) && (
+                          <Line yAxisId="right" type="stepAfter" dataKey="receivedBudget" name="مستلم من المموّل" stroke="#16a34a" strokeWidth={2} dot={false} />
+                        )}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </CardBody>
@@ -2254,6 +2312,74 @@ export default function ReportsPage() {
                 </Card>
               )}
               {/* â”€â”€ Ø¬Ø¯ÙˆÙ„ Ù…Ù‚Ø§Ø±Ù†Ø© Ø´Ø§Ù…Ù„ Ù„Ù„Ø«Ù„Ø§Ø« Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆÙ‡Ø§Øª â”€â”€ */}
+
+              {/* ── تتبع الدفعات الفصلية ── */}
+              {cfLoaded && (
+                <div className="rounded-2xl border-2 border-green-200 bg-gradient-to-br from-green-50/60 to-white overflow-hidden">
+                  <div className="px-4 py-3 border-b border-green-100 bg-green-50">
+                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">💰 تتبع الدفعات الفصلية من الجهة المموّلة</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">مجموع الميزانية: 2,640,000 ₪ — تحديث حالة الاستلام يؤثر على الرسم البياني</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 p-4 bg-slate-50/50">
+                    <div className="bg-white rounded-xl border border-green-100 p-3 text-center shadow-sm">
+                      <p className="text-xs text-slate-400 mb-1">إجمالي المستلم</p>
+                      <p className="text-xl font-bold text-green-700">{cfLiquidity.totalReceived.toLocaleString()} ₪</p>
+                    </div>
+                    <div className={'bg-white rounded-xl border p-3 text-center shadow-sm ' + (cfLiquidity.liquidityNow >= 0 ? 'border-emerald-100' : 'border-red-100')}>
+                      <p className="text-xs text-slate-400 mb-1">السيولة الحالية</p>
+                      <p className={'text-xl font-bold ' + (cfLiquidity.liquidityNow >= 0 ? 'text-emerald-700' : 'text-red-600')}>
+                        {cfLiquidity.liquidityNow >= 0 ? '+' : ''}{cfLiquidity.liquidityNow.toLocaleString()} ₪
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-blue-100 p-3 text-center shadow-sm">
+                      <p className="text-xs text-slate-400 mb-1">الدفعة القادمة</p>
+                      {cfLiquidity.nextTranche ? (
+                        <>
+                          <p className="text-lg font-bold text-blue-700">{cfLiquidity.nextTranche.planned.toLocaleString()} ₪</p>
+                          <p className="text-xs text-slate-500">{cfLiquidity.nextTranche.label}</p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-400">لا توجد دفعات قادمة</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto px-4 pb-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          <th className="text-right px-3 py-2 text-slate-500 font-semibold">الفترة</th>
+                          <th className="text-center px-3 py-2 text-slate-500 font-semibold">المبلغ المخطط</th>
+                          <th className="text-center px-3 py-2 text-slate-500 font-semibold">تكلفة الفترة</th>
+                          <th className="text-center px-3 py-2 text-slate-500 font-semibold">رصيد الفترة</th>
+                          <th className="text-center px-3 py-2 text-slate-500 font-semibold">حالة الاستلام</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cfQuarterlyAnalysis.map((q, i) => (
+                          <tr key={i} className={'border-b border-slate-100' + (q.balance < 0 ? ' bg-red-50/40' : '')}>
+                            <td className="px-3 py-2 font-medium text-slate-700">{q.label}</td>
+                            <td className="text-center px-3 py-2 text-emerald-700 font-semibold">{q.planned.toLocaleString()} ₪</td>
+                            <td className="text-center px-3 py-2 text-orange-700">{Math.round(q.actualCost).toLocaleString()} ₪</td>
+                            <td className={'text-center px-3 py-2 font-semibold ' + (q.balance < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                              {q.balance >= 0 ? '+' : ''}{Math.round(q.balance).toLocaleString()} ₪
+                            </td>
+                            <td className="text-center px-3 py-2">
+                              <button
+                                onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
+                                className={cfTranchesReceived[i]
+                                  ? 'px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors'
+                                  : 'px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors'}
+                              >
+                                {cfTranchesReceived[i] ? '✓ مستلمة' : '○ لم تُستلم'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* ── جدول مقارنة شامل للثلاث سيناريوهات ── */}
               {cfLoaded && (cfAllScenarios.partialReady || cfAllScenarios.fullReady) && (
