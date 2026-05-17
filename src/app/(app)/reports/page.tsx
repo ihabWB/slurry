@@ -51,6 +51,8 @@ function getMonthRange(monthsAgo: number): { from: string; to: string } {
   return { from: format(d, 'yyyy-MM-dd'), to: end }
 }
 
+const CF_MUN_RATE = 0.14  // نسبة بلدية الخليل الثابتة — تُضاف فوق تكلفة النقلات
+
 const BUDGET_TRANCHES = [
   { label: 'الربع الأخير 2025', from: '2025-10-01', to: '2025-12-31', planned: 844440 },
   { label: 'الربع الأول 2026',  from: '2026-01-01', to: '2026-03-31', planned: 538890 },
@@ -505,11 +507,13 @@ export default function ReportsPage() {
       else if (t.waste_type === 'solid') map[mon].solid++
     })
     let cumulative = 0
+    let obligCumulative = 0
     return Object.entries(map)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, v]) => {
         cumulative += v.cost
-        return { month, ...v, cumulative: +cumulative.toFixed(0), forecast: false }
+        obligCumulative += v.cost * (1 + CF_MUN_RATE)
+        return { month, ...v, cumulative: +cumulative.toFixed(0), obligCumulative: +obligCumulative.toFixed(0), forecast: false }
       })
   }, [cfTrips])
 
@@ -566,7 +570,7 @@ export default function ReportsPage() {
   const cfChartData = useMemo(() => {
     const rows = [
       ...cfMonthlyHistory.map(m => ({ ...m, forecastCost: null, forecastCumulative: null })),
-      ...cfForecast.map(m => ({ ...m, forecastCost: m.cost, forecastCumulative: m.cumulative, cost: null, cumulative: null })),
+      ...cfForecast.map(m => ({ ...m, forecastCost: m.cost, forecastCumulative: m.cumulative, cost: null, cumulative: null, obligCumulative: null })),
     ]
     return rows.map(r => {
       const received = BUDGET_TRANCHES.reduce(
@@ -578,9 +582,19 @@ export default function ReportsPage() {
 
   // مجاميع مالية
   const cfTotalCost = useMemo(() => cfTrips.reduce((s: number, t: AnyData) => s + Number(t.trip_cost ?? 0), 0), [cfTrips])
+  // الالتزام الكلي = تكلفة النقلات + 14% بلدية الخليل (ما يُستهلك فعلاً من الميزانية)
+  const cfTotalObligation = useMemo(() => Math.round(cfTotalCost * (1 + CF_MUN_RATE)), [cfTotalCost])
   const cfTotalDisbursed = useMemo(() =>
     cfDisbursements.filter((d: AnyData) => d.status === 'closed').reduce((s: number, d: AnyData) => s + Number(d.net_payment ?? d.disbursed_amount ?? 0), 0),
     [cfDisbursements])
+  // إحصاءات المطالبات المغلقة: صافي محوّل + حجز تأمينات محتجز
+  const cfClosedStats = useMemo(() => {
+    const closed = cfDisbursements.filter((d: AnyData) => d.status === 'closed')
+    return {
+      netPaid: Math.round(closed.reduce((s: number, d: AnyData) => s + Number(d.net_payment ?? 0), 0)),
+      retentionHeld: Math.round(closed.reduce((s: number, d: AnyData) => s + Number(d.retention_amount ?? 0), 0)),
+    }
+  }, [cfDisbursements])
   const cfAvgCostPerTrip = useMemo(() => {
     const priced = cfTrips.filter((t: AnyData) => t.trip_cost)
     return priced.length > 0 ? cfTotalCost / priced.length : 0
@@ -721,13 +735,14 @@ export default function ReportsPage() {
     const totalReceived = BUDGET_TRANCHES.reduce(
       (s, t, i) => s + (cfTranchesReceived[i] ? t.planned : 0), 0
     )
-    const liquidityNow = totalReceived - cfTotalCost
+    // السيولة الحقيقية = المستلم − الالتزام الكلي (تكلفة + 14% بلدية)
+    const liquidityNow = totalReceived - cfTotalObligation
     const idx = cfTranchesReceived.findIndex(v => !v)
     const nextTranche = idx >= 0
       ? { label: BUDGET_TRANCHES[idx].label, planned: BUDGET_TRANCHES[idx].planned }
       : null
     return { totalReceived, liquidityNow, nextTranche }
-  }, [cfTranchesReceived, cfTotalCost])
+  }, [cfTranchesReceived, cfTotalObligation])
 
   // بيانات شارت 2027 (فعلي + توقع حتى ديسمبر 2027)
   const cf2027ChartData = useMemo(() => {
@@ -1177,7 +1192,7 @@ export default function ReportsPage() {
     } finally {
       setCfWordExporting(false)
     }
-  }, [cfWordExporting, cfBudget, cfTotalCost, cfTotalDisbursed, cfAvgMonthly, cfAvgCostPerTrip, cfMonthlyHistory,
+  }, [cfWordExporting, cfBudget, cfTotalCost, cfTotalObligation, cfClosedStats, cfTotalDisbursed, cfAvgMonthly, cfAvgCostPerTrip, cfMonthlyHistory,
       cfTrips, cfForecast, cfProjection2027, cf2027ChartData, cfCurrentYM,
       cfScenario, cfMainChartRef, cf2027ChartRef,
       cfAllScenarios, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip,
@@ -2047,21 +2062,50 @@ export default function ReportsPage() {
           {cfLoaded && (
             <>
               {/* ── بطاقات الميزانية الكلية ── */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { label: '\u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0627\u0644\u0643\u0644\u064a\u0629', value: cfBudget > 0 ? `${cfBudget.toLocaleString()} \u20aa` : '\u063a\u064a\u0631 \u0645\u062d\u062f\u062f\u0629', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', icon: '\ud83d\udcb0' },
-                  { label: '\u062a\u0643\u0644\u0641\u0629 \u0645\u0646\u0641\u0630\u0629 \u062d\u062a\u0649 \u0627\u0644\u0622\u0646', value: `${Math.round(cfTotalCost).toLocaleString()} \u20aa`, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-100', icon: '\ud83d\udcca' },
-                  { label: '\u0645\u0635\u0631\u0648\u0641 (\u062f\u0641\u0639\u0627\u062a \u0645\u063a\u0644\u0642\u0629)', value: `${Math.round(cfTotalDisbursed).toLocaleString()} \u20aa`, color: 'text-teal-700', bg: 'bg-teal-50 border-teal-100', icon: '\u2705' },
-                  { label: cfGap !== null ? (cfGap >= 0 ? '\u0641\u0627\u0626\u0636 \u0645\u062a\u0648\u0642\u0639' : '\u0639\u062c\u0632 \u0645\u062a\u0648\u0642\u0639') : '\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629 (6 \u0623\u0634\u0647\u0631)', value: cfGap !== null ? `${Math.abs(Math.round(cfGap)).toLocaleString()} \u20aa` : `${Math.round(cfEstimatedTotalCost).toLocaleString()} \u20aa`, color: cfGap !== null ? (cfGap >= 0 ? 'text-emerald-700' : 'text-red-700') : 'text-violet-700', bg: cfGap !== null ? (cfGap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-violet-50 border-violet-100', icon: cfGap !== null ? (cfGap >= 0 ? '\ud83d\udfe2' : '\ud83d\udd34') : '\ud83d\udd2e' },
-                ].map(({ label, value, color, bg, icon }) => (
-                  <Card key={label} className={`border ${bg}`}>
-                    <CardBody className="text-center py-4">
-                      <p className="text-2xl mb-1">{icon}</p>
-                      <p className={`text-xl font-bold ${color}`}>{value}</p>
-                      <p className="text-xs text-slate-500 mt-1">{label}</p>
-                    </CardBody>
-                  </Card>
-                ))}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {/* الميزانية الكلية */}
+                <Card className="border bg-blue-50 border-blue-100">
+                  <CardBody className="text-center py-4">
+                    <p className="text-2xl mb-1">&#x1F4B0;</p>
+                    <p className="text-xl font-bold text-blue-700">{cfBudget > 0 ? cfBudget.toLocaleString() + ' \u20aa' : '\u063a\u064a\u0631 \u0645\u062d\u062f\u062f\u0629'}</p>
+                    <p className="text-xs text-slate-500 mt-1">\u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0627\u0644\u0643\u0644\u064a\u0629</p>
+                  </CardBody>
+                </Card>
+                {/* الالتزام الكلي = تكلفة النقلات + 14% بلدية */}
+                <Card className="border bg-orange-50 border-orange-100">
+                  <CardBody className="text-center py-4">
+                    <p className="text-2xl mb-1">&#x1F4CA;</p>
+                    <p className="text-xl font-bold text-orange-700">{cfTotalObligation.toLocaleString()} \u20aa</p>
+                    <p className="text-xs text-slate-500 mt-0.5">\u0627\u0644\u062a\u0632\u0627\u0645 \u0643\u0644\u064a (\u062a\u0643\u0644\u0641\u0629 + 14% \u0628\u0644\u062f\u064a\u0629)</p>
+                    <p className="text-[10px] text-orange-400 mt-0.5">\u062a\u0643\u0644\u0641\u0629 \u0646\u0642\u0644\u0627\u062a: {Math.round(cfTotalCost).toLocaleString()} \u20aa</p>
+                  </CardBody>
+                </Card>
+                {/* محوّل فعلياً من المطالبات المغلقة */}
+                <Card className="border bg-teal-50 border-teal-100">
+                  <CardBody className="text-center py-4">
+                    <p className="text-2xl mb-1">&#x2705;</p>
+                    <p className="text-xl font-bold text-teal-700">{cfClosedStats.netPaid.toLocaleString()} \u20aa</p>
+                    <p className="text-xs text-slate-500 mt-0.5">\u0645\u062d\u0648\u0651\u0644 \u0641\u0639\u0644\u064a\u0627\u064b (\u062f\u0641\u0639\u0627\u062a \u0645\u063a\u0644\u0642\u0629)</p>
+                  </CardBody>
+                </Card>
+                {/* محتجز تأمينات — مؤجّل وليس مفقوداً */}
+                <Card className="border bg-amber-50 border-amber-100">
+                  <CardBody className="text-center py-4">
+                    <p className="text-2xl mb-1">&#x1F512;</p>
+                    <p className="text-xl font-bold text-amber-700">{cfClosedStats.retentionHeld.toLocaleString()} \u20aa</p>
+                    <p className="text-xs text-slate-500 mt-0.5">\u062d\u062c\u0632 \u062a\u0623\u0645\u064a\u0646\u0627\u062a (\u064a\u064f\u0631\u062f \u0639\u0646\u062f \u0627\u0644\u0625\u0646\u0647\u0627\u0621)</p>
+                  </CardBody>
+                </Card>
+                {/* فائض أو عجز متوقع */}
+                <Card className={'border ' + (cfGap !== null ? (cfGap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-violet-50 border-violet-100')}>
+                  <CardBody className="text-center py-4">
+                    <p className="text-2xl mb-1">{cfGap !== null ? (cfGap >= 0 ? '\ud83d\udfe2' : '\ud83d\udd34') : '\ud83d\udd2e'}</p>
+                    <p className={'text-xl font-bold ' + (cfGap !== null ? (cfGap >= 0 ? 'text-emerald-700' : 'text-red-700') : 'text-violet-700')}>
+                      {cfGap !== null ? Math.abs(Math.round(cfGap)).toLocaleString() + ' \u20aa' : Math.round(cfEstimatedTotalCost).toLocaleString() + ' \u20aa'}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">{cfGap !== null ? (cfGap >= 0 ? '\u0641\u0627\u0626\u0636 \u0645\u062a\u0648\u0642\u0639' : '\u0639\u062c\u0632 \u0645\u062a\u0648\u0642\u0639') : '\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629 (6 \u0623\u0634\u0647\u0631)'}</p>
+                  </CardBody>
+                </Card>
               </div>
 
               {/* ── بطاقات الأداء الشهري ── */}
@@ -2227,7 +2271,7 @@ export default function ReportsPage() {
                 <Card>
                   <CardHeader>
                     <h2 className="font-semibold text-slate-800 text-sm" ref={cfMainChartRef}>التكلفة الشهرية + التراكمي (تاريخي وتوقع)</h2>
-                    <p className="text-xs text-slate-400 mt-0.5">الأعمدة الصلبة = فعلي · الأعمدة المشطبة = توقع · الخط = تراكمي</p>
+                    <p className="text-xs text-slate-400 mt-0.5">الأعمدة = تكلفة النقلات · الخط البرتقالي = الالتزام الكلي (+14% بلدية) · الخط الأزرق = تراكمي</p>
                   </CardHeader>
                   <CardBody>
                     <ResponsiveContainer width="100%" height={280}>
@@ -2236,17 +2280,18 @@ export default function ReportsPage() {
                         <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                         <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                         <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
-                        <Tooltip formatter={(value) => [`${Math.round(Number(value ?? 0)).toLocaleString()} ₪`]} />
+                        <Tooltip formatter={(value) => [`${Math.round(Number(value ?? 0)).toLocaleString()} \u20aa`]} />
                         <Legend />
-                        <Bar yAxisId="left" dataKey="cost" name="تكلفة فعلية" fill="#f97316" radius={[3,3,0,0]} />
-                        <Bar yAxisId="left" dataKey="forecastCost" name="تكلفة متوقعة" fill="#fdba74" radius={[3,3,0,0]} />
-                        <Line yAxisId="right" type="monotone" dataKey="cumulative" name="تراكمي فعلي" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                        <Line yAxisId="right" type="monotone" dataKey="forecastCumulative" name="تراكمي متوقع" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                        <Bar yAxisId="left" dataKey="cost" name="\u062a\u0643\u0644\u0641\u0629 \u0641\u0639\u0644\u064a\u0629" fill="#f97316" radius={[3,3,0,0]} />
+                        <Bar yAxisId="left" dataKey="forecastCost" name="\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629" fill="#fdba74" radius={[3,3,0,0]} />
+                        <Line yAxisId="right" type="monotone" dataKey="cumulative" name="\u062a\u0631\u0627\u0643\u0645\u064a \u0641\u0639\u0644\u064a" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="obligCumulative" name="\u0627\u0644\u062a\u0632\u0627\u0645 \u062a\u0631\u0627\u0643\u0645\u064a (+14%)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 3" dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="forecastCumulative" name="\u062a\u0631\u0627\u0643\u0645\u064a \u0645\u062a\u0648\u0642\u0639" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                         {cfBudget > 0 && (
-                          <Line yAxisId="right" type="monotone" dataKey={() => cfBudget} name="الميزانية" stroke="#10b981" strokeWidth={1.5} strokeDasharray="8 4" dot={false} />
+                          <Line yAxisId="right" type="monotone" dataKey={() => cfBudget} name="\u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629" stroke="#10b981" strokeWidth={1.5} strokeDasharray="8 4" dot={false} />
                         )}
                         {cfTranchesReceived.some(Boolean) && (
-                          <Line yAxisId="right" type="stepAfter" dataKey="receivedBudget" name="مستلم من المموّل" stroke="#16a34a" strokeWidth={2} dot={false} />
+                          <Line yAxisId="right" type="stepAfter" dataKey="receivedBudget" name="\u0645\u0633\u062a\u0644\u0645 \u0645\u0646 \u0627\u0644\u0645\u0645\u0648\u0651\u0644" stroke="#16a34a" strokeWidth={2} dot={false} />
                         )}
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -2267,13 +2312,14 @@ export default function ReportsPage() {
                           <th className="text-center px-4 py-3 text-xs text-blue-400 font-semibold">💧 سائل</th>
                           <th className="text-center px-4 py-3 text-xs text-amber-500 font-semibold">🪨 جاف</th>
                           <th className="text-center px-4 py-3 text-xs text-orange-600 font-semibold">تكلفة الشهر</th>
+                          <th className="text-center px-4 py-3 text-xs text-amber-600 font-semibold">التزام (+14%)</th>
                           <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">تراكمي</th>
                           {cfBudget > 0 && <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">متبقي من الميزانية</th>}
                         </tr>
                       </thead>
                       <tbody>
                         {cfMonthlyHistory.map((m, i) => {
-                          const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
+                          const remaining = cfBudget > 0 ? cfBudget - m.obligCumulative : null
                           const isLow = remaining !== null && remaining < cfAvgMonthly.cost * 2
                           const isCurrentMonth = m.month === cfCurrentYM
                           return (
@@ -2286,6 +2332,7 @@ export default function ReportsPage() {
                               <td className="px-4 py-2.5 text-center text-blue-500">{m.liquid || '—'}</td>
                               <td className="px-4 py-2.5 text-center text-amber-600">{m.solid || '—'}</td>
                               <td className="px-4 py-2.5 text-center font-semibold text-orange-600">{Math.round(m.cost).toLocaleString()} ₪</td>
+                              <td className="px-4 py-2.5 text-center font-semibold text-amber-600">{m.obligCumulative > 0 ? Math.round(m.cost * (1 + CF_MUN_RATE)).toLocaleString() + ' ₪' : '—'}</td>
                               <td className="px-4 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
                               {cfBudget > 0 && (
                                 <td className={`px-4 py-2.5 text-center font-semibold ${isLow ? 'text-red-600' : 'text-emerald-600'}`}>
@@ -2303,8 +2350,9 @@ export default function ReportsPage() {
                           <td className="px-4 py-3 text-center text-blue-500">{cfTrips.filter((t: AnyData) => t.waste_type === 'liquid').length}</td>
                           <td className="px-4 py-3 text-center text-amber-600">{cfTrips.filter((t: AnyData) => t.waste_type === 'solid').length}</td>
                           <td className="px-4 py-3 text-center text-orange-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-amber-600 font-bold">{cfTotalObligation.toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-violet-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
-                          {cfBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(cfBudget - cfTotalCost).toLocaleString()} ₪</td>}
+                          {cfBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(cfBudget - cfTotalObligation).toLocaleString()} ₪</td>}
                         </tr>
                       </tfoot>
                     </table>
