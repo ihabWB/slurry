@@ -885,17 +885,19 @@ export default function ReportsPage() {
 
       // KPI summary table
       tbl([
-        hdrRow(['Indicator', 'Value']),
-        dataRow(['Total Project Budget', cfBudget > 0 ? `${fmt(cfBudget)} ₪` : 'Not Set']),
-        dataRow(['Total Cost Executed (All Time)', `${fmt(cfTotalCost)} ₪`]),
-        dataRow(['Total Disbursed (Closed Claims)', `${fmt(cfTotalDisbursed)} ₪`]),
-        dataRow(['Avg Monthly Cost (Last 3 Months)', `${fmt(cfAvgMonthly.cost)} ₪`]),
-        dataRow(['Avg Trips per Month (Last 3 Months)', `${cfAvgMonthly.trips} trips`]),
-        dataRow(['Avg Cost per Trip', cfAvgCostPerTrip > 0 ? `${fmt(cfAvgCostPerTrip)} ₪` : 'N/A']),
-        dataRow(['Months of Historical Data', `${cfMonthlyHistory.length} months`]),
+        hdrRow(['Indicator', 'Value', 'Notes']),
+        dataRow(['Total Project Budget', cfBudget > 0 ? `${fmt(cfBudget)} ₪` : 'Not Set', 'Configured in Settings']),
+        dataRow(['Raw Trip Cost (All Time)', `${fmt(cfTotalCost)} ₪`, 'Sum of all trip_cost values']),
+        dataRow(['Total Obligation incl. 14% Municipality', `${fmt(cfTotalObligation)} ₪`, 'Real budget consumption = trip cost × 1.14']),
+        dataRow(['Retention Held (Deferred)', cfClosedStats.retentionHeld > 0 ? `${fmt(cfClosedStats.retentionHeld)} ₪` : '0 ₪', 'Withheld from contractor, returned at project end']),
+        dataRow(['Net Paid to Contractor', `${fmt(cfClosedStats.netPaid)} ₪`, 'Actual cash transferred (closed claims)']),
+        dataRow(['Avg Monthly Obligation (Last 3 Months)', `${fmt(cfAvgMonthly.cost)} ₪`, 'Includes 14% municipality share']),
+        dataRow(['Avg Trips per Month (Last 3 Months)', `${cfAvgMonthly.trips} trips`, 'Based on completed months only']),
+        dataRow(['Avg Obligation per Trip', cfAvgCostPerTrip > 0 ? `${fmt(cfAvgCostPerTrip)} ₪` : 'N/A', 'cfTotalObligation ÷ priced trips']),
+        dataRow(['Months of Historical Data', `${cfMonthlyHistory.length} months`, `Current month (${cfCurrentYM}) is partial`]),
         ...(cfBudget > 0 ? [
-          dataRow(['Budget Remaining (Current)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`]),
-          dataRow(['% of Budget Spent', `${Math.min(100, Math.round(cfTotalCost / cfBudget * 100))}%`]),
+          dataRow(['Budget Remaining (vs Obligation)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, 'Budget minus total obligation to date']),
+          dataRow(['% of Budget Consumed (Obligation)', `${Math.min(100, Math.round(cfTotalObligation / cfBudget * 100))}%`, 'Based on obligation, not raw trip cost']),
         ] : []),
       ]),
       blank(),
@@ -908,8 +910,12 @@ export default function ReportsPage() {
         tbl([
           hdrRow(['Item', 'Amount (₪)', 'Notes']),
           dataRow(['Project Budget', `${fmt(cfBudget)} ₪`, 'Configured in Settings']),
-          dataRow(['Total Cost Executed', `${fmt(cfTotalCost)} ₪`, 'Sum of all trip costs']),
-          dataRow(['Total Disbursed', `${fmt(cfTotalDisbursed)} ₪`, 'Closed disbursement claims']),
+          dataRow(['Raw Trip Cost', `${fmt(cfTotalCost)} ₪`, 'Trip cost without municipality share']),
+          dataRow(['Total Obligation (Trip Cost + 14%)', `${fmt(cfTotalObligation)} ₪`, 'Actual budget consumption — used for all analysis']),
+          dataRow(['Municipality Share (14%)', `${fmt(cfTotalObligation - cfTotalCost)} ₪`, '14% paid to municipality on top of trip cost']),
+          dataRow(['Net Paid to Contractor', `${fmt(cfClosedStats.netPaid)} ₪`, 'Closed claims: actual cash transferred']),
+          dataRow(['Retention Held (Deferred)', `${fmt(cfClosedStats.retentionHeld)} ₪`, 'Withheld from contractor — returned at project end']),
+          dataRow(['Budget Consumed (Obligation)', `${Math.min(100, Math.round(cfTotalObligation / cfBudget * 100))}%`, `${fmt(cfTotalObligation)} ₪ of ${fmt(cfBudget)} ₪`]),
           dataRow(['Budget Remaining', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, `${Math.round(cfProjection2027.remainingBudgetNow / cfBudget * 100)}% of total`]),
         ]),
       ] : [p('No budget configured. Please set project_budget in Settings.', { color: 'EF4444' })]),
@@ -917,18 +923,20 @@ export default function ReportsPage() {
 
       // 3. Monthly Historical Data
       h1('3. Monthly Historical Performance'),
-      p(`Historical trip cost data aggregated by month. The current month (${cfCurrentYM}) is partial and excluded from forecasting averages.`),
+      p(`Historical trip cost data aggregated by month. The current month (${cfCurrentYM}) is partial and excluded from forecasting averages. Cumulative column reflects obligation = trip cost × 1.14 (includes 14% municipality share).`),
       blank(),
       tbl([
-        hdrRow(['Month', 'Trips', 'Liquid', 'Solid', 'Monthly Cost (₪)', 'Cumulative (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        hdrRow(['Month', 'Trips', 'Liquid', 'Solid', 'Raw Cost (₪)', 'Obligation +14% (₪)', 'Cumulative Obligation (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
         ...cfMonthlyHistory.map(m => {
+          const monthObligation = Math.round(m.cost * (1 + 0.14))
           const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
           return dataRow([
-            m.month + (m.month === cfCurrentYM ? ' (current)' : ''),
+            m.month + (m.month === cfCurrentYM ? ' (partial)' : ''),
             String(m.trips),
             String(m.liquid || 0),
             String(m.solid || 0),
             fmt(m.cost),
+            fmt(monthObligation),
             fmt(m.cumulative),
             ...(cfBudget > 0 && remaining !== null ? [fmt(remaining)] : []),
           ])
@@ -939,7 +947,8 @@ export default function ReportsPage() {
           String(cfTrips.filter((t: AnyData) => t.waste_type === 'liquid').length),
           String(cfTrips.filter((t: AnyData) => t.waste_type === 'solid').length),
           fmt(cfTotalCost),
-          fmt(cfTotalCost),
+          fmt(cfTotalObligation),
+          fmt(cfTotalObligation),
           ...(cfBudget > 0 ? [fmt(cfProjection2027.remainingBudgetNow)] : []),
         ]),
       ]),
@@ -953,10 +962,11 @@ export default function ReportsPage() {
 
       // 4. 6-Month Forecast
       h1('4. Six-Month Forecast'),
-      p(`Forecast scenario: ${cfScenario === 'full' ? 'Sa3ir Full (all trips long-distance)' : cfScenario === 'partial' ? 'Sa3ir Partial (extra long-distance trips added)' : 'Current average'}. Rate: ${fmt(cfAvgMonthly.trips)} trips/month at ${fmt(cfAvgMonthly.cost)} ₪/month.`),
+      p(`Forecast scenario: ${cfScenario === 'full' ? 'Sa3ir Full (all trips long-distance)' : cfScenario === 'partial' ? 'Sa3ir Partial (extra long-distance trips added)' : 'Current average'}. Rate: ${fmt(cfAvgMonthly.trips)} trips/month at ${fmt(cfAvgMonthly.cost)} ₪/month (obligation, incl. 14% municipality).`),
+      p(`Note: Cumulative starts from completed months (to end of ${cfMonthlyHistory.filter(m => m.month < cfCurrentYM).slice(-1)[0]?.month ?? 'N/A'}) plus a projected full-month estimate for the current partial month (${cfCurrentYM}), extrapolated from actual data so far.`),
       blank(),
       tbl([
-        hdrRow(['Month', 'Expected Trips', 'Expected Cost (₪)', 'Cumulative (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
+        hdrRow(['Month', 'Expected Trips', 'Expected Obligation (₪)', 'Cumulative Obligation (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
         ...cfForecast.map(m => {
           const isDeficit = cfBudget > 0 && m.cumulative > cfBudget
           const isWarning = cfBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
