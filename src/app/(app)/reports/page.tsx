@@ -544,10 +544,21 @@ export default function ReportsPage() {
 
   // توقعات 6 أشهر قادمة
   const cfForecast = useMemo(() => {
-    const lastCumulative = cfMonthlyHistory.length > 0 ? cfMonthlyHistory[cfMonthlyHistory.length - 1].cumulative : 0
-    let cumulative = lastCumulative
-    const results = []
     const now = new Date()
+    // التراكمي حتى نهاية آخر شهر مكتمل (استبعاد الشهر الجاري الجزئي)
+    const completedHistory = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
+    const completedCumulative = completedHistory.length > 0 ? completedHistory[completedHistory.length - 1].cumulative : 0
+    // تقدير الشهر الجاري حتى نهايته بناءً على نسبة الأيام المنقضية
+    const currentMonthEntry = cfMonthlyHistory.find(m => m.month === cfCurrentYM)
+    let estimatedCurrentMonth = cfAvgMonthly.cost // القيمة الافتراضية: المتوسط الشهري
+    if (currentMonthEntry && currentMonthEntry.cost > 0) {
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+      const dayOfMonth = now.getDate()
+      estimatedCurrentMonth = Math.round(currentMonthEntry.cost * (1 + CF_MUN_RATE) * daysInMonth / dayOfMonth)
+    }
+    // نقطة البداية = أشهر مكتملة + تقدير الشهر الجاري كاملاً
+    let cumulative = completedCumulative + estimatedCurrentMonth
+    const results = []
     for (let i = 1; i <= 6; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
       const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -563,7 +574,7 @@ export default function ReportsPage() {
       })
     }
     return results
-  }, [cfMonthlyHistory, cfAvgMonthly, cfBudget])
+  }, [cfMonthlyHistory, cfCurrentYM, cfAvgMonthly, cfBudget])
 
   // بيانات الرسم البياني (تاريخي + توقع)
   const cfChartData = useMemo(() => {
