@@ -507,13 +507,11 @@ export default function ReportsPage() {
       else if (t.waste_type === 'solid') map[mon].solid++
     })
     let cumulative = 0
-    let obligCumulative = 0
     return Object.entries(map)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, v]) => {
-        cumulative += v.cost
-        obligCumulative += v.cost * (1 + CF_MUN_RATE)
-        return { month, ...v, cumulative: +cumulative.toFixed(0), obligCumulative: +obligCumulative.toFixed(0), forecast: false }
+        cumulative += v.cost * (1 + CF_MUN_RATE)
+        return { month, ...v, cumulative: +cumulative.toFixed(0), forecast: false }
       })
   }, [cfTrips])
 
@@ -522,24 +520,25 @@ export default function ReportsPage() {
     const completedMonths = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
     const last3 = completedMonths.slice(-3)
     if (cfScenario === 'full') {
-      // سعير مفعّل كلياً: تجاهل التاريخ، كل النقلات بسعر سعير
-      const cost = cfSa3irTripsPerMonth * cfSa3irCostPerTrip
+      // سعير مفعّل كلياً: تجاهل التاريخ، كل النقلات بسعر سعير (+14% بلدية)
+      const cost = Math.round(cfSa3irTripsPerMonth * cfSa3irCostPerTrip * (1 + CF_MUN_RATE))
       return { trips: cfSa3irTripsPerMonth, cost }
     }
     if (last3.length === 0) {
       return { trips: 0, cost: 0 }
     }
     const baseTrips = Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length)
-    const baseCost = Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length)
+    const rawBaseCost = Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length)
+    const baseCost = Math.round(rawBaseCost * (1 + CF_MUN_RATE))
     if (cfScenario === 'partial') {
       // سعير جزئي: نفس عدد النقلات الإجمالي، X منها تحل محل نقلات عادية وتروح لسعير
-      const regularCostPerTrip = baseTrips > 0 ? baseCost / baseTrips : 0
+      const rawRegularCostPerTrip = baseTrips > 0 ? rawBaseCost / baseTrips : 0
       const sa3irTrips = Math.min(cfLongTripPerMonth, baseTrips)
       const regularTrips = baseTrips - sa3irTrips
-      const newCost = Math.round(regularTrips * regularCostPerTrip + sa3irTrips * cfLongTripCost)
+      const newCost = Math.round((regularTrips * rawRegularCostPerTrip + sa3irTrips * cfLongTripCost) * (1 + CF_MUN_RATE))
       return { trips: baseTrips, cost: newCost }
     }
-    // الوضع الحالي: متوسط تاريخي فقط
+    // الوضع الحالي: متوسط تاريخي × (1 + 14% بلدية)
     return { trips: baseTrips, cost: baseCost }
   }, [cfMonthlyHistory, cfCurrentYM, cfScenario, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
@@ -570,7 +569,7 @@ export default function ReportsPage() {
   const cfChartData = useMemo(() => {
     const rows = [
       ...cfMonthlyHistory.map(m => ({ ...m, forecastCost: null, forecastCumulative: null })),
-      ...cfForecast.map(m => ({ ...m, forecastCost: m.cost, forecastCumulative: m.cumulative, cost: null, cumulative: null, obligCumulative: null })),
+      ...cfForecast.map(m => ({ ...m, forecastCost: m.cost, forecastCumulative: m.cumulative, cost: null, cumulative: null })),
     ]
     return rows.map(r => {
       const received = BUDGET_TRANCHES.reduce(
@@ -597,15 +596,15 @@ export default function ReportsPage() {
   }, [cfDisbursements])
   const cfAvgCostPerTrip = useMemo(() => {
     const priced = cfTrips.filter((t: AnyData) => t.trip_cost)
-    return priced.length > 0 ? cfTotalCost / priced.length : 0
-  }, [cfTrips, cfTotalCost])
+    return priced.length > 0 ? cfTotalObligation / priced.length : 0
+  }, [cfTrips, cfTotalObligation])
   const cfEstimatedTotalCost = useMemo(() => {
     const lastForecast = cfForecast[cfForecast.length - 1]
-    return lastForecast ? lastForecast.cumulative : cfTotalCost
-  }, [cfForecast, cfTotalCost])
+    return lastForecast ? lastForecast.cumulative : cfTotalObligation
+  }, [cfForecast, cfTotalObligation])
   const cfGap = cfBudget > 0 ? cfBudget - cfEstimatedTotalCost : null
   const cfRunwayMonths = cfAvgMonthly.cost > 0 && cfBudget > 0
-    ? Math.max(0, Math.floor((cfBudget - cfTotalCost) / cfAvgMonthly.cost))
+    ? Math.max(0, Math.floor((cfBudget - cfTotalObligation) / cfAvgMonthly.cost))
     : null
 
   // توقع حتى نهاية 2027
@@ -613,10 +612,10 @@ export default function ReportsPage() {
     const now = new Date()
     const monthsRemaining = (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1))
     const months = Math.max(0, monthsRemaining)
-    const estimatedTotal = cfTotalCost + months * cfAvgMonthly.cost
+    const estimatedTotal = cfTotalObligation + months * cfAvgMonthly.cost
     const budgetRemaining2027 = cfBudget > 0 ? cfBudget - estimatedTotal : null
     const tripsToExhaust = cfAvgCostPerTrip > 0 && cfBudget > 0
-      ? Math.floor((cfBudget - cfTotalCost) / cfAvgCostPerTrip)
+      ? Math.floor((cfBudget - cfTotalObligation) / cfAvgCostPerTrip)
       : null
     const tripsPerMonthNeeded = tripsToExhaust !== null && months > 0
       ? Math.ceil(tripsToExhaust / months)
@@ -627,7 +626,7 @@ export default function ReportsPage() {
       : 0
     const volumeToExhaust = tripsToExhaust !== null && avgVol > 0 ? Math.round(tripsToExhaust * avgVol) : null
     // تاريخ نفاد التمويل بالمعدل الحالي
-    const remainingBudgetNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalCost) : 0
+    const remainingBudgetNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalObligation) : 0
     const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
     const monthsToExhaust = cfAvgMonthly.cost > 0 && cfBudget > 0 ? remainingBudgetNow / cfAvgMonthly.cost : null
     const exhaustionDateObj = monthsToExhaust !== null
@@ -656,17 +655,17 @@ export default function ReportsPage() {
       requiredMonthlyCost, requiredMonthlyTrips, costDiff, tripsDiff,
       remainingBudgetNow,
     }
-  }, [cfTotalCost, cfAvgMonthly, cfBudget, cfTrips, cfAvgCostPerTrip])
+  }, [cfTotalObligation, cfAvgMonthly, cfBudget, cfTrips, cfAvgCostPerTrip])
 
   // مقارنة سيناريو سعير الكامل لأغراض العرض الجانبي (A+C)
   const cfSa3irComparison = useMemo(() => {
     if (!cfSa3irTripsPerMonth || !cfSa3irCostPerTrip) return null
-    const sa3irMonthly = { trips: cfSa3irTripsPerMonth, cost: cfSa3irTripsPerMonth * cfSa3irCostPerTrip }
+    const sa3irMonthly = { trips: cfSa3irTripsPerMonth, cost: Math.round(cfSa3irTripsPerMonth * cfSa3irCostPerTrip * (1 + CF_MUN_RATE)) }
     const now = new Date()
     const monthsRemaining = Math.max(0, (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1)))
-    const estimatedTotal = cfTotalCost + monthsRemaining * sa3irMonthly.cost
+    const estimatedTotal = cfTotalObligation + monthsRemaining * sa3irMonthly.cost
     const budgetRemaining2027 = cfBudget > 0 ? cfBudget - estimatedTotal : null
-    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalCost) : 0
+    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalObligation) : 0
     const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
     const monthsToExhaust = sa3irMonthly.cost > 0 && cfBudget > 0 ? remainingNow / sa3irMonthly.cost : null
     const exhaustionDateObj = monthsToExhaust !== null
@@ -674,9 +673,9 @@ export default function ReportsPage() {
     const exhaustionDate = exhaustionDateObj
       ? `${arabicMonthNames[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}` : null
     const tripsToExhaust = cfSa3irCostPerTrip > 0 && cfBudget > 0
-      ? Math.floor(remainingNow / cfSa3irCostPerTrip) : null
+      ? Math.floor(remainingNow / Math.round(cfSa3irCostPerTrip * (1 + CF_MUN_RATE))) : null
     return { sa3irMonthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, monthsRemaining }
-  }, [cfTotalCost, cfBudget, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+  }, [cfTotalObligation, cfBudget, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
   // مقارنة شاملة للثلاث سيناريوهات (مستقل عن السيناريو المختار حالياً)
   const cfAllScenarios = useMemo(() => {
@@ -684,10 +683,10 @@ export default function ReportsPage() {
     const last3 = completedMonths.slice(-3)
     const now = new Date()
     const monthsRemaining = Math.max(0, (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1)))
-    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalCost) : 0
+    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalObligation) : 0
     const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
     const getMetrics = (monthly: { trips: number; cost: number }) => {
-      const estimatedTotal = Math.round(cfTotalCost + monthsRemaining * monthly.cost)
+      const estimatedTotal = Math.round(cfTotalObligation + monthsRemaining * monthly.cost)
       const budgetRemaining2027 = cfBudget > 0 ? Math.round(cfBudget - estimatedTotal) : null
       const monthsToExhaust = monthly.cost > 0 && cfBudget > 0 ? remainingNow / monthly.cost : null
       const exhaustionDateObj = monthsToExhaust !== null
@@ -702,30 +701,33 @@ export default function ReportsPage() {
     let baseTrips = 0, baseCost = 0, regularCostPerTrip = 0
     if (last3.length > 0) {
       baseTrips = Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length)
-      baseCost  = Math.round(last3.reduce((s, m) => s + m.cost,  0) / last3.length)
-      regularCostPerTrip = baseTrips > 0 ? baseCost / baseTrips : 0
+      // rawBaseCost = تكلفة النقلات الصافية (بدون بلدية) لحساب النسب
+      const rawBase = Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length)
+      baseCost = Math.round(rawBase * (1 + CF_MUN_RATE))
+      regularCostPerTrip = baseTrips > 0 ? rawBase / baseTrips : 0
     }
     const current = getMetrics({ trips: baseTrips, cost: baseCost })
     const sa3irTripsP = Math.min(cfLongTripPerMonth, baseTrips)
     const regularTripsP = baseTrips - sa3irTripsP
     const partialCost = cfLongTripPerMonth > 0 && cfLongTripCost > 0
-      ? Math.round(regularTripsP * regularCostPerTrip + sa3irTripsP * cfLongTripCost)
+      ? Math.round((regularTripsP * regularCostPerTrip + sa3irTripsP * cfLongTripCost) * (1 + CF_MUN_RATE))
       : baseCost
     const partial = getMetrics({ trips: baseTrips, cost: partialCost })
     const partialReady = cfLongTripPerMonth > 0 && cfLongTripCost > 0
-    const full = getMetrics({ trips: cfSa3irTripsPerMonth, cost: cfSa3irTripsPerMonth * cfSa3irCostPerTrip })
+    const full = getMetrics({ trips: cfSa3irTripsPerMonth, cost: Math.round(cfSa3irTripsPerMonth * cfSa3irCostPerTrip * (1 + CF_MUN_RATE)) })
     const fullReady = cfSa3irTripsPerMonth > 0 && cfSa3irCostPerTrip > 0
-    return { current, partial, partialReady, full, fullReady, regularCostPerTrip: Math.round(regularCostPerTrip) }
-  }, [cfMonthlyHistory, cfCurrentYM, cfBudget, cfTotalCost, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+    return { current, partial, partialReady, full, fullReady, regularCostPerTrip: Math.round(regularCostPerTrip * (1 + CF_MUN_RATE)) }
+  }, [cfMonthlyHistory, cfCurrentYM, cfBudget, cfTotalObligation, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
   const cfQuarterlyAnalysis = useMemo(() =>
     BUDGET_TRANCHES.map((t, i) => {
-      const actualCost = cfTrips
+      const rawCost = cfTrips
         .filter((trip: AnyData) => {
           const d: string = trip.trip_date ?? ''
           return d >= t.from && d <= t.to
         })
         .reduce((s: number, trip: AnyData) => s + Number(trip.trip_cost ?? 0), 0)
+      const actualCost = Math.round(rawCost * (1 + CF_MUN_RATE))
       const balance = (cfTranchesReceived[i] ? t.planned : 0) - actualCost
       return { label: t.label, planned: t.planned, actualCost, balance }
     })
@@ -2284,9 +2286,8 @@ export default function ReportsPage() {
                         <Legend />
                         <Bar yAxisId="left" dataKey="cost" name="تكلفة فعلية" fill="#f97316" radius={[3,3,0,0]} />
                         <Bar yAxisId="left" dataKey="forecastCost" name="تكلفة متوقعة" fill="#fdba74" radius={[3,3,0,0]} />
-                        <Line yAxisId="right" type="monotone" dataKey="cumulative" name="تراكمي فعلي" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                        <Line yAxisId="right" type="monotone" dataKey="obligCumulative" name="التزام تراكمي (+14%)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 3" dot={false} />
-                        <Line yAxisId="right" type="monotone" dataKey="forecastCumulative" name="تراكمي متوقع" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="cumulative" name="تراكمي الالتزام (تكلفة+14%)" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="forecastCumulative" name="تراكمي متوقع" stroke="#fdba74" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                         {cfBudget > 0 && (
                           <Line yAxisId="right" type="monotone" dataKey={() => cfBudget} name="الميزانية" stroke="#10b981" strokeWidth={1.5} strokeDasharray="8 4" dot={false} />
                         )}
@@ -2319,7 +2320,7 @@ export default function ReportsPage() {
                       </thead>
                       <tbody>
                         {cfMonthlyHistory.map((m, i) => {
-                          const remaining = cfBudget > 0 ? cfBudget - m.obligCumulative : null
+                          const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
                           const isLow = remaining !== null && remaining < cfAvgMonthly.cost * 2
                           const isCurrentMonth = m.month === cfCurrentYM
                           return (
@@ -2332,7 +2333,7 @@ export default function ReportsPage() {
                               <td className="px-4 py-2.5 text-center text-blue-500">{m.liquid || '—'}</td>
                               <td className="px-4 py-2.5 text-center text-amber-600">{m.solid || '—'}</td>
                               <td className="px-4 py-2.5 text-center font-semibold text-orange-600">{Math.round(m.cost).toLocaleString()} ₪</td>
-                              <td className="px-4 py-2.5 text-center font-semibold text-amber-600">{m.obligCumulative > 0 ? Math.round(m.cost * (1 + CF_MUN_RATE)).toLocaleString() + ' ₪' : '—'}</td>
+                              <td className="px-4 py-2.5 text-center font-semibold text-amber-600">{Math.round(m.cost * (1 + CF_MUN_RATE)).toLocaleString()} ₪</td>
                               <td className="px-4 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
                               {cfBudget > 0 && (
                                 <td className={`px-4 py-2.5 text-center font-semibold ${isLow ? 'text-red-600' : 'text-emerald-600'}`}>
@@ -2351,7 +2352,7 @@ export default function ReportsPage() {
                           <td className="px-4 py-3 text-center text-amber-600">{cfTrips.filter((t: AnyData) => t.waste_type === 'solid').length}</td>
                           <td className="px-4 py-3 text-center text-orange-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-amber-600 font-bold">{cfTotalObligation.toLocaleString()} ₪</td>
-                          <td className="px-4 py-3 text-center text-violet-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-violet-600 font-bold">{cfTotalObligation.toLocaleString()} ₪</td>
                           {cfBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(cfBudget - cfTotalObligation).toLocaleString()} ₪</td>}
                         </tr>
                       </tfoot>
