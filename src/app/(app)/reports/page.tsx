@@ -667,7 +667,7 @@ export default function ReportsPage() {
     const estimatedTotal = cfTotalCost + monthsRemaining * sa3irMonthly.cost
     const budgetRemaining2027 = cfBudget > 0 ? cfBudget - estimatedTotal : null
     const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalCost) : 0
-    const arabicMonthNames = ['\u064a\u0646\u0627\u064a\u0631','\u0641\u0628\u0631\u0627\u064a\u0631','\u0645\u0627\u0631\u0633','\u0623\u0628\u0631\u064a\u0644','\u0645\u0627\u064a\u0648','\u064a\u0648\u0646\u064a\u0648','\u064a\u0648\u0644\u064a\u0648','\u0623\u063a\u0633\u0637\u0633','\u0633\u0628\u062a\u0645\u0628\u0631','\u0623\u0643\u062a\u0648\u0628\u0631','\u0646\u0648\u0641\u0645\u0628\u0631','\u062f\u064a\u0633\u0645\u0628\u0631']
+    const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
     const monthsToExhaust = sa3irMonthly.cost > 0 && cfBudget > 0 ? remainingNow / sa3irMonthly.cost : null
     const exhaustionDateObj = monthsToExhaust !== null
       ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1) : null
@@ -1200,21 +1200,21 @@ export default function ReportsPage() {
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
-      '\u0627\u0644\u0634\u0647\u0631': m.month, '\u0639\u062f\u062f \u0627\u0644\u0646\u0642\u0644\u0627\u062a': m.trips,
-      '\u0633\u0627\u0626\u0644': m.liquid, '\u062c\u0627\u0641': m.solid,
-      '\u062a\u0643\u0644\u0641\u0629 \u0627\u0644\u0634\u0647\u0631 (\u20aa)': +m.cost.toFixed(0),
-      '\u062a\u0643\u0644\u0641\u0629 \u062a\u0631\u0627\u0643\u0645\u064a\u0629 (\u20aa)': m.cumulative,
+      'الشهر': m.month, 'عدد النقلات': m.trips,
+      'سائل': m.liquid, 'جاف': m.solid,
+      'تكلفة الشهر (₪)': +m.cost.toFixed(0),
+      'تكلفة تراكمية (₪)': m.cumulative,
     }))
     const foreRows = cfForecast.map(m => ({
-      '\u0627\u0644\u0634\u0647\u0631': m.month,
-      '\u0646\u0642\u0644\u0627\u062a \u0645\u062a\u0648\u0642\u0639\u0629': m.trips,
-      '\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629 (\u20aa)': m.cost,
-      '\u062a\u0631\u0627\u0643\u0645\u064a \u0645\u062a\u0648\u0642\u0639 (\u20aa)': m.cumulative,
-      '\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0645\u062a\u0628\u0642\u064a\u0629 (\u20aa)': m.budgetRemaining,
+      'الشهر': m.month,
+      'نقلات متوقعة': m.trips,
+      'تكلفة متوقعة (₪)': m.cost,
+      'تراكمي متوقع (₪)': m.cumulative,
+      'ميزانية متبقية (₪)': m.budgetRemaining,
     }))
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(histRows), '\u0627\u0644\u062a\u0627\u0631\u064a\u062e\u064a')
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(foreRows), '\u0627\u0644\u062a\u0648\u0642\u0639\u0627\u062a')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(histRows), 'التاريخي')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(foreRows), 'التوقعات')
     XLSX.writeFile(wb, 'cashflow-analysis.xlsx')
   }
 
@@ -2067,43 +2067,43 @@ export default function ReportsPage() {
                 <Card className="border bg-blue-50 border-blue-100">
                   <CardBody className="text-center py-4">
                     <p className="text-2xl mb-1">&#x1F4B0;</p>
-                    <p className="text-xl font-bold text-blue-700">{cfBudget > 0 ? cfBudget.toLocaleString() + ' \u20aa' : '\u063a\u064a\u0631 \u0645\u062d\u062f\u062f\u0629'}</p>
-                    <p className="text-xs text-slate-500 mt-1">\u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0627\u0644\u0643\u0644\u064a\u0629</p>
+                    <p className="text-xl font-bold text-blue-700">{cfBudget > 0 ? cfBudget.toLocaleString() + ' ₪' : 'غير محددة'}</p>
+                    <p className="text-xs text-slate-500 mt-1">الميزانية الكلية</p>
                   </CardBody>
                 </Card>
                 {/* الالتزام الكلي = تكلفة النقلات + 14% بلدية */}
                 <Card className="border bg-orange-50 border-orange-100">
                   <CardBody className="text-center py-4">
                     <p className="text-2xl mb-1">&#x1F4CA;</p>
-                    <p className="text-xl font-bold text-orange-700">{cfTotalObligation.toLocaleString()} \u20aa</p>
-                    <p className="text-xs text-slate-500 mt-0.5">\u0627\u0644\u062a\u0632\u0627\u0645 \u0643\u0644\u064a (\u062a\u0643\u0644\u0641\u0629 + 14% \u0628\u0644\u062f\u064a\u0629)</p>
-                    <p className="text-[10px] text-orange-400 mt-0.5">\u062a\u0643\u0644\u0641\u0629 \u0646\u0642\u0644\u0627\u062a: {Math.round(cfTotalCost).toLocaleString()} \u20aa</p>
+                    <p className="text-xl font-bold text-orange-700">{cfTotalObligation.toLocaleString()} ₪</p>
+                    <p className="text-xs text-slate-500 mt-0.5">التزام كلي (تكلفة + 14% بلدية)</p>
+                    <p className="text-[10px] text-orange-400 mt-0.5">تكلفة نقلات: {Math.round(cfTotalCost).toLocaleString()} ₪</p>
                   </CardBody>
                 </Card>
                 {/* محوّل فعلياً من المطالبات المغلقة */}
                 <Card className="border bg-teal-50 border-teal-100">
                   <CardBody className="text-center py-4">
                     <p className="text-2xl mb-1">&#x2705;</p>
-                    <p className="text-xl font-bold text-teal-700">{cfClosedStats.netPaid.toLocaleString()} \u20aa</p>
-                    <p className="text-xs text-slate-500 mt-0.5">\u0645\u062d\u0648\u0651\u0644 \u0641\u0639\u0644\u064a\u0627\u064b (\u062f\u0641\u0639\u0627\u062a \u0645\u063a\u0644\u0642\u0629)</p>
+                    <p className="text-xl font-bold text-teal-700">{cfClosedStats.netPaid.toLocaleString()} ₪</p>
+                    <p className="text-xs text-slate-500 mt-0.5">محوّل فعلياً (دفعات مغلقة)</p>
                   </CardBody>
                 </Card>
                 {/* محتجز تأمينات — مؤجّل وليس مفقوداً */}
                 <Card className="border bg-amber-50 border-amber-100">
                   <CardBody className="text-center py-4">
                     <p className="text-2xl mb-1">&#x1F512;</p>
-                    <p className="text-xl font-bold text-amber-700">{cfClosedStats.retentionHeld.toLocaleString()} \u20aa</p>
-                    <p className="text-xs text-slate-500 mt-0.5">\u062d\u062c\u0632 \u062a\u0623\u0645\u064a\u0646\u0627\u062a (\u064a\u064f\u0631\u062f \u0639\u0646\u062f \u0627\u0644\u0625\u0646\u0647\u0627\u0621)</p>
+                    <p className="text-xl font-bold text-amber-700">{cfClosedStats.retentionHeld.toLocaleString()} ₪</p>
+                    <p className="text-xs text-slate-500 mt-0.5">حجز تأمينات (يُرد عند الإنهاء)</p>
                   </CardBody>
                 </Card>
                 {/* فائض أو عجز متوقع */}
                 <Card className={'border ' + (cfGap !== null ? (cfGap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-violet-50 border-violet-100')}>
                   <CardBody className="text-center py-4">
-                    <p className="text-2xl mb-1">{cfGap !== null ? (cfGap >= 0 ? '\ud83d\udfe2' : '\ud83d\udd34') : '\ud83d\udd2e'}</p>
+                    <p className="text-2xl mb-1">{cfGap !== null ? (cfGap >= 0 ? '🟢' : '🔴') : '🔮'}</p>
                     <p className={'text-xl font-bold ' + (cfGap !== null ? (cfGap >= 0 ? 'text-emerald-700' : 'text-red-700') : 'text-violet-700')}>
-                      {cfGap !== null ? Math.abs(Math.round(cfGap)).toLocaleString() + ' \u20aa' : Math.round(cfEstimatedTotalCost).toLocaleString() + ' \u20aa'}
+                      {cfGap !== null ? Math.abs(Math.round(cfGap)).toLocaleString() + ' ₪' : Math.round(cfEstimatedTotalCost).toLocaleString() + ' ₪'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">{cfGap !== null ? (cfGap >= 0 ? '\u0641\u0627\u0626\u0636 \u0645\u062a\u0648\u0642\u0639' : '\u0639\u062c\u0632 \u0645\u062a\u0648\u0642\u0639') : '\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629 (6 \u0623\u0634\u0647\u0631)'}</p>
+                    <p className="text-xs text-slate-500 mt-1">{cfGap !== null ? (cfGap >= 0 ? 'فائض متوقع' : 'عجز متوقع') : 'تكلفة متوقعة (6 أشهر)'}</p>
                   </CardBody>
                 </Card>
               </div>
@@ -2280,18 +2280,18 @@ export default function ReportsPage() {
                         <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                         <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                         <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
-                        <Tooltip formatter={(value) => [`${Math.round(Number(value ?? 0)).toLocaleString()} \u20aa`]} />
+                        <Tooltip formatter={(value) => [`${Math.round(Number(value ?? 0)).toLocaleString()} ₪`]} />
                         <Legend />
-                        <Bar yAxisId="left" dataKey="cost" name="\u062a\u0643\u0644\u0641\u0629 \u0641\u0639\u0644\u064a\u0629" fill="#f97316" radius={[3,3,0,0]} />
-                        <Bar yAxisId="left" dataKey="forecastCost" name="\u062a\u0643\u0644\u0641\u0629 \u0645\u062a\u0648\u0642\u0639\u0629" fill="#fdba74" radius={[3,3,0,0]} />
-                        <Line yAxisId="right" type="monotone" dataKey="cumulative" name="\u062a\u0631\u0627\u0643\u0645\u064a \u0641\u0639\u0644\u064a" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                        <Line yAxisId="right" type="monotone" dataKey="obligCumulative" name="\u0627\u0644\u062a\u0632\u0627\u0645 \u062a\u0631\u0627\u0643\u0645\u064a (+14%)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 3" dot={false} />
-                        <Line yAxisId="right" type="monotone" dataKey="forecastCumulative" name="\u062a\u0631\u0627\u0643\u0645\u064a \u0645\u062a\u0648\u0642\u0639" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                        <Bar yAxisId="left" dataKey="cost" name="تكلفة فعلية" fill="#f97316" radius={[3,3,0,0]} />
+                        <Bar yAxisId="left" dataKey="forecastCost" name="تكلفة متوقعة" fill="#fdba74" radius={[3,3,0,0]} />
+                        <Line yAxisId="right" type="monotone" dataKey="cumulative" name="تراكمي فعلي" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="obligCumulative" name="التزام تراكمي (+14%)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 3" dot={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="forecastCumulative" name="تراكمي متوقع" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                         {cfBudget > 0 && (
-                          <Line yAxisId="right" type="monotone" dataKey={() => cfBudget} name="\u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629" stroke="#10b981" strokeWidth={1.5} strokeDasharray="8 4" dot={false} />
+                          <Line yAxisId="right" type="monotone" dataKey={() => cfBudget} name="الميزانية" stroke="#10b981" strokeWidth={1.5} strokeDasharray="8 4" dot={false} />
                         )}
                         {cfTranchesReceived.some(Boolean) && (
-                          <Line yAxisId="right" type="stepAfter" dataKey="receivedBudget" name="\u0645\u0633\u062a\u0644\u0645 \u0645\u0646 \u0627\u0644\u0645\u0645\u0648\u0651\u0644" stroke="#16a34a" strokeWidth={2} dot={false} />
+                          <Line yAxisId="right" type="stepAfter" dataKey="receivedBudget" name="مستلم من المموّل" stroke="#16a34a" strokeWidth={2} dot={false} />
                         )}
                       </ComposedChart>
                     </ResponsiveContainer>
