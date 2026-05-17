@@ -1164,29 +1164,87 @@ export default function ReportsPage() {
         blank(),
       ]),
 
-      // 6.4 Monthly projection per scenario (if data available)
-      ...(cfAllScenarios.partialReady || cfAllScenarios.fullReady ? [
-        h2('6.4 Monthly Cost Projection to December 2027 — توقعات التكلفة الشهرية لكل سيناريو'),
-        p(`Breakdown of projected monthly cost from now to December 2027. Past months show actual data; future months show the scenario-specific projected cost.`),
-        blank(),
-        tbl([
-          hdrRow([
-            'Month — الشهر',
-            'Type — النوع',
-            'Current — الحالي (₪)',
-            ...(cfAllScenarios.partialReady ? ['Partial Sa3ir — جزئي (₪)'] : []),
-            ...(cfAllScenarios.fullReady ? ['Full Sa3ir — كامل (₪)'] : []),
+      // 6.4 Per-scenario detailed monthly tables
+      ...((() => {
+        // Base cumulative for forecasts = completed months + projected current month (same logic as cfForecast)
+        const completedHist = cfMonthlyHistory.filter((m: { month: string }) => m.month < cfCurrentYM)
+        const completedCum = completedHist.length > 0 ? completedHist[completedHist.length - 1].cumulative : 0
+        const currentEntry = cfMonthlyHistory.find((m: { month: string }) => m.month === cfCurrentYM)
+        const daysInMon = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+        const estCurrentObligation = currentEntry && currentEntry.cost > 0
+          ? Math.round(currentEntry.cost * 1.14 * daysInMon / now.getDate())
+          : cfAvgMonthly.cost
+        const forecastBase = completedCum + estCurrentObligation
+
+        // All forecast months from next month to Dec 2027
+        const fMonths: string[] = []
+        for (let i = 1; ; i++) {
+          const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+          if (d.getFullYear() > 2027) break
+          fMonths.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+          if (d.getFullYear() === 2027 && d.getMonth() === 11) break
+        }
+
+        // Build a full monthly table for a given scenario rate
+        const scenarioTbl = (monthly: { trips: number; cost: number }) => {
+          const cols = ['Month', 'Type', 'Trips', 'Monthly Obligation (₪)', 'Cumulative Obligation (₪)',
+            ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]
+          const actRows = (cfMonthlyHistory as { month: string; trips: number; cost: number; cumulative: number }[]).map(m => dataRow([
+            m.month + (m.month === cfCurrentYM ? ' (partial)' : ''),
+            m.month === cfCurrentYM ? 'Partial' : 'Actual',
+            String(m.trips),
+            fmt(Math.round(m.cost * 1.14)),
+            fmt(m.cumulative),
+            ...(cfBudget > 0 ? [fmt(Math.max(0, cfBudget - m.cumulative))] : []),
+          ]))
+          let cum = forecastBase
+          const foreRows = fMonths.map(month => {
+            cum += monthly.cost
+            return dataRow([
+              month, 'Forecast', String(monthly.trips), fmt(monthly.cost),
+              fmt(Math.round(cum)),
+              ...(cfBudget > 0 ? [fmt(Math.max(0, cfBudget - cum))] : []),
+            ])
+          })
+          return tbl([hdrRow(cols), ...actRows, ...foreRows])
+        }
+
+        return [
+          h2('6.4 Detailed Monthly Projections per Scenario — جداول التوقعات التفصيلية لكل سيناريو'),
+          p('Each table shows historical actuals followed by scenario-specific monthly forecasts to December 2027. Cumulative = obligation (trip cost × 1.14 including 14% municipality share).'),
+          blank(),
+
+          // 6.4.A Current
+          h3('6.4.A Current Scenario (Baseline) — الوضع الحالي'),
+          p(`Rate: ${cfAllScenarios.current.monthly.trips} trips/month · ${fmt(cfAllScenarios.current.monthly.cost)} ₪/month obligation · avg ${fmt(cfAllScenarios.current.costPerTrip)} ₪/trip`),
+          scenarioTbl(cfAllScenarios.current.monthly),
+          blank(),
+
+          // 6.4.B Partial Sa3ir
+          ...(cfAllScenarios.partialReady ? [
+            h3('6.4.B Partial Sa3ir Scenario — سعير جزئي'),
+            p(`Rate: ${cfAllScenarios.partial.monthly.trips} trips/month (${Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} sa3ir @ ${fmt(cfLongTripCost)} ₪ + ${cfAllScenarios.current.monthly.trips - Math.min(cfLongTripPerMonth, cfAllScenarios.current.monthly.trips)} regular) · ${fmt(cfAllScenarios.partial.monthly.cost)} ₪/month obligation`),
+            scenarioTbl(cfAllScenarios.partial.monthly),
+            blank(),
+          ] : [
+            h3('6.4.B Partial Sa3ir Scenario — سعير جزئي (Not Configured)'),
+            p('Configure long_trip_per_month and long_trip_cost in Settings to enable this scenario.', { color: '94A3B8' }),
+            blank(),
           ]),
-          ...cf2027ChartData.map(row => dataRow([
-            row.month,
-            row.cost !== null ? 'Actual' : 'Forecast',
-            fmt(row.cost ?? cfAllScenarios.current.monthly.cost),
-            ...(cfAllScenarios.partialReady ? [row.cost !== null ? fmt(row.cost) : fmt(cfAllScenarios.partial.monthly.cost)] : []),
-            ...(cfAllScenarios.fullReady ? [row.cost !== null ? fmt(row.cost) : fmt(cfAllScenarios.full.monthly.cost)] : []),
-          ])),
-        ]),
-        blank(),
-      ] : []),
+
+          // 6.4.C Full Sa3ir
+          ...(cfAllScenarios.fullReady ? [
+            h3('6.4.C Full Sa3ir Scenario — سعير كامل'),
+            p(`Rate: ${cfSa3irTripsPerMonth} trips/month × ${fmt(cfSa3irCostPerTrip)} ₪/trip · ${fmt(cfAllScenarios.full.monthly.cost)} ₪/month obligation (incl. 14%)`),
+            scenarioTbl(cfAllScenarios.full.monthly),
+            blank(),
+          ] : [
+            h3('6.4.C Full Sa3ir Scenario — سعير كامل (Not Configured)'),
+            p('Configure sa3ir_trips_per_month and sa3ir_cost_per_trip in Settings to enable this scenario.', { color: '94A3B8' }),
+            blank(),
+          ]),
+        ]
+      })()),
 
       // Footer
       new Paragraph({
