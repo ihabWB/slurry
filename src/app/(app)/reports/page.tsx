@@ -515,32 +515,71 @@ export default function ReportsPage() {
       })
   }, [cfTrips])
 
-  // متوسط آخر 3 أشهر للتوقع (باستثناء الشهر الجاري غير المكتمل)
+  // ── Unit costs محسوبة من كل التاريخ المسعَّر (أكثر استقراراً إحصائياً) ──
+  const cfUnitCosts = useMemo(() => {
+    const pricedLiquid = cfTrips.filter((t: AnyData) => t.waste_type === 'liquid' && t.trip_cost)
+    const pricedSolid  = cfTrips.filter((t: AnyData) => t.waste_type === 'solid'  && t.trip_cost)
+    const ucLiquid = pricedLiquid.length > 0
+      ? pricedLiquid.reduce((s: number, t: AnyData) => s + Number(t.trip_cost), 0) / pricedLiquid.length
+      : 0
+    const ucSolid = pricedSolid.length > 0
+      ? pricedSolid.reduce((s: number, t: AnyData) => s + Number(t.trip_cost), 0) / pricedSolid.length
+      : 0
+    return { ucLiquid: Math.round(ucLiquid), ucSolid: Math.round(ucSolid) }
+  }, [cfTrips])
+
+  // متوسط آخر 3 أشهر للتوقع — مقسَّم سائل/جاف مع unit cost منفصل لكل نوع
   const cfAvgMonthly = useMemo(() => {
     const completedMonths = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
     const last3 = completedMonths.slice(-3)
+    const { ucLiquid, ucSolid } = cfUnitCosts
+
     if (cfScenario === 'full') {
-      // سعير مفعّل كلياً: تجاهل التاريخ، كل النقلات بسعر سعير (+14% بلدية)
+      // سعير كامل: كل النقلات بسعر سعير — توزيع سائل/جاف من نسبة آخر 3 أشهر
+      const totalLast3 = last3.reduce((s, m) => s + m.trips, 0)
+      const liquidLast3 = last3.reduce((s, m) => s + m.liquid, 0)
+      const liquidRatio = totalLast3 > 0 ? liquidLast3 / totalLast3 : 0.7
+      const liquid = Math.round(cfSa3irTripsPerMonth * liquidRatio)
+      const solid  = cfSa3irTripsPerMonth - liquid
       const cost = Math.round(cfSa3irTripsPerMonth * cfSa3irCostPerTrip * (1 + CF_MUN_RATE))
-      return { trips: cfSa3irTripsPerMonth, cost }
+      const liquidCost = Math.round(liquid * cfSa3irCostPerTrip * (1 + CF_MUN_RATE))
+      const solidCost  = cost - liquidCost
+      return { trips: cfSa3irTripsPerMonth, liquid, solid, cost, liquidCost, solidCost, ucLiquid: Math.round(cfSa3irCostPerTrip), ucSolid: Math.round(cfSa3irCostPerTrip) }
     }
+
     if (last3.length === 0) {
-      return { trips: 0, cost: 0 }
+      return { trips: 0, liquid: 0, solid: 0, cost: 0, liquidCost: 0, solidCost: 0, ucLiquid, ucSolid }
     }
-    const baseTrips = Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length)
-    const rawBaseCost = Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length)
-    const baseCost = Math.round(rawBaseCost * (1 + CF_MUN_RATE))
+
+    // عدد النقلات من آخر 3 أشهر (الطلب الحالي)
+    const avgLiquid = last3.reduce((s, m) => s + m.liquid, 0) / last3.length
+    const avgSolid  = last3.reduce((s, m) => s + m.solid,  0) / last3.length
+    const liquid = Math.round(avgLiquid)
+    const solid  = Math.round(avgSolid)
+    const baseTrips = liquid + solid
+
     if (cfScenario === 'partial') {
-      // سعير جزئي: نفس عدد النقلات الإجمالي، X منها تحل محل نقلات عادية وتروح لسعير
-      const rawRegularCostPerTrip = baseTrips > 0 ? rawBaseCost / baseTrips : 0
-      const sa3irTrips = Math.min(cfLongTripPerMonth, baseTrips)
+      // سعير جزئي: X نقلة تُستبدل بسعر سعير، الباقي بـ unit cost العادي (بنسبة سائل/جاف الحالية)
+      const sa3irTrips   = Math.min(cfLongTripPerMonth, baseTrips)
       const regularTrips = baseTrips - sa3irTrips
-      const newCost = Math.round((regularTrips * rawRegularCostPerTrip + sa3irTrips * cfLongTripCost) * (1 + CF_MUN_RATE))
-      return { trips: baseTrips, cost: newCost }
+      // توزيع نقلات سعير بنسبة سائل/جاف من last3
+      const liquidRatio = baseTrips > 0 ? liquid / baseTrips : 0.7
+      const sa3irLiquid   = Math.round(sa3irTrips * liquidRatio)
+      const sa3irSolid    = sa3irTrips - sa3irLiquid
+      const regularLiquid = liquid - sa3irLiquid
+      const regularSolid  = solid - sa3irSolid
+      const liquidCost = Math.round((regularLiquid * ucLiquid + sa3irLiquid * cfLongTripCost) * (1 + CF_MUN_RATE))
+      const solidCost  = Math.round((regularSolid  * ucSolid  + sa3irSolid  * cfLongTripCost) * (1 + CF_MUN_RATE))
+      const cost = liquidCost + solidCost
+      return { trips: baseTrips, liquid, solid, cost, liquidCost, solidCost, ucLiquid, ucSolid }
     }
-    // الوضع الحالي: متوسط تاريخي × (1 + 14% بلدية)
-    return { trips: baseTrips, cost: baseCost }
-  }, [cfMonthlyHistory, cfCurrentYM, cfScenario, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+
+    // الوضع الحالي: unit cost التاريخي × عدد النقلات × (1 + 14%)
+    const liquidCost = Math.round(liquid * ucLiquid * (1 + CF_MUN_RATE))
+    const solidCost  = Math.round(solid  * ucSolid  * (1 + CF_MUN_RATE))
+    const cost = liquidCost + solidCost
+    return { trips: baseTrips, liquid, solid, cost, liquidCost, solidCost, ucLiquid, ucSolid }
+  }, [cfMonthlyHistory, cfCurrentYM, cfUnitCosts, cfScenario, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
   // توقعات 6 أشهر قادمة
   const cfForecast = useMemo(() => {
@@ -566,8 +605,13 @@ export default function ReportsPage() {
       results.push({
         month,
         trips: cfAvgMonthly.trips,
+        liquid: cfAvgMonthly.liquid,
+        solid: cfAvgMonthly.solid,
         cost: cfAvgMonthly.cost,
-        liquid: 0, solid: 0,
+        liquidCost: cfAvgMonthly.liquidCost,
+        solidCost: cfAvgMonthly.solidCost,
+        ucLiquid: cfAvgMonthly.ucLiquid,
+        ucSolid: cfAvgMonthly.ucSolid,
         cumulative: Math.round(cumulative),
         forecast: true,
         budgetRemaining: Math.max(0, cfBudget - cumulative),
@@ -2666,18 +2710,32 @@ export default function ReportsPage() {
                     <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
                       <TrendingDown size={15} className="text-violet-600" /> توقعات الصرف — 6 أشهر قادمة
                     </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">مبني على متوسط آخر 3 أشهر كاملة: {Math.round(cfAvgMonthly.trips)} نقلة/شهر · {Math.round(cfAvgMonthly.cost).toLocaleString()} ₪/شهر{cfLongTripPerMonth > 0 ? ` (منها ${cfLongTripPerMonth} نقلة > 7 كم · +${(cfLongTripPerMonth * cfLongTripCost).toLocaleString()} ₪)` : ''}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      مبني على متوسط آخر 3 أشهر كاملة ·
+                      سائل: <span className="text-blue-600 font-medium">{cfAvgMonthly.liquid} نقلة × {cfAvgMonthly.ucLiquid.toLocaleString()} ₪</span> ·
+                      جاف: <span className="text-amber-600 font-medium">{cfAvgMonthly.solid} نقلة × {cfAvgMonthly.ucSolid.toLocaleString()} ₪</span> ·
+                      الإجمالي <span className="text-violet-600 font-medium">{cfAvgMonthly.cost.toLocaleString()} ₪/شهر</span> (+14%)
+                    </p>
                   </CardHeader>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-violet-50 border-b border-violet-100">
-                          <th className="text-right px-4 py-3 text-xs text-violet-600 font-semibold">الشهر</th>
-                          <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">نقلات متوقعة</th>
-                          <th className="text-center px-4 py-3 text-xs text-orange-500 font-semibold">تكلفة متوقعة</th>
-                          <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">تراكمي متوقع</th>
-                          {cfBudget > 0 && <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">ميزانية متبقية</th>}
-                          {cfBudget > 0 && <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">الحالة</th>}
+                          <th className="text-right px-3 py-3 text-xs text-violet-600 font-semibold" rowSpan={2}>الشهر</th>
+                          <th className="text-center px-2 py-1.5 text-xs text-blue-600 font-semibold border-b border-blue-100 bg-blue-50/60" colSpan={3}>سائل 💧</th>
+                          <th className="text-center px-2 py-1.5 text-xs text-amber-600 font-semibold border-b border-amber-100 bg-amber-50/60" colSpan={3}>جاف 🪨</th>
+                          <th className="text-center px-3 py-3 text-xs text-violet-700 font-semibold bg-violet-50" rowSpan={2}>إجمالي الالتزام<br/><span className="font-normal text-violet-400">(+14%)</span></th>
+                          <th className="text-center px-3 py-3 text-xs text-violet-600 font-semibold" rowSpan={2}>تراكمي</th>
+                          {cfBudget > 0 && <th className="text-center px-3 py-3 text-xs text-emerald-600 font-semibold" rowSpan={2}>ميزانية متبقية</th>}
+                          {cfBudget > 0 && <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold" rowSpan={2}>الحالة</th>}
+                        </tr>
+                        <tr className="border-b border-violet-100">
+                          <th className="text-center px-2 py-1.5 text-xs text-blue-500 font-medium bg-blue-50/40">نقلات</th>
+                          <th className="text-center px-2 py-1.5 text-xs text-blue-500 font-medium bg-blue-50/40">unit cost</th>
+                          <th className="text-center px-2 py-1.5 text-xs text-blue-500 font-medium bg-blue-50/40">تكلفة</th>
+                          <th className="text-center px-2 py-1.5 text-xs text-amber-500 font-medium bg-amber-50/40">نقلات</th>
+                          <th className="text-center px-2 py-1.5 text-xs text-amber-500 font-medium bg-amber-50/40">unit cost</th>
+                          <th className="text-center px-2 py-1.5 text-xs text-amber-500 font-medium bg-amber-50/40">تكلفة</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2686,17 +2744,22 @@ export default function ReportsPage() {
                           const isWarning = cfBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
                           return (
                             <tr key={m.month} className={`border-b border-slate-50 ${isDeficit ? 'bg-red-50/60' : isWarning ? 'bg-amber-50/40' : i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
-                              <td className="px-4 py-2.5 font-medium text-slate-600">{m.month}</td>
-                              <td className="px-4 py-2.5 text-center text-blue-600 font-semibold">{m.trips}</td>
-                              <td className="px-4 py-2.5 text-center text-orange-600 font-semibold">{Math.round(m.cost).toLocaleString()} ₪</td>
-                              <td className="px-4 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
+                              <td className="px-3 py-2.5 font-medium text-slate-600 whitespace-nowrap">{m.month}</td>
+                              <td className="px-2 py-2.5 text-center text-blue-600 font-semibold">{m.liquid}</td>
+                              <td className="px-2 py-2.5 text-center text-blue-400 text-xs">{m.ucLiquid.toLocaleString()} ₪</td>
+                              <td className="px-2 py-2.5 text-center text-blue-700 font-medium">{m.liquidCost.toLocaleString()} ₪</td>
+                              <td className="px-2 py-2.5 text-center text-amber-600 font-semibold">{m.solid}</td>
+                              <td className="px-2 py-2.5 text-center text-amber-400 text-xs">{m.ucSolid.toLocaleString()} ₪</td>
+                              <td className="px-2 py-2.5 text-center text-amber-700 font-medium">{m.solidCost.toLocaleString()} ₪</td>
+                              <td className="px-3 py-2.5 text-center text-orange-600 font-bold">{Math.round(m.cost).toLocaleString()} ₪</td>
+                              <td className="px-3 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
                               {cfBudget > 0 && (
-                                <td className={`px-4 py-2.5 text-center font-semibold ${isDeficit ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                <td className={`px-3 py-2.5 text-center font-semibold ${isDeficit ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
                                   {isDeficit ? `−${Math.round(m.cumulative - cfBudget).toLocaleString()} ₪` : `${Math.round(m.budgetRemaining).toLocaleString()} ₪`}
                                 </td>
                               )}
                               {cfBudget > 0 && (
-                                <td className="px-4 py-2.5 text-center">
+                                <td className="px-3 py-2.5 text-center">
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isDeficit ? 'bg-red-100 text-red-700' : isWarning ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                     {isDeficit ? '🔴 عجز' : isWarning ? '🟡 تحذير' : '🟢 كافية'}
                                   </span>
