@@ -471,6 +471,7 @@ export default function ReportsPage() {
   const [cfScenario, setCfScenario] = useState<'current' | 'partial' | 'full'>('current')
   const [cfSa3irTripsPerMonth, setCfSa3irTripsPerMonth] = useState(0)
   const [cfSa3irCostPerTrip, setCfSa3irCostPerTrip] = useState(0)
+  const [cfSmoothingAlpha, setCfSmoothingAlpha] = useState(0.6) // معامل EWMA
   const cfMainChartRef = useRef<HTMLDivElement>(null)
   const cf2027ChartRef = useRef<HTMLDivElement>(null)
 
@@ -486,6 +487,9 @@ export default function ReportsPage() {
       setCfDisbursements(disbs || [])
       const budgetSetting = settings.find((s: AnyData) => s.key === 'project_budget')
       setCfBudget(Number(budgetSetting?.value ?? 0))
+      const alphaSetting = settings.find((s: AnyData) => s.key === 'forecast_smoothing_alpha')
+      const alpha = parseFloat(alphaSetting?.value ?? '0.6')
+      setCfSmoothingAlpha(isNaN(alpha) || alpha < 0.1 || alpha > 0.9 ? 0.6 : alpha)
       setCfLoaded(true)
     } catch (e) { console.error(e) }
     finally { setCfLoading(false) }
@@ -515,6 +519,14 @@ export default function ReportsPage() {
       })
   }, [cfTrips])
 
+  // ── EWMA helper: يطبّق الوزن التنازلي على مصفوفة من الأقدم للأحدث ──
+  // يعيد قيمة واحدة ممثّلة للمعدل الشهري الممَهّد
+  const ewma = useCallback((values: number[], alpha: number): number => {
+    if (values.length === 0) return 0
+    // S_1 = values[0], S_n = alpha*values[n] + (1-alpha)*S_{n-1}
+    return values.reduce((s, v) => alpha * v + (1 - alpha) * s)
+  }, [])
+
   // ── Unit costs محسوبة من كل التاريخ المسعَّر (أكثر استقراراً إحصائياً) ──
   const cfUnitCosts = useMemo(() => {
     const pricedLiquid = cfTrips.filter((t: AnyData) => t.waste_type === 'liquid' && t.trip_cost)
@@ -528,58 +540,56 @@ export default function ReportsPage() {
     return { ucLiquid: Math.round(ucLiquid), ucSolid: Math.round(ucSolid) }
   }, [cfTrips])
 
-  // متوسط آخر 3 أشهر للتوقع — مقسَّم سائل/جاف مع unit cost منفصل لكل نوع
+  // متوسط EWMA مقسَّم سائل/جاف — كل الأشهر مع ترجيح الأحدث
   const cfAvgMonthly = useMemo(() => {
     const completedMonths = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
-    const last3 = completedMonths.slice(-3)
     const { ucLiquid, ucSolid } = cfUnitCosts
+    const alpha = cfSmoothingAlpha
 
     if (cfScenario === 'full') {
-      // سعير كامل: كل النقلات بسعر سعير — توزيع سائل/جاف من نسبة آخر 3 أشهر
-      const totalLast3 = last3.reduce((s, m) => s + m.trips, 0)
-      const liquidLast3 = last3.reduce((s, m) => s + m.liquid, 0)
-      const liquidRatio = totalLast3 > 0 ? liquidLast3 / totalLast3 : 0.7
+      // سعير كامل: توزيع سائل/جاف من EWMA على كل التاريخ
+      const liquidRatio = completedMonths.length > 0
+        ? (() => { const lq = ewma(completedMonths.map(m => m.liquid), alpha); const tot = ewma(completedMonths.map(m => m.trips), alpha); return tot > 0 ? lq / tot : 0.7 })()
+        : 0.7
       const liquid = Math.round(cfSa3irTripsPerMonth * liquidRatio)
       const solid  = cfSa3irTripsPerMonth - liquid
       const cost = Math.round(cfSa3irTripsPerMonth * cfSa3irCostPerTrip * (1 + CF_MUN_RATE))
       const liquidCost = Math.round(liquid * cfSa3irCostPerTrip * (1 + CF_MUN_RATE))
       const solidCost  = cost - liquidCost
-      return { trips: cfSa3irTripsPerMonth, liquid, solid, cost, liquidCost, solidCost, ucLiquid: Math.round(cfSa3irCostPerTrip), ucSolid: Math.round(cfSa3irCostPerTrip) }
+      const weights = completedMonths.map((_, i, arr) => Math.round(alpha * (1 - alpha) ** (arr.length - 1 - i) * 100))
+      return { trips: cfSa3irTripsPerMonth, liquid, solid, cost, liquidCost, solidCost, ucLiquid: Math.round(cfSa3irCostPerTrip), ucSolid: Math.round(cfSa3irCostPerTrip), weights }
     }
 
-    if (last3.length === 0) {
-      return { trips: 0, liquid: 0, solid: 0, cost: 0, liquidCost: 0, solidCost: 0, ucLiquid, ucSolid }
+    if (completedMonths.length === 0) {
+      return { trips: 0, liquid: 0, solid: 0, cost: 0, liquidCost: 0, solidCost: 0, ucLiquid, ucSolid, weights: [] }
     }
 
-    // عدد النقلات من آخر 3 أشهر (الطلب الحالي)
-    const avgLiquid = last3.reduce((s, m) => s + m.liquid, 0) / last3.length
-    const avgSolid  = last3.reduce((s, m) => s + m.solid,  0) / last3.length
-    const liquid = Math.round(avgLiquid)
-    const solid  = Math.round(avgSolid)
+    // EWMA على كل الأشهر — الأحدث يأخذ وزناً أعلى تلقائياً
+    const liquid = Math.max(0, Math.round(ewma(completedMonths.map(m => m.liquid), alpha)))
+    const solid  = Math.max(0, Math.round(ewma(completedMonths.map(m => m.solid),  alpha)))
     const baseTrips = liquid + solid
+    // حساب الأوزان للعرض (من الأقدم للأحدث)
+    const weights = completedMonths.map((_, i, arr) => Math.round(alpha * (1 - alpha) ** (arr.length - 1 - i) * 100))
 
     if (cfScenario === 'partial') {
-      // سعير جزئي: X نقلة تُستبدل بسعر سعير، الباقي بـ unit cost العادي (بنسبة سائل/جاف الحالية)
       const sa3irTrips   = Math.min(cfLongTripPerMonth, baseTrips)
-      const regularTrips = baseTrips - sa3irTrips
-      // توزيع نقلات سعير بنسبة سائل/جاف من last3
-      const liquidRatio = baseTrips > 0 ? liquid / baseTrips : 0.7
-      const sa3irLiquid   = Math.round(sa3irTrips * liquidRatio)
-      const sa3irSolid    = sa3irTrips - sa3irLiquid
+      const liquidRatio  = baseTrips > 0 ? liquid / baseTrips : 0.7
+      const sa3irLiquid  = Math.round(sa3irTrips * liquidRatio)
+      const sa3irSolid   = sa3irTrips - sa3irLiquid
       const regularLiquid = liquid - sa3irLiquid
-      const regularSolid  = solid - sa3irSolid
+      const regularSolid  = solid  - sa3irSolid
       const liquidCost = Math.round((regularLiquid * ucLiquid + sa3irLiquid * cfLongTripCost) * (1 + CF_MUN_RATE))
       const solidCost  = Math.round((regularSolid  * ucSolid  + sa3irSolid  * cfLongTripCost) * (1 + CF_MUN_RATE))
       const cost = liquidCost + solidCost
-      return { trips: baseTrips, liquid, solid, cost, liquidCost, solidCost, ucLiquid, ucSolid }
+      return { trips: baseTrips, liquid, solid, cost, liquidCost, solidCost, ucLiquid, ucSolid, weights }
     }
 
-    // الوضع الحالي: unit cost التاريخي × عدد النقلات × (1 + 14%)
+    // الوضع الحالي
     const liquidCost = Math.round(liquid * ucLiquid * (1 + CF_MUN_RATE))
     const solidCost  = Math.round(solid  * ucSolid  * (1 + CF_MUN_RATE))
     const cost = liquidCost + solidCost
-    return { trips: baseTrips, liquid, solid, cost, liquidCost, solidCost, ucLiquid, ucSolid }
-  }, [cfMonthlyHistory, cfCurrentYM, cfUnitCosts, cfScenario, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+    return { trips: baseTrips, liquid, solid, cost, liquidCost, solidCost, ucLiquid, ucSolid, weights }
+  }, [cfMonthlyHistory, cfCurrentYM, cfUnitCosts, cfSmoothingAlpha, cfScenario, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip, ewma])
 
   // توقعات 6 أشهر قادمة
   const cfForecast = useMemo(() => {
@@ -2711,7 +2721,14 @@ export default function ReportsPage() {
                       <TrendingDown size={15} className="text-violet-600" /> توقعات الصرف — 6 أشهر قادمة
                     </h2>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      مبني على متوسط آخر 3 أشهر كاملة ·
+                      مبني على EWMA (α={cfSmoothingAlpha}) — كل الأشهر مع ترجيح الأحدث ·
+                      {cfAvgMonthly.weights.length > 0 && (
+                        <span className="font-mono mr-1">
+                          {cfAvgMonthly.weights.slice().reverse().map((w, i) => (
+                            <span key={i} className="mx-0.5">{`شهر-${i + 1}: ${w}%`}</span>
+                          ))}
+                        </span>
+                      )} ·
                       سائل: <span className="text-blue-600 font-medium">{cfAvgMonthly.liquid} نقلة × {cfAvgMonthly.ucLiquid.toLocaleString()} ₪</span> ·
                       جاف: <span className="text-amber-600 font-medium">{cfAvgMonthly.solid} نقلة × {cfAvgMonthly.ucSolid.toLocaleString()} ₪</span> ·
                       الإجمالي <span className="text-violet-600 font-medium">{cfAvgMonthly.cost.toLocaleString()} ₪/شهر</span> (+14%)

@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useRouter } from 'next/navigation'
-import { Settings, DollarSign, Truck, Save, RefreshCw, Info, PiggyBank, ShieldCheck, Banknote } from 'lucide-react'
+import { Settings, DollarSign, Truck, Save, RefreshCw, Info, PiggyBank, ShieldCheck, Banknote, TrendingUp } from 'lucide-react'
 import { getPricingRules, updatePricingRule, getSettings, updateSetting } from '@/lib/api'
 import type { PricingRule, AppSetting } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -257,6 +257,71 @@ export default function SettingsPage() {
             <p className="text-sm text-amber-600 bg-amber-50 border border-amber-100 rounded-xl p-3">
               ⚠️ شغّل{' '}
               <code className="bg-amber-100 px-1 rounded font-mono text-xs">add_disbursement_retention.sql</code>
+              {' '}في Supabase SQL Editor أولاً.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* معامل التمهيد للتوقع EWMA */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <TrendingUp size={16} className="text-sky-600" /> معامل التمهيد للتوقع (EWMA)
+          </h2>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 flex items-start gap-3">
+            <Info size={16} className="text-sky-500 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-sky-700 space-y-1">
+              <p>معامل α يتحكم في وزن الأشهر عند حساب التوقع — الأشهر الأحدث تأخذ وزناً أعلى.</p>
+              <p className="font-mono text-xs bg-sky-100 rounded px-2 py-1 inline-block">
+                α=0.6 → أحدث شهر: 60% · قبله: 24% · قبله: 9.6%
+              </p>
+              <p className="text-sky-600 text-xs">نطاق مقبول: 0.3 (تمهيد قوي) إلى 0.9 (تركيز على الأحدث)</p>
+            </div>
+          </div>
+          {settings.filter(s => s.key === 'forecast_smoothing_alpha').map(s => (
+            <div key={s.key} className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="text-sm font-medium text-slate-700 block mb-1">معامل α</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={0.1}
+                    max={0.9}
+                    step={0.05}
+                    value={editedSettings[s.key] ?? s.value}
+                    onChange={e => setEditedSettings(prev => ({ ...prev, [s.key]: e.target.value }))}
+                    className="w-24 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    dir="ltr"
+                  />
+                  {(() => {
+                    const a = parseFloat(editedSettings[s.key] ?? s.value)
+                    if (isNaN(a)) return null
+                    const w1 = Math.round(a * 100)
+                    const w2 = Math.round(a * (1 - a) * 100)
+                    const w3 = Math.round(a * (1 - a) ** 2 * 100)
+                    return (
+                      <span className="text-xs text-sky-700 bg-sky-50 border border-sky-100 px-3 py-1.5 rounded-lg font-mono">
+                        شهر-1: {w1}% · شهر-2: {w2}% · شهر-3: {w3}%
+                      </span>
+                    )
+                  })()}
+                </div>
+              </div>
+              <button
+                onClick={() => saveSetting(s.key)}
+                disabled={savingSetting === s.key}
+                className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-xl text-sm font-medium hover:bg-sky-700 disabled:opacity-60 transition-colors">
+                <Save size={14} /> {savingSetting === s.key ? 'جارٍ الحفظ...' : 'حفظ'}
+              </button>
+            </div>
+          ))}
+          {settings.filter(s => s.key === 'forecast_smoothing_alpha').length === 0 && !loading && (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              ⚠️ شغّل{' '}
+              <code className="bg-amber-100 px-1 rounded font-mono text-xs">add_forecast_settings.sql</code>
               {' '}في Supabase SQL Editor أولاً.
             </p>
           )}
