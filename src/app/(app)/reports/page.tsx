@@ -742,10 +742,10 @@ export default function ReportsPage() {
     return { sa3irMonthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, monthsRemaining }
   }, [cfTotalObligation, cfBudget, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
-  // مقارنة شاملة للثلاث سيناريوهات (مستقل عن السيناريو المختار حالياً)
+  // مقارنة شاملة للثلاث سيناريوهات — تستخدم EWMA بنفس alpha المستخدمة في التوقع
   const cfAllScenarios = useMemo(() => {
     const completedMonths = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
-    const last3 = completedMonths.slice(-3)
+    const alpha = cfSmoothingAlpha
     const now = new Date()
     const monthsRemaining = Math.max(0, (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1)))
     const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalObligation) : 0
@@ -764,10 +764,10 @@ export default function ReportsPage() {
       return { monthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, costPerTrip }
     }
     let baseTrips = 0, baseCost = 0, regularCostPerTrip = 0
-    if (last3.length > 0) {
-      baseTrips = Math.round(last3.reduce((s, m) => s + m.trips, 0) / last3.length)
-      // rawBaseCost = تكلفة النقلات الصافية (بدون بلدية) لحساب النسب
-      const rawBase = Math.round(last3.reduce((s, m) => s + m.cost, 0) / last3.length)
+    if (completedMonths.length > 0) {
+      // EWMA على كل الأشهر — نفس منطق cfAvgMonthly
+      baseTrips = Math.max(0, Math.round(ewma(completedMonths.map(m => m.trips), alpha)))
+      const rawBase = Math.max(0, Math.round(ewma(completedMonths.map(m => m.cost), alpha)))
       baseCost = Math.round(rawBase * (1 + CF_MUN_RATE))
       regularCostPerTrip = baseTrips > 0 ? rawBase / baseTrips : 0
     }
@@ -782,7 +782,7 @@ export default function ReportsPage() {
     const full = getMetrics({ trips: cfSa3irTripsPerMonth, cost: Math.round(cfSa3irTripsPerMonth * cfSa3irCostPerTrip * (1 + CF_MUN_RATE)) })
     const fullReady = cfSa3irTripsPerMonth > 0 && cfSa3irCostPerTrip > 0
     return { current, partial, partialReady, full, fullReady, regularCostPerTrip: Math.round(regularCostPerTrip * (1 + CF_MUN_RATE)) }
-  }, [cfMonthlyHistory, cfCurrentYM, cfBudget, cfTotalObligation, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+  }, [cfMonthlyHistory, cfCurrentYM, cfSmoothingAlpha, cfBudget, cfTotalObligation, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip, ewma])
 
   const cfQuarterlyAnalysis = useMemo(() =>
     BUDGET_TRANCHES.map((t, i) => {
@@ -1098,7 +1098,7 @@ export default function ReportsPage() {
         dataRow([
           'Current (Baseline) — الوضع الحالي',
           'Based on the 3-month historical average. No changes to current collection routes or distances.',
-          `${cfAllScenarios.current.monthly.trips} trips/month at ${fmt(cfAllScenarios.current.monthly.cost)} ₪/month (avg last 3 completed months)`,
+          `${cfAllScenarios.current.monthly.trips} trips/month at ${fmt(cfAllScenarios.current.monthly.cost)} ₪/month (EWMA α=${cfSmoothingAlpha} weighted avg)`,
         ]),
         dataRow([
           cfAllScenarios.partialReady ? 'Partial Sa3ir — سعير جزئي ✓' : 'Partial Sa3ir — سعير جزئي (Not Configured)',
