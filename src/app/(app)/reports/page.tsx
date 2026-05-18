@@ -500,13 +500,14 @@ export default function ReportsPage() {
 
   // تجميع شهري تاريخي
   const cfMonthlyHistory = useMemo(() => {
-    const map: Record<string, { trips: number; cost: number; liquid: number; solid: number }> = {}
+    const map: Record<string, { trips: number; cost: number; liquid: number; solid: number; days: Set<string> }> = {}
     cfTrips.forEach((t: AnyData) => {
       if (!t.trip_date) return
       const mon = t.trip_date.substring(0, 7)
-      if (!map[mon]) map[mon] = { trips: 0, cost: 0, liquid: 0, solid: 0 }
+      if (!map[mon]) map[mon] = { trips: 0, cost: 0, liquid: 0, solid: 0, days: new Set() }
       map[mon].trips++
       map[mon].cost += Number(t.trip_cost ?? 0)
+      map[mon].days.add(t.trip_date)
       if (t.waste_type === 'liquid') map[mon].liquid++
       else if (t.waste_type === 'solid') map[mon].solid++
     })
@@ -515,7 +516,8 @@ export default function ReportsPage() {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, v]) => {
         cumulative += v.cost * (1 + CF_MUN_RATE)
-        return { month, ...v, cumulative: +cumulative.toFixed(0), forecast: false }
+        const { days, ...rest } = v
+        return { month, ...rest, workingDays: days.size, cumulative: +cumulative.toFixed(0), forecast: false }
       })
   }, [cfTrips])
 
@@ -980,13 +982,14 @@ export default function ReportsPage() {
       p(`Historical trip cost data aggregated by month. The current month (${cfCurrentYM}) is partial and excluded from forecasting averages. Cumulative column reflects obligation = trip cost × 1.14 (includes 14% municipality share).`),
       blank(),
       tbl([
-        hdrRow(['Month', 'Trips', 'Liquid', 'Solid', 'Raw Cost (₪)', 'Obligation +14% (₪)', 'Cumulative Obligation (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        hdrRow(['Month', 'Trips', 'Working Days', 'Liquid', 'Solid', 'Raw Cost (₪)', 'Obligation +14% (₪)', 'Cumulative Obligation (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
         ...cfMonthlyHistory.map(m => {
           const monthObligation = Math.round(m.cost * (1 + 0.14))
           const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
           return dataRow([
             m.month + (m.month === cfCurrentYM ? ' (partial)' : ''),
             String(m.trips),
+            String((m as AnyData).workingDays ?? 0),
             String(m.liquid || 0),
             String(m.solid || 0),
             fmt(m.cost),
@@ -998,6 +1001,7 @@ export default function ReportsPage() {
         dataRow([
           'TOTAL',
           String(cfTrips.length),
+          String(new Set(cfTrips.map((t: AnyData) => t.trip_date).filter(Boolean)).size),
           String(cfTrips.filter((t: AnyData) => t.waste_type === 'liquid').length),
           String(cfTrips.filter((t: AnyData) => t.waste_type === 'solid').length),
           fmt(cfTotalCost),
@@ -2443,6 +2447,7 @@ export default function ReportsPage() {
                         <tr className="bg-slate-50 border-b border-slate-100">
                           <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">الشهر</th>
                           <th className="text-center px-4 py-3 text-xs text-blue-600 font-semibold">النقلات</th>
+                          <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">أيام العمل</th>
                           <th className="text-center px-4 py-3 text-xs text-blue-400 font-semibold">💧 سائل</th>
                           <th className="text-center px-4 py-3 text-xs text-amber-500 font-semibold">🪨 جاف</th>
                           <th className="text-center px-4 py-3 text-xs text-orange-600 font-semibold">تكلفة الشهر</th>
@@ -2463,6 +2468,7 @@ export default function ReportsPage() {
                                 {isCurrentMonth && <span className="mr-1.5 px-1.5 py-0.5 bg-amber-100 text-amber-600 text-xs rounded-full">جاري</span>}
                               </td>
                               <td className="px-4 py-2.5 text-center font-bold text-blue-600">{m.trips}</td>
+                              <td className="px-4 py-2.5 text-center font-semibold text-emerald-600">{(m as AnyData).workingDays ?? '—'}</td>
                               <td className="px-4 py-2.5 text-center text-blue-500">{m.liquid || '—'}</td>
                               <td className="px-4 py-2.5 text-center text-amber-600">{m.solid || '—'}</td>
                               <td className="px-4 py-2.5 text-center font-semibold text-orange-600">{Math.round(m.cost).toLocaleString()} ₪</td>
@@ -2481,6 +2487,7 @@ export default function ReportsPage() {
                         <tr className="bg-slate-100 font-bold border-t-2 border-slate-200">
                           <td className="px-4 py-3 text-slate-700">الإجمالي</td>
                           <td className="px-4 py-3 text-center text-blue-600">{cfTrips.length}</td>
+                          <td className="px-4 py-3 text-center text-emerald-600">{new Set(cfTrips.map((t: AnyData) => t.trip_date).filter(Boolean)).size}</td>
                           <td className="px-4 py-3 text-center text-blue-500">{cfTrips.filter((t: AnyData) => t.waste_type === 'liquid').length}</td>
                           <td className="px-4 py-3 text-center text-amber-600">{cfTrips.filter((t: AnyData) => t.waste_type === 'solid').length}</td>
                           <td className="px-4 py-3 text-center text-orange-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
