@@ -1080,6 +1080,39 @@ export default function ReportsPage() {
     const exportVolumeToExhaust = exportProj.current.tripsToExhaust !== null && _expAvgVol > 0
       ? Math.round(exportProj.current.tripsToExhaust * _expAvgVol) : null
 
+    // ── Study Fund Payment Schedule: 20/20/20/40 of projected surplus per scenario ──
+    const _studyPayDates = [
+      { label: 'الدفعة الأولى',             engDate: 'July 2026',  offsetMonths: 2 },
+      { label: 'الدفعة الثانية',            engDate: 'Sept 2026',  offsetMonths: 4 },
+      { label: 'الدفعة الثالثة',            engDate: 'Nov 2026',   offsetMonths: 6 },
+      { label: 'الدفعة الرابعة (الأخيرة)', engDate: 'Dec 2026',   offsetMonths: 7 },
+    ]
+    const _studyPcts = [0.20, 0.20, 0.20, 0.40]
+    const _getStudySched = (monthlyCost: number, studyTotal: number) => {
+      let _cumPaid = 0
+      return _studyPayDates.map((pd, i) => {
+        const amount = Math.round(studyTotal * _studyPcts[i])
+        const cumTransportAtDate = Math.round(exportBase + pd.offsetMonths * monthlyCost)
+        const budgetFreeAtDate = cfOperationalBudget > 0 ? cfOperationalBudget - cumTransportAtDate : 0
+        const availableForStudy = budgetFreeAtDate - _cumPaid
+        const feasible = availableForStudy >= amount
+        _cumPaid += amount
+        return { ...pd, pct: _studyPcts[i], amount, budgetFreeAtDate, availableForStudy, feasible }
+      })
+    }
+    const _ssBudgetC = Math.max(0, exportProj.current.budgetRemaining2027 ?? 0)
+    const _ssBudgetP = exportProj.partial ? Math.max(0, exportProj.partial.budgetRemaining2027 ?? 0) : 0
+    const _ssBudgetF = exportProj.full    ? Math.max(0, exportProj.full.budgetRemaining2027    ?? 0) : 0
+    const studySchedule = {
+      current: _ssBudgetC > 0 ? _getStudySched(cfAllScenarios.current.monthly.cost, _ssBudgetC) : null,
+      partial: cfAllScenarios.partialReady && _ssBudgetP > 0
+        ? _getStudySched(cfAllScenarios.partial.monthly.cost, _ssBudgetP) : null,
+      full:    cfAllScenarios.fullReady    && _ssBudgetF > 0
+        ? _getStudySched(cfAllScenarios.full.monthly.cost,    _ssBudgetF) : null,
+    }
+    // Conservative: highest-cost scenario = least study budget = safest planning base
+    const _studyConservative = studySchedule.full ?? studySchedule.partial ?? studySchedule.current
+
     // Amber milestone cell (multi-line)
     const mCell = (lines: string[], span = 1) => new TableCell({
       columnSpan: span,
@@ -1313,7 +1346,7 @@ export default function ReportsPage() {
           ] : []),
           ...(exportProj.current.budgetRemaining2027 !== null ? [
             exportProj.current.budgetRemaining2027 >= 0
-              ? dataRow(['🔬 Study Fund (projected residual)', `${fmt(exportProj.current.budgetRemaining2027)} ₪`, 'Feasibility study, treatment plant, environmental impact'])
+              ? dataRow(['🔬 الدراسة الشاملة — Study Fund', `${fmt(exportProj.current.budgetRemaining2027)} ₪`, `الفائض المتوقع (20%/20%/20%/40%) يوليو–ديسمبر 2026${_studyConservative ? ` — دفعة أولى (تحفظي): ${fmt(_studyConservative[0].amount)} ₪` : ''} — تفاصيل في القسم 7`])
               : dataRow(['⚠️ Study Fund', `Deficit: ${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`, 'Transport projected to exceed operational budget']),
           ] : []),
         ]),
@@ -1642,6 +1675,55 @@ export default function ReportsPage() {
         p('Configure sa3ir_trips_per_month and sa3ir_cost_per_trip in Settings to enable this scenario.', { color: '94A3B8' }),
         blank(),
       ]),
+
+      // 7. Study Fund Payment Schedule
+      h1('7. Study Fund Payment Schedule — جدولة دفعات الدراسة الشاملة'),
+      p('الدراسة الشاملة تُمَوّل من الفائض المتوقع بنهاية 2027 لكل سيناريو. الفائض = الميزانية التشغيلية – إجمالي تكاليف النقل حتى ديسمبر 2027. التوزيع: 20% يوليو، 20% سبتمبر، 20% نوفمبر، 40% ديسمبر 2026. المبالغ تختلف بحسب تكاليف النقل لكل سيناريو — استخدم السيناريو الأعلى تكلفةً للتخطيط التحفظي.'),
+      blank(),
+      tbl([
+        hdrRow(['الدفعة', 'التاريخ', 'النسبة', 'السيناريو الحالي', 'سعير جزئي', 'سعير كامل']),
+        ..._studyPayDates.map((pd, i) => dataRow([
+          pd.label,
+          pd.engDate,
+          `${Math.round(_studyPcts[i] * 100)}%`,
+          studySchedule.current ? `${fmt(studySchedule.current[i].amount)} ₪` : 'لا فائض',
+          studySchedule.partial ? `${fmt(studySchedule.partial[i].amount)} ₪` : (cfAllScenarios.partialReady ? 'لا فائض' : '—'),
+          studySchedule.full    ? `${fmt(studySchedule.full[i].amount)} ₪`    : (cfAllScenarios.fullReady    ? 'لا فائض' : '—'),
+        ])),
+        dataRow([
+          'الإجمالي', '2026', '100%',
+          `${fmt(_ssBudgetC)} ₪`,
+          cfAllScenarios.partialReady ? (_ssBudgetP > 0 ? `${fmt(_ssBudgetP)} ₪` : 'لا فائض') : '—',
+          cfAllScenarios.fullReady    ? (_ssBudgetF > 0 ? `${fmt(_ssBudgetF)} ₪` : 'لا فائض') : '—',
+        ]),
+      ]),
+      blank(),
+      ...(() => {
+        if (!_studyConservative) return [
+          p('لا يوجد فائض متوقع بنهاية 2027 في أي سيناريو — الدراسة ستحتاج إلى تمويل خارج الميزانية التشغيلية.', { color: 'EF4444' }),
+          blank(),
+        ]
+        const _budgetCons = cfAllScenarios.fullReady ? _ssBudgetF : cfAllScenarios.partialReady ? _ssBudgetP : _ssBudgetC
+        const _scenLbl = cfAllScenarios.fullReady ? 'سعير كامل (الأعلى تكلفة)' : cfAllScenarios.partialReady ? 'سعير جزئي' : 'السيناريو الحالي'
+        return [
+          p(`التوصية التحفظية — بناءً على ${_scenLbl}: إجمالي الدراسة ${fmt(_budgetCons)} ₪`),
+          blank(),
+          tbl([
+            hdrRow(['الدفعة', 'التاريخ', 'المبلغ المقترح', 'النسبة', 'التدفق النقدي المتاح']),
+            ..._studyConservative.map(row => dataRow([
+              row.label,
+              row.engDate,
+              `${fmt(row.amount)} ₪`,
+              `${Math.round(row.pct * 100)}%`,
+              `${fmt(row.availableForStudy)} ₪`,
+            ])),
+            dataRow(['الإجمالي', '2026', `${fmt(_budgetCons)} ₪`, '100%', '']),
+          ]),
+          blank(),
+          p('ملاحظة: التدفق النقدي المتاح = الميزانية الحرة في تاريخ الدفعة (بعد حسم تكاليف النقل المتراكمة) ناقص الدفعات السابقة للدراسة. القيم موجبة دائمًا لأن مجموع الدراسة = الفائض بعد إجمالي النقل حتى 2027.', { color: '64748B' }),
+          blank(),
+        ]
+      })(),
 
       // Footer
       new Paragraph({
