@@ -472,6 +472,7 @@ export default function ReportsPage() {
   const [cfSa3irTripsPerMonth, setCfSa3irTripsPerMonth] = useState(0)
   const [cfSa3irCostPerTrip, setCfSa3irCostPerTrip] = useState(0)
   const [cfSmoothingAlpha, setCfSmoothingAlpha] = useState(0.6) // معامل EWMA
+  const [cfContingencyPct, setCfContingencyPct] = useState(10) // % احتياطي طوارئ
   const cfMainChartRef = useRef<HTMLDivElement>(null)
   const cf2027ChartRef = useRef<HTMLDivElement>(null)
 
@@ -490,6 +491,9 @@ export default function ReportsPage() {
       const alphaSetting = settings.find((s: AnyData) => s.key === 'forecast_smoothing_alpha')
       const alpha = parseFloat(alphaSetting?.value ?? '0.6')
       setCfSmoothingAlpha(isNaN(alpha) || alpha < 0.1 || alpha > 0.9 ? 0.6 : alpha)
+      const contingencySetting = settings.find((s: AnyData) => s.key === 'budget_contingency_pct')
+      const cpct = parseFloat(contingencySetting?.value ?? '10')
+      setCfContingencyPct(isNaN(cpct) || cpct < 0 || cpct > 30 ? 10 : cpct)
       setCfLoaded(true)
     } catch (e) { console.error(e) }
     finally { setCfLoading(false) }
@@ -497,6 +501,10 @@ export default function ReportsPage() {
 
   // الشهر الحالي بصيغة YYYY-MM
   const cfCurrentYM = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+
+  // توزيع الميزانية: احتياطي الطوارئ + الميزانية التشغيلية المشتركة
+  const cfContingencyAmt    = Math.round(cfBudget * cfContingencyPct / 100)
+  const cfOperationalBudget = cfBudget - cfContingencyAmt   // 90% — للنقل + الدراسة
 
   // تجميع شهري تاريخي
   const cfMonthlyHistory = useMemo(() => {
@@ -626,11 +634,11 @@ export default function ReportsPage() {
         ucSolid: cfAvgMonthly.ucSolid,
         cumulative: Math.round(cumulative),
         forecast: true,
-        budgetRemaining: Math.max(0, cfBudget - cumulative),
+        budgetRemaining: Math.max(0, cfOperationalBudget - cumulative),
       })
     }
     return results
-  }, [cfMonthlyHistory, cfCurrentYM, cfAvgMonthly, cfBudget])
+  }, [cfMonthlyHistory, cfCurrentYM, cfAvgMonthly, cfOperationalBudget])
 
   // بيانات الرسم البياني (تاريخي + توقع)
   const cfChartData = useMemo(() => {
@@ -669,9 +677,9 @@ export default function ReportsPage() {
     const lastForecast = cfForecast[cfForecast.length - 1]
     return lastForecast ? lastForecast.cumulative : cfTotalObligation
   }, [cfForecast, cfTotalObligation])
-  const cfGap = cfBudget > 0 ? cfBudget - cfEstimatedTotalCost : null
-  const cfRunwayMonths = cfAvgMonthly.cost > 0 && cfBudget > 0
-    ? Math.max(0, Math.floor((cfBudget - cfTotalObligation) / cfAvgMonthly.cost))
+  const cfGap = cfOperationalBudget > 0 ? cfOperationalBudget - cfEstimatedTotalCost : null
+  const cfRunwayMonths = cfAvgMonthly.cost > 0 && cfOperationalBudget > 0
+    ? Math.max(0, Math.floor((cfOperationalBudget - cfTotalObligation) / cfAvgMonthly.cost))
     : null
 
   // توقع حتى نهاية 2027
@@ -680,9 +688,9 @@ export default function ReportsPage() {
     const monthsRemaining = (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1))
     const months = Math.max(0, monthsRemaining)
     const estimatedTotal = cfTotalObligation + months * cfAvgMonthly.cost
-    const budgetRemaining2027 = cfBudget > 0 ? cfBudget - estimatedTotal : null
-    const tripsToExhaust = cfAvgCostPerTrip > 0 && cfBudget > 0
-      ? Math.floor((cfBudget - cfTotalObligation) / cfAvgCostPerTrip)
+    const budgetRemaining2027 = cfOperationalBudget > 0 ? cfOperationalBudget - estimatedTotal : null
+    const tripsToExhaust = cfAvgCostPerTrip > 0 && cfOperationalBudget > 0
+      ? Math.floor((cfOperationalBudget - cfTotalObligation) / cfAvgCostPerTrip)
       : null
     const tripsPerMonthNeeded = tripsToExhaust !== null && months > 0
       ? Math.ceil(tripsToExhaust / months)
@@ -693,9 +701,9 @@ export default function ReportsPage() {
       : 0
     const volumeToExhaust = tripsToExhaust !== null && avgVol > 0 ? Math.round(tripsToExhaust * avgVol) : null
     // تاريخ نفاد التمويل بالمعدل الحالي
-    const remainingBudgetNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalObligation) : 0
+    const remainingBudgetNow = cfOperationalBudget > 0 ? Math.max(0, cfOperationalBudget - cfTotalObligation) : 0
     const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
-    const monthsToExhaust = cfAvgMonthly.cost > 0 && cfBudget > 0 ? remainingBudgetNow / cfAvgMonthly.cost : null
+    const monthsToExhaust = cfAvgMonthly.cost > 0 && cfOperationalBudget > 0 ? remainingBudgetNow / cfAvgMonthly.cost : null
     const exhaustionDateObj = monthsToExhaust !== null
       ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1)
       : null
@@ -722,7 +730,7 @@ export default function ReportsPage() {
       requiredMonthlyCost, requiredMonthlyTrips, costDiff, tripsDiff,
       remainingBudgetNow,
     }
-  }, [cfTotalObligation, cfAvgMonthly, cfBudget, cfTrips, cfAvgCostPerTrip])
+  }, [cfTotalObligation, cfAvgMonthly, cfOperationalBudget, cfTrips, cfAvgCostPerTrip])
 
   // مقارنة سيناريو سعير الكامل لأغراض العرض الجانبي (A+C)
   const cfSa3irComparison = useMemo(() => {
@@ -731,18 +739,18 @@ export default function ReportsPage() {
     const now = new Date()
     const monthsRemaining = Math.max(0, (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1)))
     const estimatedTotal = cfTotalObligation + monthsRemaining * sa3irMonthly.cost
-    const budgetRemaining2027 = cfBudget > 0 ? cfBudget - estimatedTotal : null
-    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalObligation) : 0
+    const budgetRemaining2027 = cfOperationalBudget > 0 ? cfOperationalBudget - estimatedTotal : null
+    const remainingNow = cfOperationalBudget > 0 ? Math.max(0, cfOperationalBudget - cfTotalObligation) : 0
     const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
-    const monthsToExhaust = sa3irMonthly.cost > 0 && cfBudget > 0 ? remainingNow / sa3irMonthly.cost : null
+    const monthsToExhaust = sa3irMonthly.cost > 0 && cfOperationalBudget > 0 ? remainingNow / sa3irMonthly.cost : null
     const exhaustionDateObj = monthsToExhaust !== null
       ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1) : null
     const exhaustionDate = exhaustionDateObj
       ? `${arabicMonthNames[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}` : null
-    const tripsToExhaust = cfSa3irCostPerTrip > 0 && cfBudget > 0
+    const tripsToExhaust = cfSa3irCostPerTrip > 0 && cfOperationalBudget > 0
       ? Math.floor(remainingNow / Math.round(cfSa3irCostPerTrip * (1 + CF_MUN_RATE))) : null
     return { sa3irMonthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, monthsRemaining }
-  }, [cfTotalObligation, cfBudget, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
+  }, [cfTotalObligation, cfOperationalBudget, cfSa3irTripsPerMonth, cfSa3irCostPerTrip])
 
   // مقارنة شاملة للثلاث سيناريوهات — تستخدم EWMA بنفس alpha المستخدمة في التوقع
   const cfAllScenarios = useMemo(() => {
@@ -750,17 +758,17 @@ export default function ReportsPage() {
     const alpha = cfSmoothingAlpha
     const now = new Date()
     const monthsRemaining = Math.max(0, (2027 - now.getFullYear()) * 12 + (12 - (now.getMonth() + 1)))
-    const remainingNow = cfBudget > 0 ? Math.max(0, cfBudget - cfTotalObligation) : 0
+    const remainingNow = cfOperationalBudget > 0 ? Math.max(0, cfOperationalBudget - cfTotalObligation) : 0
     const arabicMonthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
     const getMetrics = (monthly: { trips: number; cost: number }) => {
       const estimatedTotal = Math.round(cfTotalObligation + monthsRemaining * monthly.cost)
-      const budgetRemaining2027 = cfBudget > 0 ? Math.round(cfBudget - estimatedTotal) : null
-      const monthsToExhaust = monthly.cost > 0 && cfBudget > 0 ? remainingNow / monthly.cost : null
+      const budgetRemaining2027 = cfOperationalBudget > 0 ? Math.round(cfOperationalBudget - estimatedTotal) : null
+      const monthsToExhaust = monthly.cost > 0 && cfOperationalBudget > 0 ? remainingNow / monthly.cost : null
       const exhaustionDateObj = monthsToExhaust !== null
         ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1) : null
       const exhaustionDate = exhaustionDateObj
         ? `${arabicMonthNames[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}` : null
-      const tripsToExhaust = monthly.cost > 0 && monthly.trips > 0 && cfBudget > 0
+      const tripsToExhaust = monthly.cost > 0 && monthly.trips > 0 && cfOperationalBudget > 0
         ? Math.floor(remainingNow / (monthly.cost / monthly.trips)) : null
       const costPerTrip = monthly.trips > 0 ? Math.round(monthly.cost / monthly.trips) : 0
       return { monthly, estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, costPerTrip }
@@ -784,7 +792,7 @@ export default function ReportsPage() {
     const full = getMetrics({ trips: cfSa3irTripsPerMonth, cost: Math.round(cfSa3irTripsPerMonth * cfSa3irCostPerTrip * (1 + CF_MUN_RATE)) })
     const fullReady = cfSa3irTripsPerMonth > 0 && cfSa3irCostPerTrip > 0
     return { current, partial, partialReady, full, fullReady, regularCostPerTrip: Math.round(regularCostPerTrip * (1 + CF_MUN_RATE)) }
-  }, [cfMonthlyHistory, cfCurrentYM, cfSmoothingAlpha, cfBudget, cfTotalObligation, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip, ewma])
+  }, [cfMonthlyHistory, cfCurrentYM, cfSmoothingAlpha, cfOperationalBudget, cfTotalObligation, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip, ewma])
 
   const cfQuarterlyAnalysis = useMemo(() =>
     BUDGET_TRANCHES.map((t, i) => {
@@ -821,7 +829,7 @@ export default function ReportsPage() {
         month: m.month,
         cost: Math.round(m.cost),
         forecastCost: null,
-        remaining: cfBudget > 0 ? Math.max(0, Math.round(cfBudget - m.cumulative)) : null,
+        remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - m.cumulative)) : null,
       })
     })
     const now = new Date()
@@ -836,12 +844,12 @@ export default function ReportsPage() {
         month,
         cost: null,
         forecastCost: Math.round(cfAvgMonthly.cost),
-        remaining: cfBudget > 0 ? Math.max(0, Math.round(cfBudget - cumulative)) : null,
+        remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - cumulative)) : null,
       })
       if (d.getFullYear() === 2027 && d.getMonth() === 11) break
     }
     return data
-  }, [cfMonthlyHistory, cfAvgMonthly, cfBudget])
+  }, [cfMonthlyHistory, cfAvgMonthly, cfOperationalBudget])
 
   // ── Word export ──
   const exportCfWord = useCallback(async () => {
@@ -952,8 +960,8 @@ export default function ReportsPage() {
         dataRow(['Avg Obligation per Trip', cfAvgCostPerTrip > 0 ? `${fmt(cfAvgCostPerTrip)} ₪` : 'N/A', 'cfTotalObligation ÷ priced trips']),
         dataRow(['Months of Historical Data', `${cfMonthlyHistory.length} months`, `Current month (${cfCurrentYM}) is partial`]),
         ...(cfBudget > 0 ? [
-          dataRow(['Budget Remaining (vs Obligation)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, 'Budget minus total obligation to date']),
-          dataRow(['% of Budget Consumed (Obligation)', `${Math.min(100, Math.round(cfTotalObligation / cfBudget * 100))}%`, 'Based on obligation, not raw trip cost']),
+          dataRow(['Budget Remaining (Transport, vs Operational)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, 'Operational budget (excl. contingency) minus total obligation']),
+          dataRow(['% of Operational Budget Consumed', `${Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}%`, 'Obligation vs transport+study operational budget']),
         ] : []),
       ]),
       blank(),
@@ -965,27 +973,52 @@ export default function ReportsPage() {
       ...(cfBudget > 0 ? [
         tbl([
           hdrRow(['Item', 'Amount (₪)', 'Notes']),
-          dataRow(['Project Budget', `${fmt(cfBudget)} ₪`, 'Configured in Settings']),
+          dataRow(['Total Project Budget (Gross)', `${fmt(cfBudget)} ₪`, 'Full allocation from funder']),
+          dataRow([`Contingency Reserve (${cfContingencyPct}%)`, `${fmt(cfContingencyAmt)} ₪`, 'Locked emergency reserve — not for transport operations']),
+          dataRow([`Operational Budget (${100 - cfContingencyPct}%)`, `${fmt(cfOperationalBudget)} ₪`, 'Shared: transport project + future study fund']),
           dataRow(['Raw Trip Cost', `${fmt(cfTotalCost)} ₪`, 'Trip cost without municipality share']),
           dataRow(['Total Obligation (Trip Cost + 14%)', `${fmt(cfTotalObligation)} ₪`, 'Actual budget consumption — used for all analysis']),
           dataRow(['Municipality Share (14%)', `${fmt(cfTotalObligation - cfTotalCost)} ₪`, '14% paid to municipality on top of trip cost']),
           dataRow(['Net Paid to Contractor', `${fmt(cfClosedStats.netPaid)} ₪`, 'Closed claims: actual cash transferred']),
           dataRow(['Retention Held (Deferred)', `${fmt(cfClosedStats.retentionHeld)} ₪`, 'Withheld from contractor — returned at project end']),
-          dataRow(['Budget Consumed (Obligation)', `${Math.min(100, Math.round(cfTotalObligation / cfBudget * 100))}%`, `${fmt(cfTotalObligation)} ₪ of ${fmt(cfBudget)} ₪`]),
-          dataRow(['Budget Remaining', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, `${Math.round(cfProjection2027.remainingBudgetNow / cfBudget * 100)}% of total`]),
+          dataRow(['Operational Budget Consumed', `${Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}%`, `${fmt(cfTotalObligation)} ₪ of ${fmt(cfOperationalBudget)} ₪`]),
+          dataRow(['Operational Budget Remaining (Transport)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, `${Math.round(cfProjection2027.remainingBudgetNow / cfOperationalBudget * 100)}% of operational`]),
         ]),
       ] : [p('No budget configured. Please set project_budget in Settings.', { color: 'EF4444' })]),
       blank(),
+
+      // 2b. Budget Allocation
+      ...(cfBudget > 0 ? [
+        h1('2b. Budget Allocation — توزيع الميزانية'),
+        p(`Total Project Budget: ${fmt(cfBudget)} ₪  |  Contingency (${cfContingencyPct}%): ${fmt(cfContingencyAmt)} ₪  |  Operational (${100 - cfContingencyPct}%): ${fmt(cfOperationalBudget)} ₪`),
+        blank(),
+        tbl([
+          hdrRow(['Budget Component', 'Amount (₪)', 'Notes']),
+          dataRow(['Total Budget (Gross)', `${fmt(cfBudget)} ₪`, 'Full allocation from funder']),
+          dataRow([`🔒 Contingency Reserve (${cfContingencyPct}%)`, `${fmt(cfContingencyAmt)} ₪`, 'Locked emergency reserve — not for transport']),
+          dataRow([`💼 Operational Budget (${100 - cfContingencyPct}%)`, `${fmt(cfOperationalBudget)} ₪`, 'Shared: transport obligations + study fund residual']),
+          dataRow(['🚛 Transport Obligations (actual to date)', `${fmt(cfTotalObligation)} ₪`, `${Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}% of operational budget`]),
+          ...(cfProjection2027.estimatedTotal > cfTotalObligation ? [
+            dataRow(['🔮 Remaining Transport Forecast (to end 2027)', `${fmt(cfProjection2027.estimatedTotal - cfTotalObligation)} ₪`, 'EWMA-based projection × months remaining']),
+          ] : []),
+          ...(cfProjection2027.budgetRemaining2027 !== null ? [
+            cfProjection2027.budgetRemaining2027 >= 0
+              ? dataRow(['🔬 Study Fund (projected residual)', `${fmt(cfProjection2027.budgetRemaining2027)} ₪`, 'Feasibility study, treatment plant, environmental impact'])
+              : dataRow(['⚠️ Study Fund', `Deficit: ${fmt(Math.abs(cfProjection2027.budgetRemaining2027))} ₪`, 'Transport projected to exceed operational budget']),
+          ] : []),
+        ]),
+        blank(),
+      ] : []),
 
       // 3. Monthly Historical Data
       h1('3. Monthly Historical Performance'),
       p(`Historical trip cost data aggregated by month. The current month (${cfCurrentYM}) is partial and excluded from forecasting averages. Cumulative column reflects obligation = trip cost × 1.14 (includes 14% municipality share).`),
       blank(),
       tbl([
-        hdrRow(['Month', 'Trips', 'Working Days', 'Liquid', 'Solid', 'Raw Cost (₪)', 'Obligation +14% (₪)', 'Cumulative Obligation (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        hdrRow(['Month', 'Trips', 'Working Days', 'Liquid', 'Solid', 'Raw Cost (₪)', 'Obligation +14% (₪)', 'Cumulative Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
         ...cfMonthlyHistory.map(m => {
           const monthObligation = Math.round(m.cost * (1 + 0.14))
-          const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
+          const remaining = cfOperationalBudget > 0 ? cfOperationalBudget - m.cumulative : null
           return dataRow([
             m.month + (m.month === cfCurrentYM ? ' (partial)' : ''),
             String(m.trips),
@@ -995,7 +1028,7 @@ export default function ReportsPage() {
             fmt(m.cost),
             fmt(monthObligation),
             fmt(m.cumulative),
-            ...(cfBudget > 0 && remaining !== null ? [fmt(remaining)] : []),
+            ...(cfOperationalBudget > 0 && remaining !== null ? [fmt(remaining)] : []),
           ])
         }),
         dataRow([
@@ -1007,7 +1040,7 @@ export default function ReportsPage() {
           fmt(cfTotalCost),
           fmt(cfTotalObligation),
           fmt(cfTotalObligation),
-          ...(cfBudget > 0 ? [fmt(cfProjection2027.remainingBudgetNow)] : []),
+          ...(cfOperationalBudget > 0 ? [fmt(cfProjection2027.remainingBudgetNow)] : []),
         ]),
       ]),
       blank(),
@@ -1024,17 +1057,17 @@ export default function ReportsPage() {
       p(`Note: Cumulative starts from completed months (to end of ${cfMonthlyHistory.filter(m => m.month < cfCurrentYM).slice(-1)[0]?.month ?? 'N/A'}) plus a projected full-month estimate for the current partial month (${cfCurrentYM}), extrapolated from actual data so far.`),
       blank(),
       tbl([
-        hdrRow(['Month', 'Expected Trips', 'Expected Obligation (₪)', 'Cumulative Obligation (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
+        hdrRow(['Month', 'Expected Trips', 'Expected Obligation (₪)', 'Cumulative Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
         ...cfForecast.map(m => {
-          const isDeficit = cfBudget > 0 && m.cumulative > cfBudget
-          const isWarning = cfBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
+          const isDeficit = cfOperationalBudget > 0 && m.cumulative > cfOperationalBudget
+          const isWarning = cfOperationalBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
           return dataRow([
             m.month,
             String(m.trips),
             fmt(m.cost),
             fmt(m.cumulative),
-            ...(cfBudget > 0 ? [
-              isDeficit ? `-${fmt(m.cumulative - cfBudget)}` : fmt(m.budgetRemaining),
+            ...(cfOperationalBudget > 0 ? [
+              isDeficit ? `-${fmt(m.cumulative - cfOperationalBudget)}` : fmt(m.budgetRemaining),
               isDeficit ? 'DEFICIT' : isWarning ? 'WARNING' : 'OK',
             ] : []),
           ])
@@ -1050,7 +1083,7 @@ export default function ReportsPage() {
         hdrRow(['Indicator', 'Value', 'Explanation']),
         dataRow(['Months Remaining to Dec 2027', `${cfProjection2027.monthsRemaining}`, 'From next month to Dec 2027']),
         dataRow(['Estimated Total Cost by End 2027', `${fmt(cfProjection2027.estimatedTotal)} ₪`, 'Current cost + (months × avg monthly cost)']),
-        ...(cfBudget > 0 && cfProjection2027.budgetRemaining2027 !== null ? [
+        ...(cfOperationalBudget > 0 && cfProjection2027.budgetRemaining2027 !== null ? [
           dataRow([
             cfProjection2027.budgetRemaining2027 >= 0 ? 'Expected Surplus' : 'Expected Deficit',
             `${cfProjection2027.budgetRemaining2027 >= 0 ? '' : '-'}${fmt(Math.abs(cfProjection2027.budgetRemaining2027))} ₪`,
@@ -1080,12 +1113,12 @@ export default function ReportsPage() {
       // 5. Full 2027 monthly table
       h2('Detailed Monthly Breakdown to December 2027'),
       tbl([
-        hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
         ...cf2027ChartData.map(row => dataRow([
           row.month,
           row.cost !== null ? 'Actual' : 'Forecast',
           fmt(row.cost ?? row.forecastCost ?? 0),
-          ...(cfBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfBudget > 0 ? ['—'] : []),
+          ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
         ])),
       ]),
       blank(),
@@ -1246,14 +1279,14 @@ export default function ReportsPage() {
         // Build a full monthly table for a given scenario rate
         const scenarioTbl = (monthly: { trips: number; cost: number }) => {
           const cols = ['Month', 'Type', 'Trips', 'Monthly Obligation (₪)', 'Cumulative Obligation (₪)',
-            ...(cfBudget > 0 ? ['Budget Remaining (₪)'] : [])]
+            ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]
           const actRows = (cfMonthlyHistory as { month: string; trips: number; cost: number; cumulative: number }[]).map(m => dataRow([
             m.month + (m.month === cfCurrentYM ? ' (partial)' : ''),
             m.month === cfCurrentYM ? 'Partial' : 'Actual',
             String(m.trips),
             fmt(Math.round(m.cost * 1.14)),
             fmt(m.cumulative),
-            ...(cfBudget > 0 ? [fmt(Math.max(0, cfBudget - m.cumulative))] : []),
+            ...(cfOperationalBudget > 0 ? [fmt(Math.max(0, cfOperationalBudget - m.cumulative))] : []),
           ]))
           let cum = forecastBase
           const foreRows = fMonths.map(month => {
@@ -1261,7 +1294,7 @@ export default function ReportsPage() {
             return dataRow([
               month, 'Forecast', String(monthly.trips), fmt(monthly.cost),
               fmt(Math.round(cum)),
-              ...(cfBudget > 0 ? [fmt(Math.max(0, cfBudget - cum))] : []),
+              ...(cfOperationalBudget > 0 ? [fmt(Math.max(0, cfOperationalBudget - cum))] : []),
             ])
           })
           return tbl([hdrRow(cols), ...actRows, ...foreRows])
@@ -2283,11 +2316,11 @@ export default function ReportsPage() {
                     </CardBody>
                   </Card>
                 )}
-                {cfBudget > 0 && cfTotalCost > 0 && (
+                  {cfBudget > 0 && cfTotalCost > 0 && cfOperationalBudget > 0 && (
                   <Card className="border bg-violet-50 border-violet-100">
                     <CardBody className="py-3 text-center">
-                      <p className="text-lg font-bold text-violet-700">{Math.min(100, Math.round(cfTotalCost / cfBudget * 100))}%</p>
-                      <p className="text-xs text-slate-500 mt-0.5">نسبة الصرف من الميزانية</p>
+                      <p className="text-lg font-bold text-violet-700">{Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}%</p>
+                      <p className="text-xs text-slate-500 mt-0.5">نسبة الصرف من الميزانية التشغيلية</p>
                     </CardBody>
                   </Card>
                 )}
@@ -2458,7 +2491,7 @@ export default function ReportsPage() {
                       </thead>
                       <tbody>
                         {cfMonthlyHistory.map((m, i) => {
-                          const remaining = cfBudget > 0 ? cfBudget - m.cumulative : null
+                          const remaining = cfOperationalBudget > 0 ? cfOperationalBudget - m.cumulative : null
                           const isLow = remaining !== null && remaining < cfAvgMonthly.cost * 2
                           const isCurrentMonth = m.month === cfCurrentYM
                           return (
@@ -2493,7 +2526,7 @@ export default function ReportsPage() {
                           <td className="px-4 py-3 text-center text-orange-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-amber-600 font-bold">{cfTotalObligation.toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-violet-600 font-bold">{cfTotalObligation.toLocaleString()} ₪</td>
-                          {cfBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(cfBudget - cfTotalObligation).toLocaleString()} ₪</td>}
+                          {cfOperationalBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(cfOperationalBudget - cfTotalObligation).toLocaleString()} ₪</td>}
                         </tr>
                       </tfoot>
                     </table>
@@ -2501,6 +2534,66 @@ export default function ReportsPage() {
                 </Card>
               )}
               {/* â”€â”€ Ø¬Ø¯ÙˆÙ„ Ù…Ù‚Ø§Ø±Ù†Ø© Ø´Ø§Ù…Ù„ Ù„Ù„Ø«Ù„Ø§Ø« Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆÙ‡Ø§Øª â”€â”€ */}
+
+              {/* ── بطاقة توزيع الميزانية ── */}
+              {cfLoaded && cfBudget > 0 && (
+                <div className="rounded-2xl border-2 border-red-200 bg-gradient-to-br from-red-50/40 to-white overflow-hidden">
+                  <div className="px-4 py-3 border-b border-red-100 bg-red-50/60">
+                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">🔒 توزيع الميزانية الإجمالية</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">احتياطي طوارئ محجوز + ميزانية تشغيلية مشتركة (نقل وترحيل + دراسة شاملة لاحقاً)</p>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {/* شريط التوزيع */}
+                    <div className="flex rounded-lg overflow-hidden h-6 text-xs font-semibold">
+                      <div
+                        className="flex items-center justify-center bg-red-300 text-red-900"
+                        style={{ width: `${cfContingencyPct}%` }}
+                      >🔒 {cfContingencyPct}%</div>
+                      {cfOperationalBudget > 0 && (() => {
+                        const spentPct = Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))
+                        const restPct = 100 - spentPct
+                        const studyFund = cfProjection2027.budgetRemaining2027
+                        return <>
+                          <div className="flex items-center justify-center bg-blue-400 text-white" style={{ width: `${(100 - cfContingencyPct) * spentPct / 100}%` }}>
+                            {spentPct > 8 ? `🚛 ${spentPct}%` : ''}
+                          </div>
+                          <div className={`flex items-center justify-center text-white ${studyFund && studyFund > 0 ? 'bg-emerald-400' : 'bg-slate-300'}`} style={{ width: `${(100 - cfContingencyPct) * restPct / 100}%` }}>
+                            {restPct > 8 ? `🔬 ${restPct}%` : ''}
+                          </div>
+                        </>
+                      })()}
+                    </div>
+                    {/* الأرقام */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
+                        <p className="text-xs text-red-500 mb-1 font-medium">🔒 احتياطي طوارئ ({cfContingencyPct}%)</p>
+                        <p className="text-lg font-bold text-red-700">{cfContingencyAmt.toLocaleString()} ₪</p>
+                        <p className="text-xs text-red-400">محجوز — لا يُمَس</p>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                        <p className="text-xs text-blue-500 mb-1 font-medium">🚛 منفَق (نقل وترحيل)</p>
+                        <p className="text-lg font-bold text-blue-700">{cfTotalObligation.toLocaleString()} ₪</p>
+                        <p className="text-xs text-blue-400">{Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}% من الميزانية التشغيلية</p>
+                      </div>
+                      <div className={`border rounded-xl p-3 text-center ${cfProjection2027.budgetRemaining2027 && cfProjection2027.budgetRemaining2027 > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                        <p className="text-xs text-emerald-600 mb-1 font-medium">🔬 صندوق الدراسة الشاملة</p>
+                        {cfProjection2027.budgetRemaining2027 !== null ? (
+                          <>
+                            <p className={`text-lg font-bold ${cfProjection2027.budgetRemaining2027 > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                              {cfProjection2027.budgetRemaining2027 > 0 ? cfProjection2027.budgetRemaining2027.toLocaleString() : '0'} ₪
+                            </p>
+                            <p className="text-xs text-slate-400">متوقع بعد نهاية 2027</p>
+                          </>
+                        ) : <p className="text-sm text-slate-400">يحتاج ميزانية</p>}
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-500 px-1">
+                      <span>الميزانية الإجمالية: <strong className="text-slate-700">{cfBudget.toLocaleString()} ₪</strong></span>
+                      <span>الميزانية التشغيلية ({100 - cfContingencyPct}%): <strong className="text-slate-700">{cfOperationalBudget.toLocaleString()} ₪</strong></span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ── تتبع الدفعات الفصلية ── */}
               {cfLoaded && (
@@ -2750,8 +2843,8 @@ export default function ReportsPage() {
                           <th className="text-center px-2 py-1.5 text-xs text-amber-600 font-semibold border-b border-amber-100 bg-amber-50/60" colSpan={3}>جاف 🪨</th>
                           <th className="text-center px-3 py-3 text-xs text-violet-700 font-semibold bg-violet-50" rowSpan={2}>إجمالي الالتزام<br/><span className="font-normal text-violet-400">(+14%)</span></th>
                           <th className="text-center px-3 py-3 text-xs text-violet-600 font-semibold" rowSpan={2}>تراكمي</th>
-                          {cfBudget > 0 && <th className="text-center px-3 py-3 text-xs text-emerald-600 font-semibold" rowSpan={2}>ميزانية متبقية</th>}
-                          {cfBudget > 0 && <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold" rowSpan={2}>الحالة</th>}
+                          {cfOperationalBudget > 0 && <th className="text-center px-3 py-3 text-xs text-emerald-600 font-semibold" rowSpan={2}>ميزانية متبقية</th>}
+                          {cfOperationalBudget > 0 && <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold" rowSpan={2}>الحالة</th>}
                         </tr>
                         <tr className="border-b border-violet-100">
                           <th className="text-center px-2 py-1.5 text-xs text-blue-500 font-medium bg-blue-50/40">نقلات</th>
@@ -2764,8 +2857,8 @@ export default function ReportsPage() {
                       </thead>
                       <tbody>
                         {cfForecast.map((m, i) => {
-                          const isDeficit = cfBudget > 0 && m.cumulative > cfBudget
-                          const isWarning = cfBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
+                          const isDeficit = cfOperationalBudget > 0 && m.cumulative > cfOperationalBudget
+                          const isWarning = cfOperationalBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
                           return (
                             <tr key={m.month} className={`border-b border-slate-50 ${isDeficit ? 'bg-red-50/60' : isWarning ? 'bg-amber-50/40' : i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                               <td className="px-3 py-2.5 font-medium text-slate-600 whitespace-nowrap">{m.month}</td>
@@ -2777,12 +2870,12 @@ export default function ReportsPage() {
                               <td className="px-2 py-2.5 text-center text-amber-700 font-medium">{m.solidCost.toLocaleString()} ₪</td>
                               <td className="px-3 py-2.5 text-center text-orange-600 font-bold">{Math.round(m.cost).toLocaleString()} ₪</td>
                               <td className="px-3 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
-                              {cfBudget > 0 && (
+                              {cfOperationalBudget > 0 && (
                                 <td className={`px-3 py-2.5 text-center font-semibold ${isDeficit ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                  {isDeficit ? `−${Math.round(m.cumulative - cfBudget).toLocaleString()} ₪` : `${Math.round(m.budgetRemaining).toLocaleString()} ₪`}
+                                  {isDeficit ? `−${Math.round(m.cumulative - cfOperationalBudget).toLocaleString()} ₪` : `${Math.round(m.budgetRemaining).toLocaleString()} ₪`}
                                 </td>
                               )}
-                              {cfBudget > 0 && (
+                              {cfOperationalBudget > 0 && (
                                 <td className="px-3 py-2.5 text-center">
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isDeficit ? 'bg-red-100 text-red-700' : isWarning ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                     {isDeficit ? '🔴 عجز' : isWarning ? '🟡 تحذير' : '🟢 كافية'}
@@ -2795,7 +2888,7 @@ export default function ReportsPage() {
                       </tbody>
                     </table>
                   </div>
-                  {cfBudget === 0 && (
+                  {cfBudget === 0 && cfOperationalBudget === 0 && (
                     <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700 flex items-center gap-2">
                       ⚠️ لم يتم تحديد ميزانية المشروع في الإعدادات — لا يمكن حساب الفجوة التمويلية.
                       <Link href="/settings" className="font-semibold underline">تعديل الإعدادات</Link>

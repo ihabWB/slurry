@@ -328,6 +328,74 @@ export default function SettingsPage() {
         </CardBody>
       </Card>
 
+      {/* توزيع الميزانية: احتياطي الطوارئ */}
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <ShieldCheck size={16} className="text-red-500" /> توزيع الميزانية — احتياطي الطوارئ
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            نسبة تُحجز من الميزانية الإجمالية للطوارئ · الباقي مُقسَّم بين مشروع النقل والترحيل وصندوق الدراسة الشاملة لاحقاً
+          </p>
+        </CardHeader>
+        <CardBody>
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start gap-3 mb-4">
+            <ShieldCheck size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-red-700 space-y-1">
+              <p><strong>هيكل توزيع الميزانية:</strong></p>
+              <p>🔒 <strong>احتياطي طوارئ</strong> = نسبة% من الميزانية الإجمالية — محجوز، لا يُحتسب في خطط الإنفاق</p>
+              <p>💼 <strong>الميزانية التشغيلية</strong> = الباقي — مشتركة بين مشروع النقل (جاري) وصندوق الدراسة الشاملة (ما يتبقى بعد 2027)</p>
+            </div>
+          </div>
+          {settings.filter(s => s.key === 'budget_contingency_pct').map(s => {
+            const pct = parseFloat(editedSettings[s.key] ?? s.value)
+            const budget = parseFloat(settings.find(x => x.key === 'project_budget')?.value ?? '0')
+            const contingencyAmt = isNaN(pct) || isNaN(budget) ? 0 : Math.round(budget * pct / 100)
+            const operationalAmt = isNaN(budget) ? 0 : Math.round(budget - contingencyAmt)
+            return (
+              <div key={s.key} className="flex items-start gap-4">
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1">نسبة الاحتياطي</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        step={1}
+                        value={editedSettings[s.key] ?? s.value}
+                        onChange={e => setEditedSettings(prev => ({ ...prev, [s.key]: e.target.value }))}
+                        className="w-20 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-400"
+                        dir="ltr"
+                      />
+                      <span className="text-slate-500 text-sm">%</span>
+                      {!isNaN(pct) && budget > 0 && (
+                        <span className="text-xs bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg font-mono text-red-700">
+                          🔒 طوارئ: {contingencyAmt.toLocaleString()} ₪ · 💼 تشغيلي: {operationalAmt.toLocaleString()} ₪
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => saveSetting(s.key)}
+                  disabled={savingSetting === s.key}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 disabled:opacity-60 transition-colors mt-6">
+                  <Save size={14} /> {savingSetting === s.key ? 'جارٍ الحفظ...' : 'حفظ'}
+                </button>
+              </div>
+            )
+          })}
+          {settings.filter(s => s.key === 'budget_contingency_pct').length === 0 && !loading && (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              ⚠️ شغّل{' '}
+              <code className="bg-amber-100 px-1 rounded font-mono text-xs">add_budget_allocation.sql</code>
+              {' '}في Supabase SQL Editor أولاً.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+
       {/* نسبة بلدية الخليل */}
       <Card>
         <CardHeader>
