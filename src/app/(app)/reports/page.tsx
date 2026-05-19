@@ -2834,48 +2834,6 @@ export default function ReportsPage() {
                         const isEligible = cfTranchesEligible[i]
                         const isReceived = cfTranchesReceived[i]
                         const isLocked = firstNonReceived >= 0 && i > firstNonReceived
-
-                        // ── A. مستلمة: صف مضغوط أخضر ──────────────────────────
-                        if (isReceived) {
-                          return (
-                            <div key={i} className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-2.5">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-emerald-500 shrink-0">✓</span>
-                                <span className="font-semibold text-slate-700 text-sm truncate">{tranche.label}</span>
-                                <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">${tranche.usd.toLocaleString()} = {tranche.planned.toLocaleString()} ₪</span>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">🟢 مستلمة</span>
-                                <button
-                                  onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
-                                  className="text-xs text-slate-300 hover:text-red-400 transition-colors px-1"
-                                  title="إلغاء الاستلام"
-                                >✕</button>
-                              </div>
-                            </div>
-                          )
-                        }
-
-                        // ── C. مقفلة: صف مضغوط رمادي ──────────────────────────
-                        if (isLocked) {
-                          return (
-                            <div key={i} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-2.5 opacity-50">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-slate-300 shrink-0">🔒</span>
-                                <span className="font-medium text-slate-400 text-sm truncate">{tranche.label}</span>
-                                <span className="text-xs text-slate-300 shrink-0 hidden sm:inline">${tranche.usd.toLocaleString()} = {tranche.planned.toLocaleString()} ₪</span>
-                              </div>
-                              <span className="text-xs text-slate-300 shrink-0">تُفتح بعد {BUDGET_TRANCHES[i - 1].label}</span>
-                            </div>
-                          )
-                        }
-
-                        // ── B. نشطة: بطاقة كاملة ──────────────────────────────
-                        const prevThreshold = i === 0 ? 0 : cfEligibilityThresholds[i - 1]
-                        const progress = Math.min(100, Math.max(0,
-                          Math.round((cfTotalObligation - prevThreshold) / (threshold - prevThreshold) * 100)
-                        ))
-                        const shortfall = Math.max(0, threshold - cfTotalObligation)
                         const eligDates = cfTranchesExpectedEligibility[i]
 
                         const dateLabel = (d: { month: string; isForecast: boolean } | null) =>
@@ -2884,6 +2842,75 @@ export default function ReportsPage() {
                             : d.isForecast
                               ? <span className="text-blue-600">📅 {d.month}</span>
                               : <span className="text-emerald-600">✅ {d.month}</span>
+
+                        const datesRow = (
+                          <div className="flex flex-wrap gap-x-5 gap-y-0.5 text-xs mt-2 pt-2 border-t border-slate-100">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-slate-400 shrink-0">📊 حالي</span>
+                              {dateLabel(eligDates?.current ?? null)}
+                            </div>
+                            {cfAllScenarios.partialReady && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-slate-400 shrink-0">🔶 جزئي</span>
+                                {dateLabel(eligDates?.partial ?? null)}
+                              </div>
+                            )}
+                            {cfAllScenarios.fullReady && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-slate-400 shrink-0">🔴 كامل</span>
+                                {dateLabel(eligDates?.full ?? null)}
+                              </div>
+                            )}
+                          </div>
+                        )
+
+                        // ── A. مستلمة ──────────────────────────────────────────
+                        if (isReceived) {
+                          return (
+                            <div key={i} className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-emerald-500 shrink-0">✓</span>
+                                  <span className="font-semibold text-slate-700 text-sm truncate">{tranche.label}</span>
+                                  <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">${tranche.usd.toLocaleString()} = {tranche.planned.toLocaleString()} ₪</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">🟢 مستلمة</span>
+                                  <button
+                                    onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
+                                    className="text-xs text-slate-300 hover:text-red-400 transition-colors px-1"
+                                    title="إلغاء الاستلام"
+                                  >✕</button>
+                                </div>
+                              </div>
+                              {datesRow}
+                            </div>
+                          )
+                        }
+
+                        // ── C. مقفلة ───────────────────────────────────────────
+                        if (isLocked) {
+                          return (
+                            <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3">
+                              <div className="flex items-center justify-between opacity-50">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-slate-300 shrink-0">🔒</span>
+                                  <span className="font-medium text-slate-400 text-sm truncate">{tranche.label}</span>
+                                  <span className="text-xs text-slate-300 shrink-0 hidden sm:inline">${tranche.usd.toLocaleString()} = {tranche.planned.toLocaleString()} ₪</span>
+                                </div>
+                                <span className="text-xs text-slate-300 shrink-0">تُفتح بعد {BUDGET_TRANCHES[i - 1].label}</span>
+                              </div>
+                              {datesRow}
+                            </div>
+                          )
+                        }
+
+                        // ── B. نشطة: بطاقة كاملة ───────────────────────────────
+                        const prevThreshold = i === 0 ? 0 : cfEligibilityThresholds[i - 1]
+                        const progress = Math.min(100, Math.max(0,
+                          Math.round((cfTotalObligation - prevThreshold) / (threshold - prevThreshold) * 100)
+                        ))
+                        const shortfall = Math.max(0, threshold - cfTotalObligation)
 
                         // نشطة + مستحقة: تنبيه أصفر
                         if (isEligible) {
@@ -2900,10 +2927,11 @@ export default function ReportsPage() {
                                     <span className="mx-1 text-slate-300">×{USD_ILS_RATE} =</span>
                                     <span className="font-semibold text-green-700">{tranche.planned.toLocaleString()} ₪</span>
                                   </p>
-                                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-700">
+                                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-700 mb-1">
                                     <span className="shrink-0">✅</span>
                                     <span>تم بلوغ عتبة الاستحقاق: <strong>{Math.round(threshold).toLocaleString()} ₪</strong> — الإنجاز التراكمي: <strong>{cfTotalObligation.toLocaleString()} ₪</strong></span>
                                   </div>
+                                  {datesRow}
                                 </div>
                                 <button
                                   onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
@@ -2942,25 +2970,7 @@ export default function ReportsPage() {
                                     />
                                   </div>
                                 </div>
-                                <div className="grid gap-1 text-xs border-t border-slate-100 pt-2">
-                                  <p className="text-slate-400 mb-0.5">توقع بلوغ العتبة:</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-slate-400 w-24 shrink-0">📊 الوضع الحالي</span>
-                                    {dateLabel(eligDates?.current ?? null)}
-                                  </div>
-                                  {cfAllScenarios.partialReady && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-slate-400 w-24 shrink-0">🔶 سعير جزئي</span>
-                                      {dateLabel(eligDates?.partial ?? null)}
-                                    </div>
-                                  )}
-                                  {cfAllScenarios.fullReady && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-slate-400 w-24 shrink-0">🔴 سعير كامل</span>
-                                      {dateLabel(eligDates?.full ?? null)}
-                                    </div>
-                                  )}
-                                </div>
+                                {datesRow}
                               </div>
                               <button
                                 onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
