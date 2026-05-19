@@ -1019,6 +1019,121 @@ export default function ReportsPage() {
       ],
     })
 
+    // Prefix sums: prevTranchesSum[i] = P[0]+…+P[i-1]
+    const prevTranchesSum = BUDGET_TRANCHES.map((_, i) =>
+      BUDGET_TRANCHES.slice(0, i).reduce((s, t) => s + t.planned, 0)
+    )
+
+    // Build 6-month forecast for any scenario monthly rate
+    const buildScenarioForecast = (monthlyCost: number, monthlyTrips: number) => {
+      const now2 = new Date()
+      const completedHistory = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
+      const completedCumulative = completedHistory.length > 0 ? completedHistory[completedHistory.length - 1].cumulative : 0
+      const currentMonthEntry = cfMonthlyHistory.find(m => m.month === cfCurrentYM)
+      let estimatedCurrentMonth = monthlyCost
+      if (currentMonthEntry && currentMonthEntry.cost > 0) {
+        const daysInMonth = new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()
+        const dayOfMonth = now2.getDate()
+        estimatedCurrentMonth = Math.round(currentMonthEntry.cost * (1 + CF_MUN_RATE) * daysInMonth / dayOfMonth)
+      }
+      let cum = completedCumulative + estimatedCurrentMonth
+      const results: { month: string; trips: number; cost: number; cumulative: number }[] = []
+      for (let i = 1; i <= 6; i++) {
+        const d = new Date(now2.getFullYear(), now2.getMonth() + i, 1)
+        const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        cum += monthlyCost
+        results.push({ month, trips: monthlyTrips, cost: monthlyCost, cumulative: Math.round(cum) })
+      }
+      return results
+    }
+
+    // Build full 2027 scenario data (historical actuals + scenario-rate forecast)
+    const build2027ScenarioData = (monthlyCost: number) => {
+      const now2 = new Date()
+      const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[] = []
+      cfMonthlyHistory.forEach(m => {
+        data.push({
+          month: m.month,
+          cost: Math.round(m.cost),
+          forecastCost: null,
+          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - m.cumulative)) : null,
+        })
+      })
+      const lastCumulative = cfMonthlyHistory.length > 0 ? cfMonthlyHistory[cfMonthlyHistory.length - 1].cumulative : 0
+      let cum2 = lastCumulative
+      for (let i = 1; i <= 60; i++) {
+        const d = new Date(now2.getFullYear(), now2.getMonth() + i, 1)
+        if (d.getFullYear() > 2027) break
+        cum2 += monthlyCost
+        const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        data.push({
+          month,
+          cost: null,
+          forecastCost: Math.round(monthlyCost),
+          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - cum2)) : null,
+        })
+        if (d.getFullYear() === 2027 && d.getMonth() === 11) break
+      }
+      return data
+    }
+
+    // Build 6-month forecast table rows with milestone injection
+    const buildForecastTableRows = (forecast: { month: string; trips: number; cost: number; cumulative: number }[]) => {
+      const crossed = cfEligibilityThresholds.map(t => cfTotalObligation >= t)
+      const rows: TableRow[] = [
+        hdrRow(['Month', 'Expected Trips', 'Monthly Obligation (₪)', 'Cumulative Obligation (₪)']),
+      ]
+      forecast.forEach(m => {
+        cfEligibilityThresholds.forEach((threshold, ti) => {
+          if (!crossed[ti] && m.cumulative >= threshold) {
+            crossed[ti] = true
+            const consumed = Math.round(m.cumulative - prevTranchesSum[ti])
+            const remaining = Math.max(0, Math.round(BUDGET_TRANCHES[ti].planned - consumed))
+            const consumedPct = Math.round(consumed / BUDGET_TRANCHES[ti].planned * 100)
+            rows.push(milestoneRow(
+              `★ TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Consumed: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining: ${remaining.toLocaleString()} ₪`,
+              4,
+            ))
+          }
+        })
+        rows.push(dataRow([m.month, String(m.trips), fmt(m.cost), fmt(m.cumulative)]))
+      })
+      return rows
+    }
+
+    // Build 2027 table rows with milestone injection
+    const build2027TableRows = (data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[]) => {
+      const colCount = 3 + (cfOperationalBudget > 0 ? 1 : 0)
+      const crossed = cfEligibilityThresholds.map(() => false)
+      let runningCum = 0
+      const rows: TableRow[] = [
+        hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+      ]
+      data.forEach(row => {
+        const monthCost = row.cost ?? row.forecastCost ?? 0
+        runningCum += monthCost
+        cfEligibilityThresholds.forEach((threshold, ti) => {
+          if (!crossed[ti] && runningCum >= threshold) {
+            crossed[ti] = true
+            const consumed = Math.round(runningCum - prevTranchesSum[ti])
+            const remaining = Math.max(0, Math.round(BUDGET_TRANCHES[ti].planned - consumed))
+            const consumedPct = Math.round(consumed / BUDGET_TRANCHES[ti].planned * 100)
+            rows.push(milestoneRow(
+              `★ TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Consumed: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining: ${remaining.toLocaleString()} ₪`,
+              colCount,
+            ))
+          }
+        })
+        rows.push(dataRow([
+          row.month,
+          row.cost !== null ? 'Actual' : 'Forecast',
+          fmt(monthCost),
+          ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
+        ]))
+      })
+      return rows
+    }
+
     const imgPara = (bytes: Uint8Array, w = 580, h = 250) => new Paragraph({
       children: [new ImageRun({ data: bytes, transformation: { width: w, height: h }, type: 'png' })],
       spacing: { before: 150, after: 150 },
@@ -1140,52 +1255,40 @@ export default function ReportsPage() {
       ...(mainChartBytes ? [imgPara(mainChartBytes, 580, 260)] : [p('(Chart not available)', { color: '94A3B8' })]),
       blank(),
 
-      // 4. 6-Month Forecast
-      h1('4. Six-Month Forecast'),
-      p(`Forecast scenario: ${cfScenario === 'full' ? 'Sa3ir Full (all trips long-distance)' : cfScenario === 'partial' ? 'Sa3ir Partial (extra long-distance trips added)' : 'Current average'}. Rate: ${fmt(cfAvgMonthly.trips)} trips/month at ${fmt(cfAvgMonthly.cost)} ₪/month (obligation, incl. 14% municipality).`),
-      p(`Note: Cumulative starts from completed months (to end of ${cfMonthlyHistory.filter(m => m.month < cfCurrentYM).slice(-1)[0]?.month ?? 'N/A'}) plus a projected full-month estimate for the current partial month (${cfCurrentYM}), extrapolated from actual data so far.`),
+      // 4. 6-Month Forecast — All 3 Scenarios
+      h1('4. Six-Month Forecast — توقعات 6 أشهر (ثلاث سيناريوهات)'),
+      p('Six-month projection for each operational scenario. Amber rows indicate when a funding tranche becomes eligible, showing the tranche amount, amount consumed from it, and amount remaining.'),
+      p(`Note: Cumulative starts from completed months (to end of ${cfMonthlyHistory.filter(m => m.month < cfCurrentYM).slice(-1)[0]?.month ?? 'N/A'}) plus a projected full-month estimate for the current partial month (${cfCurrentYM}).`),
       blank(),
-      (() => {
-        const colCount = 4 + (cfOperationalBudget > 0 ? 2 : 0)
-        const crossed = cfEligibilityThresholds.map(t => cfTotalObligation >= t)
-        const rows: TableRow[] = [
-          hdrRow(['Month', 'Expected Trips', 'Expected Obligation (₪)', 'Cumulative Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
-        ]
-        cfForecast.forEach(m => {
-          cfEligibilityThresholds.forEach((threshold, ti) => {
-            if (!crossed[ti] && m.cumulative >= threshold) {
-              crossed[ti] = true
-              rows.push(milestoneRow(
-                `★ TRANCHE ${ti + 1} NOW ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" — Claim $${BUDGET_TRANCHES[ti].usd.toLocaleString()} (${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪)  [Threshold: ${Math.round(threshold).toLocaleString()} ₪]`,
-                colCount,
-              ))
-            }
-          })
-          const isDeficit = cfOperationalBudget > 0 && m.cumulative > cfOperationalBudget
-          const isWarning = cfOperationalBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
-          rows.push(dataRow([
-            m.month,
-            String(m.trips),
-            fmt(m.cost),
-            fmt(m.cumulative),
-            ...(cfOperationalBudget > 0 ? [
-              isDeficit ? `-${fmt(m.cumulative - cfOperationalBudget)}` : fmt(m.budgetRemaining),
-              isDeficit ? 'DEFICIT' : isWarning ? 'WARNING' : 'OK',
-            ] : []),
-          ]))
-        })
-        return tbl(rows)
-      })(),
+
+      h2('4.1 Current Scenario (Baseline) — الوضع الحالي'),
+      p(`Monthly rate: ${fmt(cfAllScenarios.current.monthly.cost)} ₪ / ${cfAllScenarios.current.monthly.trips} trips (EWMA historical average)`),
+      tbl(buildForecastTableRows(buildScenarioForecast(cfAllScenarios.current.monthly.cost, cfAllScenarios.current.monthly.trips))),
       blank(),
+
+      ...(cfAllScenarios.partialReady ? [
+        h2('4.2 Partial Sa3ir Scenario — سعير جزئي'),
+        p(`Monthly rate: ${fmt(cfAllScenarios.partial.monthly.cost)} ₪ / ${cfAllScenarios.partial.monthly.trips} trips (partial long-distance routes)`),
+        tbl(buildForecastTableRows(buildScenarioForecast(cfAllScenarios.partial.monthly.cost, cfAllScenarios.partial.monthly.trips))),
+        blank(),
+      ] : [h2('4.2 Partial Sa3ir — Not Configured (long_trip_per_month / long_trip_cost missing)'), blank()]),
+
+      ...(cfAllScenarios.fullReady ? [
+        h2('4.3 Full Sa3ir Scenario — سعير كامل'),
+        p(`Monthly rate: ${fmt(cfAllScenarios.full.monthly.cost)} ₪ / ${cfAllScenarios.full.monthly.trips} trips (all trips long-distance)`),
+        tbl(buildForecastTableRows(buildScenarioForecast(cfAllScenarios.full.monthly.cost, cfAllScenarios.full.monthly.trips))),
+        blank(),
+      ] : [h2('4.3 Full Sa3ir — Not Configured (sa3ir_trips_per_month / sa3ir_cost_per_trip missing)'), blank()]),
 
       // 4b. Installment Eligibility Analysis
       h1('4b. Installment Eligibility Analysis — تحليل استحقاق الدفعات'),
-      p(`Total funding: $1,000,000 × ${USD_ILS_RATE} = 2,950,000 ₪ across 5 quarterly tranches. Each tranche becomes eligible based on cumulative spending thresholds: T[1]=80%×P[1], T[n]=T[n-1]+80%×P[n]+20%×P[n-1].`),
+      p(`Total funding: $1,000,000 × ${USD_ILS_RATE} = 2,950,000 ₪ across 5 quarterly tranches. Each tranche becomes eligible based on cumulative spending thresholds: T[1]=80%×P[1], T[n]=T[n-1]+80%×P[n]+20%×P[n-1]. At eligibility, exactly 80% of the tranche is consumed and 20% remains.`),
       blank(),
       tbl([
         hdrRow([
-          'Tranche', 'Amount ($)', 'Amount (₪)', 'Eligibility Threshold (₪)',
-          'Progress %', 'Status',
+          'Tranche', 'Amount (₪)', 'Threshold (₪)',
+          'Consumed at Eligibility (₪)', 'Remaining at Eligibility (₪)',
+          'Status',
           'Current Scenario', 'Partial Saʿir', 'Full Saʿir',
         ]),
         ...BUDGET_TRANCHES.map((t, i) => {
@@ -1198,12 +1301,14 @@ export default function ReportsPage() {
           const fmtDate = (d: { month: string; isForecast: boolean } | null) =>
             d === null ? 'Beyond 2027'
               : d.isForecast ? `Forecast: ${d.month}` : `Achieved: ${d.month}`
+          const consumed = Math.round(threshold - prevTranchesSum[i])
+          const remaining = Math.max(0, Math.round(t.planned - consumed))
           return dataRow([
             t.label,
-            `$${t.usd.toLocaleString()}`,
             `${t.planned.toLocaleString()} ₪`,
             `${Math.round(threshold).toLocaleString()} ₪`,
-            `${progress}%`,
+            `${consumed.toLocaleString()} ₪ (80%)`,
+            `${remaining.toLocaleString()} ₪ (20%)`,
             status,
             fmtDate(eligDates?.current ?? null),
             cfAllScenarios.partialReady ? fmtDate(eligDates?.partial ?? null) : 'N/A',
@@ -1248,37 +1353,21 @@ export default function ReportsPage() {
       ...(chart2027Bytes ? [imgPara(chart2027Bytes, 580, 230)] : [p('(Chart not available)', { color: '94A3B8' })]),
       blank(),
 
-      // 5. Full 2027 monthly table
-      h2('Detailed Monthly Breakdown to December 2027'),
-      (() => {
-        const colCount = 3 + (cfOperationalBudget > 0 ? 1 : 0)
-        const crossed = cfEligibilityThresholds.map(() => false)
-        let runningCum = 0
-        const rows: TableRow[] = [
-          hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
-        ]
-        cf2027ChartData.forEach(row => {
-          const monthCost = row.cost ?? row.forecastCost ?? 0
-          runningCum += monthCost
-          cfEligibilityThresholds.forEach((threshold, ti) => {
-            if (!crossed[ti] && runningCum >= threshold) {
-              crossed[ti] = true
-              rows.push(milestoneRow(
-                `★ TRANCHE ${ti + 1} NOW ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" — Claim $${BUDGET_TRANCHES[ti].usd.toLocaleString()} (${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪)  [Threshold: ${Math.round(threshold).toLocaleString()} ₪]`,
-                colCount,
-              ))
-            }
-          })
-          rows.push(dataRow([
-            row.month,
-            row.cost !== null ? 'Actual' : 'Forecast',
-            fmt(monthCost),
-            ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
-          ]))
-        })
-        return tbl(rows)
-      })(),
+      // 5. Full 2027 monthly table — All 3 Scenarios
+      h2('Detailed Monthly Breakdown to December 2027 — ثلاث سيناريوهات'),
+      h3('5.1 Current Scenario (Baseline) — الوضع الحالي'),
+      tbl(build2027TableRows(build2027ScenarioData(cfAllScenarios.current.monthly.cost))),
       blank(),
+      ...(cfAllScenarios.partialReady ? [
+        h3('5.2 Partial Sa3ir Scenario — سعير جزئي'),
+        tbl(build2027TableRows(build2027ScenarioData(cfAllScenarios.partial.monthly.cost))),
+        blank(),
+      ] : []),
+      ...(cfAllScenarios.fullReady ? [
+        h3('5.3 Full Sa3ir Scenario — سعير كامل'),
+        tbl(build2027TableRows(build2027ScenarioData(cfAllScenarios.full.monthly.cost))),
+        blank(),
+      ] : []),
 
       // 6. Sa3ir Scenario Analysis
       h1('6. Sa3ir Scenario Analysis — تحليل سيناريوهات سعير'),
