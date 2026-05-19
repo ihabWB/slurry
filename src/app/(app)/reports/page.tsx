@@ -2794,115 +2794,187 @@ export default function ReportsPage() {
                         {cfLiquidity.liquidityNow >= 0 ? '+' : ''}{cfLiquidity.liquidityNow.toLocaleString()} ₪
                       </p>
                     </div>
-                    <div className={`bg-white rounded-xl border p-3 text-center shadow-sm ${
-                      cfTranchesEligible.some((e, i) => e && !cfTranchesReceived[i]) ? 'border-yellow-300 bg-yellow-50' : 'border-blue-100'
-                    }`}>
-                      <p className="text-xs text-slate-400 mb-1">حالة الاستحقاق</p>
-                      {cfTranchesEligible.some((e, i) => e && !cfTranchesReceived[i]) ? (
-                        <>
-                          <p className="text-sm font-bold text-yellow-700">🟡 مستحقة لم تُستلم!</p>
-                          <p className="text-xs text-yellow-600">اطلب {cfTranchesEligible.filter((e, i) => e && !cfTranchesReceived[i]).length} دفعة</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-sm font-bold text-blue-700">{cfLiquidity.nextTranche?.label ?? 'اكتملت جميع الدفعات'}</p>
-                          {cfLiquidity.nextTranche && <p className="text-xs text-slate-400">{cfLiquidity.nextTranche.planned.toLocaleString()} ₪</p>}
-                        </>
-                      )}
-                    </div>
+                    {(() => {
+                      const fni = cfTranchesReceived.findIndex(v => !v)
+                      const activePrev = fni <= 0 ? 0 : cfEligibilityThresholds[fni - 1]
+                      const activeThresh = fni >= 0 ? cfEligibilityThresholds[fni] : 1
+                      const ap = fni >= 0
+                        ? Math.min(100, Math.max(0, Math.round((cfTotalObligation - activePrev) / (activeThresh - activePrev) * 100)))
+                        : 100
+                      const isActiveEligible = fni >= 0 && cfTranchesEligible[fni]
+                      return (
+                        <div className={`bg-white rounded-xl border p-3 text-center shadow-sm ${
+                          isActiveEligible ? 'border-yellow-300 bg-yellow-50' : fni === -1 ? 'border-emerald-100' : 'border-blue-100'
+                        }`}>
+                          <p className="text-xs text-slate-400 mb-1">حالة الاستحقاق</p>
+                          {fni === -1 ? (
+                            <p className="text-sm font-bold text-emerald-700">✅ اكتملت جميع الدفعات</p>
+                          ) : isActiveEligible ? (
+                            <>
+                              <p className="text-sm font-bold text-yellow-700 animate-pulse">🟡 مستحقة — اطلب الآن</p>
+                              <p className="text-xs text-yellow-600">{BUDGET_TRANCHES[fni].label}</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xl font-bold text-blue-700">{ap}%</p>
+                              <p className="text-xs text-slate-400">نحو {BUDGET_TRANCHES[fni].label}</p>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
 
-                  {/* بطاقة لكل دفعة */}
-                  <div className="px-4 pb-4 space-y-3">
-                    {BUDGET_TRANCHES.map((tranche, i) => {
-                      const threshold = cfEligibilityThresholds[i]
-                      const isEligible = cfTranchesEligible[i]
-                      const isReceived = cfTranchesReceived[i]
-                      const progress = Math.min(100, Math.round(cfTotalObligation / threshold * 100))
-                      const shortfall = Math.max(0, threshold - cfTotalObligation)
-                      const eligDates = cfTranchesExpectedEligibility[i]
+                  {/* قائمة الدفعات — مستلمة / نشطة / مقفلة */}
+                  <div className="px-4 pb-4 space-y-2">
+                    {(() => {
+                      const firstNonReceived = cfTranchesReceived.findIndex(v => !v)
+                      return BUDGET_TRANCHES.map((tranche, i) => {
+                        const threshold = cfEligibilityThresholds[i]
+                        const isEligible = cfTranchesEligible[i]
+                        const isReceived = cfTranchesReceived[i]
+                        const isLocked = firstNonReceived >= 0 && i > firstNonReceived
 
-                      const statusBadge = isReceived
-                        ? <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">🟢 مستلمة</span>
-                        : isEligible
-                          ? <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 animate-pulse">🟡 مستحقة — اطلب الدفعة الآن!</span>
-                          : <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">🔵 قيد الإنجاز {progress}%</span>
-
-                      const dateLabel = (d: { month: string; isForecast: boolean } | null) =>
-                        d === null
-                          ? <span className="text-slate-400">⏳ خارج 2027</span>
-                          : d.isForecast
-                            ? <span className="text-blue-600">📅 {d.month}</span>
-                            : <span className="text-emerald-600">✅ {d.month}</span>
-
-                      return (
-                        <div key={i} className={`rounded-xl border p-4 transition-all ${
-                          isReceived ? 'border-emerald-200 bg-emerald-50/40'
-                          : isEligible ? 'border-yellow-300 bg-yellow-50/60 shadow-sm'
-                          : 'border-slate-200 bg-white'
-                        }`}>
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap mb-1">
-                                <span className="font-bold text-slate-800 text-sm">{tranche.label}</span>
-                                {statusBadge}
+                        // ── A. مستلمة: صف مضغوط أخضر ──────────────────────────
+                        if (isReceived) {
+                          return (
+                            <div key={i} className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-2.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-emerald-500 shrink-0">✓</span>
+                                <span className="font-semibold text-slate-700 text-sm truncate">{tranche.label}</span>
+                                <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">${tranche.usd.toLocaleString()} = {tranche.planned.toLocaleString()} ₪</span>
                               </div>
-                              <p className="text-xs text-slate-500 mb-2">
-                                <span className="font-medium text-slate-700">${tranche.usd.toLocaleString()}</span>
-                                <span className="mx-1 text-slate-300">×{USD_ILS_RATE} =</span>
-                                <span className="font-semibold text-green-700">{tranche.planned.toLocaleString()} ₪</span>
-                              </p>
-                              <div className="mb-2">
-                                <div className="flex justify-between text-xs text-slate-500 mb-1">
-                                  <span>عتبة الاستحقاق: <strong className="text-slate-700">{Math.round(threshold).toLocaleString()} ₪</strong></span>
-                                  {!isEligible && <span className="text-orange-600">متبقي: {Math.round(shortfall).toLocaleString()} ₪</span>}
-                                </div>
-                                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full transition-all ${
-                                      isReceived ? 'bg-emerald-400' : isEligible ? 'bg-yellow-400' : 'bg-blue-400'
-                                    }`}
-                                    style={{ width: `${progress}%` }}
-                                  />
-                                </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">🟢 مستلمة</span>
+                                <button
+                                  onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
+                                  className="text-xs text-slate-300 hover:text-red-400 transition-colors px-1"
+                                  title="إلغاء الاستلام"
+                                >✕</button>
                               </div>
-                              {!isReceived && (
-                                <div className="grid gap-0.5 text-xs mt-1">
+                            </div>
+                          )
+                        }
+
+                        // ── C. مقفلة: صف مضغوط رمادي ──────────────────────────
+                        if (isLocked) {
+                          return (
+                            <div key={i} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-2.5 opacity-50">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-slate-300 shrink-0">🔒</span>
+                                <span className="font-medium text-slate-400 text-sm truncate">{tranche.label}</span>
+                                <span className="text-xs text-slate-300 shrink-0 hidden sm:inline">${tranche.usd.toLocaleString()} = {tranche.planned.toLocaleString()} ₪</span>
+                              </div>
+                              <span className="text-xs text-slate-300 shrink-0">تُفتح بعد {BUDGET_TRANCHES[i - 1].label}</span>
+                            </div>
+                          )
+                        }
+
+                        // ── B. نشطة: بطاقة كاملة ──────────────────────────────
+                        const prevThreshold = i === 0 ? 0 : cfEligibilityThresholds[i - 1]
+                        const progress = Math.min(100, Math.max(0,
+                          Math.round((cfTotalObligation - prevThreshold) / (threshold - prevThreshold) * 100)
+                        ))
+                        const shortfall = Math.max(0, threshold - cfTotalObligation)
+                        const eligDates = cfTranchesExpectedEligibility[i]
+
+                        const dateLabel = (d: { month: string; isForecast: boolean } | null) =>
+                          d === null
+                            ? <span className="text-slate-400">⏳ خارج 2027</span>
+                            : d.isForecast
+                              ? <span className="text-blue-600">📅 {d.month}</span>
+                              : <span className="text-emerald-600">✅ {d.month}</span>
+
+                        // نشطة + مستحقة: تنبيه أصفر
+                        if (isEligible) {
+                          return (
+                            <div key={i} className="rounded-xl border-2 border-yellow-400 bg-yellow-50/70 p-4 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                                    <span className="font-bold text-slate-800 text-sm">{tranche.label}</span>
+                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-200 text-yellow-900 animate-pulse">🟡 مستحقة — اطلب الآن!</span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 mb-3">
+                                    <span className="font-medium text-slate-700">${tranche.usd.toLocaleString()}</span>
+                                    <span className="mx-1 text-slate-300">×{USD_ILS_RATE} =</span>
+                                    <span className="font-semibold text-green-700">{tranche.planned.toLocaleString()} ₪</span>
+                                  </p>
+                                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-700">
+                                    <span className="shrink-0">✅</span>
+                                    <span>تم بلوغ عتبة الاستحقاق: <strong>{Math.round(threshold).toLocaleString()} ₪</strong> — الإنجاز التراكمي: <strong>{cfTotalObligation.toLocaleString()} ₪</strong></span>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
+                                  className="shrink-0 px-3 py-2 rounded-lg text-xs font-bold bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors border border-yellow-500 shadow-sm"
+                                >
+                                  ✓ تأكيد الاستلام
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        // نشطة + قيد الإنجاز
+                        return (
+                          <div key={i} className="rounded-xl border-2 border-blue-200 bg-white p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                                  <span className="font-bold text-slate-800 text-sm">{tranche.label}</span>
+                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">🔵 قيد الإنجاز {progress}%</span>
+                                </div>
+                                <p className="text-xs text-slate-500 mb-3">
+                                  <span className="font-medium text-slate-700">${tranche.usd.toLocaleString()}</span>
+                                  <span className="mx-1 text-slate-300">×{USD_ILS_RATE} =</span>
+                                  <span className="font-semibold text-green-700">{tranche.planned.toLocaleString()} ₪</span>
+                                </p>
+                                <div className="mb-3">
+                                  <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                                    <span>عتبة الاستحقاق: <strong className="text-slate-700">{Math.round(threshold).toLocaleString()} ₪</strong></span>
+                                    <span className="text-orange-600 font-medium">متبقي: {Math.round(shortfall).toLocaleString()} ₪</span>
+                                  </div>
+                                  <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full bg-blue-400 transition-all duration-500"
+                                      style={{ width: `${progress}%` }}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid gap-1 text-xs border-t border-slate-100 pt-2">
+                                  <p className="text-slate-400 mb-0.5">توقع بلوغ العتبة:</p>
                                   <div className="flex items-center gap-2">
-                                    <span className="text-slate-400 w-20 shrink-0">📊 حالي</span>
+                                    <span className="text-slate-400 w-24 shrink-0">📊 الوضع الحالي</span>
                                     {dateLabel(eligDates?.current ?? null)}
                                   </div>
                                   {cfAllScenarios.partialReady && (
                                     <div className="flex items-center gap-2">
-                                      <span className="text-slate-400 w-20 shrink-0">🔶 سعير جزئي</span>
+                                      <span className="text-slate-400 w-24 shrink-0">🔶 سعير جزئي</span>
                                       {dateLabel(eligDates?.partial ?? null)}
                                     </div>
                                   )}
                                   {cfAllScenarios.fullReady && (
                                     <div className="flex items-center gap-2">
-                                      <span className="text-slate-400 w-20 shrink-0">🔴 سعير كامل</span>
+                                      <span className="text-slate-400 w-24 shrink-0">🔴 سعير كامل</span>
                                       {dateLabel(eligDates?.full ?? null)}
                                     </div>
                                   )}
                                 </div>
-                              )}
+                              </div>
+                              <button
+                                onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
+                                disabled
+                                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-400 cursor-not-allowed"
+                                title="تأكيد الاستلام متاح فقط بعد بلوغ العتبة"
+                              >
+                                ○ لم تُستحق بعد
+                              </button>
                             </div>
-                            <button
-                              onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
-                              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                                isReceived
-                                  ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                  : isEligible
-                                    ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border border-yellow-300'
-                                    : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                              }`}
-                            >
-                              {isReceived ? '✓ مستلمة' : '○ تأكيد الاستلام'}
-                            </button>
                           </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })
+                    })()}
                   </div>
                 </div>
               )}
