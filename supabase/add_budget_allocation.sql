@@ -13,6 +13,11 @@ INSERT INTO settings (key, value, label) VALUES
   ('budget_contingency_pct', '10', 'نسبة احتياطي الطوارئ % من الميزانية الإجمالية (0–30)')
 ON CONFLICT (key) DO NOTHING;
 
+-- تحديث ميزانية المشروع لمبلغ العقد ($1,000,000 × 2.95 = ₪2,950,000)
+INSERT INTO settings (key, value, label) VALUES
+  ('project_budget', '2950000', 'ميزانية المشروع الإجمالية (شيكل)')
+ON CONFLICT (key) DO UPDATE SET value = '2950000';
+
 -- التحقق
 SELECT key, value, label FROM settings
 WHERE key IN ('project_budget', 'budget_contingency_pct', 'forecast_smoothing_alpha')

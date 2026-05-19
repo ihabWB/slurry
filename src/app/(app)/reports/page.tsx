@@ -53,12 +53,13 @@ function getMonthRange(monthsAgo: number): { from: string; to: string } {
 
 const CF_MUN_RATE = 0.14  // نسبة بلدية الخليل الثابتة — تُضاف فوق تكلفة النقلات
 
+const USD_ILS_RATE = 2.95 // سعر صرف الدولار → شيكل (معتمد في العقد)
 const BUDGET_TRANCHES = [
-  { label: 'الربع الأخير 2025', from: '2025-10-01', to: '2025-12-31', planned: 844440 },
-  { label: 'الربع الأول 2026',  from: '2026-01-01', to: '2026-03-31', planned: 538890 },
-  { label: 'الربع الثاني 2026', from: '2026-04-01', to: '2026-06-30', planned: 418890 },
-  { label: 'الربع الثالث 2026', from: '2026-07-01', to: '2026-09-30', planned: 418890 },
-  { label: 'الربع الرابع 2026', from: '2026-10-01', to: '2026-12-31', planned: 418890 },
+  { label: 'الربع الأخير 2025', from: '2025-10-01', to: '2025-12-31', planned: 830366,   usd: 281480 },
+  { label: 'الربع الأول 2026',  from: '2026-01-01', to: '2026-03-31', planned: 647908.5, usd: 219630 },
+  { label: 'الربع الثاني 2026', from: '2026-04-01', to: '2026-06-30', planned: 529908.5, usd: 179630 },
+  { label: 'الربع الثالث 2026', from: '2026-07-01', to: '2026-09-30', planned: 529908.5, usd: 179630 },
+  { label: 'الربع الرابع 2026', from: '2026-10-01', to: '2026-12-31', planned: 411908.5, usd: 139630 },
 ] as const
 
 export default function ReportsPage() {
@@ -821,6 +822,80 @@ export default function ReportsPage() {
     return { totalReceived, liquidityNow, nextTranche }
   }, [cfTranchesReceived, cfTotalObligation])
 
+  // عتبات استحقاق الدفعات التراكمية (80/20)
+  // T[0] = 80% × P[0]
+  // T[i] = T[i-1] + 80% × P[i] + 20% × P[i-1]
+  const cfEligibilityThresholds = useMemo(() => {
+    const T: number[] = []
+    BUDGET_TRANCHES.forEach((t, i) => {
+      const prev = i === 0 ? 0 : T[i - 1]
+      const increment = i === 0
+        ? 0.8 * t.planned
+        : 0.8 * t.planned + 0.2 * BUDGET_TRANCHES[i - 1].planned
+      T.push(prev + increment)
+    })
+    return T
+  }, [])
+
+  // حالة استحقاق كل دفعة (تلقائي بناءً على الصرف التراكمي الفعلي)
+  const cfTranchesEligible = cfEligibilityThresholds.map(t => cfTotalObligation >= t)
+
+  // توقع تاريخ استحقاق كل دفعة عبر الثلاث سيناريوهات
+  const cfTranchesExpectedEligibility = useMemo(() => {
+    const now = new Date()
+    // حساب forecastBase (نفس منطق cfForecast)
+    const completedHistory = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
+    const completedCumulative = completedHistory.length > 0 ? completedHistory[completedHistory.length - 1].cumulative : 0
+    const currentMonthEntry = cfMonthlyHistory.find(m => m.month === cfCurrentYM)
+    let estCurrentMonth = cfAvgMonthly.cost
+    if (currentMonthEntry && currentMonthEntry.cost > 0) {
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+      estCurrentMonth = Math.round(currentMonthEntry.cost * (1 + CF_MUN_RATE) * daysInMonth / now.getDate())
+    }
+    const forecastBase = completedCumulative + estCurrentMonth
+
+    // بناء قائمة شهور التوقع حتى ديسمبر 2027
+    const fMonths: string[] = []
+    for (let i = 1; ; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      if (d.getFullYear() > 2027) break
+      fMonths.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+      if (d.getFullYear() === 2027 && d.getMonth() === 11) break
+    }
+
+    // دالة مساعدة: تجد أول شهر يتجاوز فيه التراكمي عتبة معينة
+    const findEligibilityDate = (monthlyCost: number) => {
+      // أولاً ابحث في التاريخ الفعلي
+      const historicalResult = cfMonthlyHistory
+        .map(m => ({ month: m.month, cumulative: m.cumulative, isForecast: false }))
+        .find(m => m.cumulative >= 0) // سيُفلتر بالعتبة أدناه
+      void historicalResult
+      // إنشاء timeline كامل = تاريخي + توقع
+      const timeline: { month: string; cumulative: number; isForecast: boolean }[] = [
+        ...cfMonthlyHistory.map(m => ({ month: m.month, cumulative: m.cumulative, isForecast: false })),
+      ]
+      let cum = forecastBase
+      fMonths.forEach(month => {
+        cum += monthlyCost
+        timeline.push({ month, cumulative: Math.round(cum), isForecast: true })
+      })
+      return (threshold: number) => {
+        const entry = timeline.find(e => e.cumulative >= threshold)
+        return entry ? { month: entry.month, isForecast: entry.isForecast } : null
+      }
+    }
+
+    const findCurrent = findEligibilityDate(cfAllScenarios.current.monthly.cost)
+    const findPartial = cfAllScenarios.partialReady ? findEligibilityDate(cfAllScenarios.partial.monthly.cost) : null
+    const findFull    = cfAllScenarios.fullReady    ? findEligibilityDate(cfAllScenarios.full.monthly.cost)    : null
+
+    return cfEligibilityThresholds.map(threshold => ({
+      current: findCurrent(threshold),
+      partial: findPartial ? findPartial(threshold) : null,
+      full:    findFull    ? findFull(threshold)    : null,
+    }))
+  }, [cfEligibilityThresholds, cfMonthlyHistory, cfAllScenarios, cfTotalObligation, cfCurrentYM, cfAvgMonthly, CF_MUN_RATE])
+
   // بيانات شارت 2027 (فعلي + توقع حتى ديسمبر 2027)
   const cf2027ChartData = useMemo(() => {
     const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[] = []
@@ -1070,6 +1145,41 @@ export default function ReportsPage() {
               isDeficit ? `-${fmt(m.cumulative - cfOperationalBudget)}` : fmt(m.budgetRemaining),
               isDeficit ? 'DEFICIT' : isWarning ? 'WARNING' : 'OK',
             ] : []),
+          ])
+        }),
+      ]),
+      blank(),
+
+      // 4b. Installment Eligibility Analysis
+      h1('4b. Installment Eligibility Analysis — تحليل استحقاق الدفعات'),
+      p(`Total funding: $1,000,000 × ${USD_ILS_RATE} = 2,950,000 ₪ across 5 quarterly tranches. Each tranche becomes eligible based on cumulative spending thresholds: T[1]=80%×P[1], T[n]=T[n-1]+80%×P[n]+20%×P[n-1].`),
+      blank(),
+      tbl([
+        hdrRow([
+          'Tranche', 'Amount ($)', 'Amount (₪)', 'Eligibility Threshold (₪)',
+          'Progress %', 'Status',
+          'Current Scenario', 'Partial Saʿir', 'Full Saʿir',
+        ]),
+        ...BUDGET_TRANCHES.map((t, i) => {
+          const threshold = cfEligibilityThresholds[i]
+          const isEligible = cfTranchesEligible[i]
+          const isReceived = cfTranchesReceived[i]
+          const progress = Math.min(100, Math.round(cfTotalObligation / threshold * 100))
+          const eligDates = cfTranchesExpectedEligibility[i]
+          const status = isReceived ? 'Received' : isEligible ? 'ELIGIBLE — Claim Now' : `In Progress ${progress}%`
+          const fmtDate = (d: { month: string; isForecast: boolean } | null) =>
+            d === null ? 'Beyond 2027'
+              : d.isForecast ? `Forecast: ${d.month}` : `Achieved: ${d.month}`
+          return dataRow([
+            t.label,
+            `$${t.usd.toLocaleString()}`,
+            `${t.planned.toLocaleString()} ₪`,
+            `${Math.round(threshold).toLocaleString()} ₪`,
+            `${progress}%`,
+            status,
+            fmtDate(eligDates?.current ?? null),
+            cfAllScenarios.partialReady ? fmtDate(eligDates?.partial ?? null) : 'N/A',
+            cfAllScenarios.fullReady    ? fmtDate(eligDates?.full    ?? null) : 'N/A',
           ])
         }),
       ]),
@@ -2659,6 +2769,140 @@ export default function ReportsPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── تتبع الدفعات وعتبات الاستحقاق ── */}
+              {cfLoaded && (
+                <div className="rounded-2xl border-2 border-green-200 bg-gradient-to-br from-green-50/60 to-white overflow-hidden">
+                  <div className="px-4 py-3 border-b border-green-100 bg-green-50">
+                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">💰 تتبع الدفعات وعتبات الاستحقاق</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">إجمالي التمويل: $1,000,000 = 2,950,000 ₪ · سعر الصرف: {USD_ILS_RATE} ₪/$ · قاعدة الاستحقاق: 80/20</p>
+                  </div>
+
+                  {/* بطاقات الملخص */}
+                  <div className="grid grid-cols-3 gap-3 p-4 bg-slate-50/50">
+                    <div className="bg-white rounded-xl border border-green-100 p-3 text-center shadow-sm">
+                      <p className="text-xs text-slate-400 mb-1">إجمالي المستلم</p>
+                      <p className="text-xl font-bold text-green-700">{cfLiquidity.totalReceived.toLocaleString()} ₪</p>
+                      <p className="text-xs text-slate-400">{cfTranchesReceived.filter(Boolean).length} من 5 دفعات</p>
+                    </div>
+                    <div className={'bg-white rounded-xl border p-3 text-center shadow-sm ' + (cfLiquidity.liquidityNow >= 0 ? 'border-emerald-100' : 'border-red-100')}>
+                      <p className="text-xs text-slate-400 mb-1">السيولة الحالية</p>
+                      <p className={'text-xl font-bold ' + (cfLiquidity.liquidityNow >= 0 ? 'text-emerald-700' : 'text-red-600')}>
+                        {cfLiquidity.liquidityNow >= 0 ? '+' : ''}{cfLiquidity.liquidityNow.toLocaleString()} ₪
+                      </p>
+                    </div>
+                    <div className={`bg-white rounded-xl border p-3 text-center shadow-sm ${
+                      cfTranchesEligible.some((e, i) => e && !cfTranchesReceived[i]) ? 'border-yellow-300 bg-yellow-50' : 'border-blue-100'
+                    }`}>
+                      <p className="text-xs text-slate-400 mb-1">حالة الاستحقاق</p>
+                      {cfTranchesEligible.some((e, i) => e && !cfTranchesReceived[i]) ? (
+                        <>
+                          <p className="text-sm font-bold text-yellow-700">🟡 مستحقة لم تُستلم!</p>
+                          <p className="text-xs text-yellow-600">اطلب {cfTranchesEligible.filter((e, i) => e && !cfTranchesReceived[i]).length} دفعة</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-bold text-blue-700">{cfLiquidity.nextTranche?.label ?? 'اكتملت جميع الدفعات'}</p>
+                          {cfLiquidity.nextTranche && <p className="text-xs text-slate-400">{cfLiquidity.nextTranche.planned.toLocaleString()} ₪</p>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* بطاقة لكل دفعة */}
+                  <div className="px-4 pb-4 space-y-3">
+                    {BUDGET_TRANCHES.map((tranche, i) => {
+                      const threshold = cfEligibilityThresholds[i]
+                      const isEligible = cfTranchesEligible[i]
+                      const isReceived = cfTranchesReceived[i]
+                      const progress = Math.min(100, Math.round(cfTotalObligation / threshold * 100))
+                      const shortfall = Math.max(0, threshold - cfTotalObligation)
+                      const eligDates = cfTranchesExpectedEligibility[i]
+
+                      const statusBadge = isReceived
+                        ? <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">🟢 مستلمة</span>
+                        : isEligible
+                          ? <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 animate-pulse">🟡 مستحقة — اطلب الدفعة الآن!</span>
+                          : <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">🔵 قيد الإنجاز {progress}%</span>
+
+                      const dateLabel = (d: { month: string; isForecast: boolean } | null) =>
+                        d === null
+                          ? <span className="text-slate-400">⏳ خارج 2027</span>
+                          : d.isForecast
+                            ? <span className="text-blue-600">📅 {d.month}</span>
+                            : <span className="text-emerald-600">✅ {d.month}</span>
+
+                      return (
+                        <div key={i} className={`rounded-xl border p-4 transition-all ${
+                          isReceived ? 'border-emerald-200 bg-emerald-50/40'
+                          : isEligible ? 'border-yellow-300 bg-yellow-50/60 shadow-sm'
+                          : 'border-slate-200 bg-white'
+                        }`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="font-bold text-slate-800 text-sm">{tranche.label}</span>
+                                {statusBadge}
+                              </div>
+                              <p className="text-xs text-slate-500 mb-2">
+                                <span className="font-medium text-slate-700">${tranche.usd.toLocaleString()}</span>
+                                <span className="mx-1 text-slate-300">×{USD_ILS_RATE} =</span>
+                                <span className="font-semibold text-green-700">{tranche.planned.toLocaleString()} ₪</span>
+                              </p>
+                              <div className="mb-2">
+                                <div className="flex justify-between text-xs text-slate-500 mb-1">
+                                  <span>عتبة الاستحقاق: <strong className="text-slate-700">{Math.round(threshold).toLocaleString()} ₪</strong></span>
+                                  {!isEligible && <span className="text-orange-600">متبقي: {Math.round(shortfall).toLocaleString()} ₪</span>}
+                                </div>
+                                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      isReceived ? 'bg-emerald-400' : isEligible ? 'bg-yellow-400' : 'bg-blue-400'
+                                    }`}
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                              </div>
+                              {!isReceived && (
+                                <div className="grid gap-0.5 text-xs mt-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-slate-400 w-20 shrink-0">📊 حالي</span>
+                                    {dateLabel(eligDates?.current ?? null)}
+                                  </div>
+                                  {cfAllScenarios.partialReady && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-slate-400 w-20 shrink-0">🔶 سعير جزئي</span>
+                                      {dateLabel(eligDates?.partial ?? null)}
+                                    </div>
+                                  )}
+                                  {cfAllScenarios.fullReady && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-slate-400 w-20 shrink-0">🔴 سعير كامل</span>
+                                      {dateLabel(eligDates?.full ?? null)}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => setCfTranchesReceived(prev => prev.map((v, j) => j === i ? !v : v))}
+                              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                isReceived
+                                  ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                  : isEligible
+                                    ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border border-yellow-300'
+                                    : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                              }`}
+                            >
+                              {isReceived ? '✓ مستلمة' : '○ تأكيد الاستلام'}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
