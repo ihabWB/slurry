@@ -1052,9 +1052,10 @@ export default function ReportsPage() {
       const now2 = new Date()
       const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[] = []
       cfMonthlyHistory.forEach(m => {
+        // Use obligation (cost × 1.14) — thresholds are in obligation terms
         data.push({
           month: m.month,
-          cost: Math.round(m.cost),
+          cost: Math.round(m.cost * (1 + CF_MUN_RATE)),
           forecastCost: null,
           remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - m.cumulative)) : null,
         })
@@ -1084,6 +1085,8 @@ export default function ReportsPage() {
         hdrRow(['Month', 'Expected Trips', 'Monthly Obligation (₪)', 'Cumulative Obligation (₪)']),
       ]
       forecast.forEach(m => {
+        // Data row first — milestone appears AFTER (end-of-month crossing)
+        rows.push(dataRow([m.month, String(m.trips), fmt(m.cost), fmt(m.cumulative)]))
         cfEligibilityThresholds.forEach((threshold, ti) => {
           if (!crossed[ti] && m.cumulative >= threshold) {
             crossed[ti] = true
@@ -1091,12 +1094,11 @@ export default function ReportsPage() {
             const remaining = Math.max(0, Math.round(BUDGET_TRANCHES[ti].planned - consumed))
             const consumedPct = Math.round(consumed / BUDGET_TRANCHES[ti].planned * 100)
             rows.push(milestoneRow(
-              `★ TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Consumed: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining: ${remaining.toLocaleString()} ₪`,
+              `▼ End of ${m.month} — TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | Amount: $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Threshold: ${Math.round(threshold).toLocaleString()} ₪ | Actual reached: ${m.cumulative.toLocaleString()} ₪ | Consumed from tranche: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining in tranche: ${remaining.toLocaleString()} ₪`,
               4,
             ))
           }
         })
-        rows.push(dataRow([m.month, String(m.trips), fmt(m.cost), fmt(m.cumulative)]))
       })
       return rows
     }
@@ -1107,11 +1109,19 @@ export default function ReportsPage() {
       const crossed = cfEligibilityThresholds.map(() => false)
       let runningCum = 0
       const rows: TableRow[] = [
-        hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        hdrRow(['Month', 'Type', 'Monthly Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
       ]
       data.forEach(row => {
+        // cost is obligation for historical months (m.cost × 1.14) and for forecast (already obligation)
         const monthCost = row.cost ?? row.forecastCost ?? 0
         runningCum += monthCost
+        // Data row first — milestone appears AFTER (end-of-month crossing)
+        rows.push(dataRow([
+          row.month,
+          row.cost !== null ? 'Actual' : 'Forecast',
+          fmt(monthCost),
+          ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
+        ]))
         cfEligibilityThresholds.forEach((threshold, ti) => {
           if (!crossed[ti] && runningCum >= threshold) {
             crossed[ti] = true
@@ -1119,17 +1129,11 @@ export default function ReportsPage() {
             const remaining = Math.max(0, Math.round(BUDGET_TRANCHES[ti].planned - consumed))
             const consumedPct = Math.round(consumed / BUDGET_TRANCHES[ti].planned * 100)
             rows.push(milestoneRow(
-              `★ TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Consumed: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining: ${remaining.toLocaleString()} ₪`,
+              `▼ End of ${row.month} — TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | Amount: $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Threshold: ${Math.round(threshold).toLocaleString()} ₪ | Actual reached: ${Math.round(runningCum).toLocaleString()} ₪ | Consumed from tranche: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining in tranche: ${remaining.toLocaleString()} ₪`,
               colCount,
             ))
           }
         })
-        rows.push(dataRow([
-          row.month,
-          row.cost !== null ? 'Actual' : 'Forecast',
-          fmt(monthCost),
-          ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
-        ]))
       })
       return rows
     }
@@ -1282,7 +1286,7 @@ export default function ReportsPage() {
 
       // 4b. Installment Eligibility Analysis
       h1('4b. Installment Eligibility Analysis — تحليل استحقاق الدفعات'),
-      p(`Total funding: $1,000,000 × ${USD_ILS_RATE} = 2,950,000 ₪ across 5 quarterly tranches. Each tranche becomes eligible based on cumulative spending thresholds: T[1]=80%×P[1], T[n]=T[n-1]+80%×P[n]+20%×P[n-1]. At eligibility, exactly 80% of the tranche is consumed and 20% remains.`),
+      p(`Total funding: $1,000,000 × ${USD_ILS_RATE} = 2,950,000 ₪ across 5 quarterly tranches. Thresholds use OBLIGATION values (trip cost × 1.14 municipality). Formula: T[1]=80%×P[1], T[n]=T[n-1]+80%×P[n]+20%×P[n-1]. At the exact threshold, 80% of tranche is consumed and 20% remains. In practice (monthly granularity), the actual % at end of crossing month may exceed 80% — see milestone rows in Sections 4 and 5 for precise per-scenario values.`),
       blank(),
       tbl([
         hdrRow([
