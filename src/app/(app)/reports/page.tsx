@@ -1005,6 +1005,20 @@ export default function ReportsPage() {
       },
     })
 
+    const milestoneRow = (text: string, colSpan: number) => new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: colSpan,
+          children: [new Paragraph({
+            children: [new TextRun({ text, bold: true, color: 'FFFFFF', size: 20 })],
+            alignment: AlignmentType.CENTER,
+          })],
+          shading: { type: ShadingType.CLEAR, fill: 'D97706' },
+          margins: { top: 100, bottom: 100, left: 150, right: 150 },
+        }),
+      ],
+    })
+
     const imgPara = (bytes: Uint8Array, w = 580, h = 250) => new Paragraph({
       children: [new ImageRun({ data: bytes, transformation: { width: w, height: h }, type: 'png' })],
       spacing: { before: 150, after: 150 },
@@ -1131,12 +1145,25 @@ export default function ReportsPage() {
       p(`Forecast scenario: ${cfScenario === 'full' ? 'Sa3ir Full (all trips long-distance)' : cfScenario === 'partial' ? 'Sa3ir Partial (extra long-distance trips added)' : 'Current average'}. Rate: ${fmt(cfAvgMonthly.trips)} trips/month at ${fmt(cfAvgMonthly.cost)} ₪/month (obligation, incl. 14% municipality).`),
       p(`Note: Cumulative starts from completed months (to end of ${cfMonthlyHistory.filter(m => m.month < cfCurrentYM).slice(-1)[0]?.month ?? 'N/A'}) plus a projected full-month estimate for the current partial month (${cfCurrentYM}), extrapolated from actual data so far.`),
       blank(),
-      tbl([
-        hdrRow(['Month', 'Expected Trips', 'Expected Obligation (₪)', 'Cumulative Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
-        ...cfForecast.map(m => {
+      (() => {
+        const colCount = 4 + (cfOperationalBudget > 0 ? 2 : 0)
+        const crossed = cfEligibilityThresholds.map(t => cfTotalObligation >= t)
+        const rows: TableRow[] = [
+          hdrRow(['Month', 'Expected Trips', 'Expected Obligation (₪)', 'Cumulative Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)', 'Status'] : [])]),
+        ]
+        cfForecast.forEach(m => {
+          cfEligibilityThresholds.forEach((threshold, ti) => {
+            if (!crossed[ti] && m.cumulative >= threshold) {
+              crossed[ti] = true
+              rows.push(milestoneRow(
+                `★ TRANCHE ${ti + 1} NOW ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" — Claim $${BUDGET_TRANCHES[ti].usd.toLocaleString()} (${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪)  [Threshold: ${Math.round(threshold).toLocaleString()} ₪]`,
+                colCount,
+              ))
+            }
+          })
           const isDeficit = cfOperationalBudget > 0 && m.cumulative > cfOperationalBudget
           const isWarning = cfOperationalBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
-          return dataRow([
+          rows.push(dataRow([
             m.month,
             String(m.trips),
             fmt(m.cost),
@@ -1145,9 +1172,10 @@ export default function ReportsPage() {
               isDeficit ? `-${fmt(m.cumulative - cfOperationalBudget)}` : fmt(m.budgetRemaining),
               isDeficit ? 'DEFICIT' : isWarning ? 'WARNING' : 'OK',
             ] : []),
-          ])
-        }),
-      ]),
+          ]))
+        })
+        return tbl(rows)
+      })(),
       blank(),
 
       // 4b. Installment Eligibility Analysis
@@ -1222,15 +1250,34 @@ export default function ReportsPage() {
 
       // 5. Full 2027 monthly table
       h2('Detailed Monthly Breakdown to December 2027'),
-      tbl([
-        hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
-        ...cf2027ChartData.map(row => dataRow([
-          row.month,
-          row.cost !== null ? 'Actual' : 'Forecast',
-          fmt(row.cost ?? row.forecastCost ?? 0),
-          ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
-        ])),
-      ]),
+      (() => {
+        const colCount = 3 + (cfOperationalBudget > 0 ? 1 : 0)
+        const crossed = cfEligibilityThresholds.map(() => false)
+        let runningCum = 0
+        const rows: TableRow[] = [
+          hdrRow(['Month', 'Type', 'Monthly Cost (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        ]
+        cf2027ChartData.forEach(row => {
+          const monthCost = row.cost ?? row.forecastCost ?? 0
+          runningCum += monthCost
+          cfEligibilityThresholds.forEach((threshold, ti) => {
+            if (!crossed[ti] && runningCum >= threshold) {
+              crossed[ti] = true
+              rows.push(milestoneRow(
+                `★ TRANCHE ${ti + 1} NOW ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" — Claim $${BUDGET_TRANCHES[ti].usd.toLocaleString()} (${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪)  [Threshold: ${Math.round(threshold).toLocaleString()} ₪]`,
+                colCount,
+              ))
+            }
+          })
+          rows.push(dataRow([
+            row.month,
+            row.cost !== null ? 'Actual' : 'Forecast',
+            fmt(monthCost),
+            ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
+          ]))
+        })
+        return tbl(rows)
+      })(),
       blank(),
 
       // 6. Sa3ir Scenario Analysis
@@ -1478,7 +1525,7 @@ export default function ReportsPage() {
       cfTrips, cfForecast, cfProjection2027, cf2027ChartData, cfCurrentYM,
       cfScenario, cfMainChartRef, cf2027ChartRef,
       cfAllScenarios, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip,
-      cfTranchesReceived, cfQuarterlyAnalysis, cfLiquidity])
+      cfTranchesReceived, cfQuarterlyAnalysis, cfLiquidity, cfEligibilityThresholds])
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
