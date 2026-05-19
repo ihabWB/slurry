@@ -1035,6 +1035,51 @@ export default function ReportsPage() {
         return null
       })
 
+    // ── Consistent projection metrics aligned with build2027ScenarioData ──
+    // Base: completed months + extrapolated current month (eliminates partial-month bias)
+    const _expCompHist = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
+    const _expCompCum = _expCompHist.length > 0 ? _expCompHist[_expCompHist.length - 1].cumulative : 0
+    const exportBase = _expCompCum + (estCurrentMonthFull ?? Math.round(cfTotalObligation - _expCompCum))
+    let exportForecastMonths = 0
+    for (let _fi = 1; _fi <= 60; _fi++) {
+      const _fd = new Date(now.getFullYear(), now.getMonth() + _fi, 1)
+      if (_fd.getFullYear() > 2027) break
+      exportForecastMonths++
+      if (_fd.getFullYear() === 2027 && _fd.getMonth() === 11) break
+    }
+    const _expArabicMonths = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+    const getExportProj = (monthlyCost: number, monthlyTrips: number) => {
+      const estimatedTotal = Math.round(exportBase + exportForecastMonths * monthlyCost)
+      const budgetRemaining2027 = cfOperationalBudget > 0 ? Math.round(cfOperationalBudget - estimatedTotal) : null
+      const remainingNow = cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - cfTotalObligation)) : 0
+      const monthsToExhaust = monthlyCost > 0 && cfOperationalBudget > 0 ? remainingNow / monthlyCost : null
+      const exhaustionDateObj = monthsToExhaust !== null
+        ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1) : null
+      const exhaustionDate = exhaustionDateObj
+        ? `${_expArabicMonths[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}` : null
+      const tripsToExhaust = monthlyCost > 0 && monthlyTrips > 0 && cfOperationalBudget > 0
+        ? Math.floor(remainingNow / (monthlyCost / monthlyTrips)) : null
+      return { estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, remainingNow }
+    }
+    const exportProj = {
+      current: getExportProj(cfAllScenarios.current.monthly.cost, cfAllScenarios.current.monthly.trips),
+      partial: cfAllScenarios.partialReady
+        ? getExportProj(cfAllScenarios.partial.monthly.cost, cfAllScenarios.partial.monthly.trips) : null,
+      full: cfAllScenarios.fullReady
+        ? getExportProj(cfAllScenarios.full.monthly.cost, cfAllScenarios.full.monthly.trips) : null,
+    }
+    const exportRequiredMonthlyCost = exportForecastMonths > 0 && exportProj.current.remainingNow > 0
+      ? Math.round(exportProj.current.remainingNow / exportForecastMonths) : null
+    const exportRequiredMonthlyTrips = exportRequiredMonthlyCost !== null && cfAvgCostPerTrip > 0
+      ? Math.ceil(exportRequiredMonthlyCost / cfAvgCostPerTrip) : null
+    const exportCostDiff = exportRequiredMonthlyCost !== null
+      ? exportRequiredMonthlyCost - cfAllScenarios.current.monthly.cost : null
+    const _expPricedVol = cfTrips.filter((t: AnyData) => t.volume_m3 && t.trip_cost)
+    const _expAvgVol = _expPricedVol.length > 0
+      ? _expPricedVol.reduce((s: number, t: AnyData) => s + Number(t.volume_m3 ?? 0), 0) / _expPricedVol.length : 0
+    const exportVolumeToExhaust = exportProj.current.tripsToExhaust !== null && _expAvgVol > 0
+      ? Math.round(exportProj.current.tripsToExhaust * _expAvgVol) : null
+
     // Amber milestone cell (multi-line)
     const mCell = (lines: string[], span = 1) => new TableCell({
       columnSpan: span,
@@ -1263,13 +1308,13 @@ export default function ReportsPage() {
           dataRow([`🔒 Contingency Reserve (${cfContingencyPct}%)`, `${fmt(cfContingencyAmt)} ₪`, 'Locked emergency reserve — not for transport']),
           dataRow([`💼 Operational Budget (${100 - cfContingencyPct}%)`, `${fmt(cfOperationalBudget)} ₪`, 'Shared: transport obligations + study fund residual']),
           dataRow(['🚛 Transport Obligations (actual to date)', `${fmt(cfTotalObligation)} ₪`, `${Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}% of operational budget`]),
-          ...(cfProjection2027.estimatedTotal > cfTotalObligation ? [
-            dataRow(['🔮 Remaining Transport Forecast (to end 2027)', `${fmt(cfProjection2027.estimatedTotal - cfTotalObligation)} ₪`, 'EWMA-based projection × months remaining']),
+          ...(exportProj.current.estimatedTotal > cfTotalObligation ? [
+            dataRow(['🔮 Remaining Transport Forecast (to end 2027)', `${fmt(exportProj.current.estimatedTotal - cfTotalObligation)} ₪`, `${exportForecastMonths} months × ${fmt(cfAllScenarios.current.monthly.cost)} ₪/month (obligation-based)`]),
           ] : []),
-          ...(cfProjection2027.budgetRemaining2027 !== null ? [
-            cfProjection2027.budgetRemaining2027 >= 0
-              ? dataRow(['🔬 Study Fund (projected residual)', `${fmt(cfProjection2027.budgetRemaining2027)} ₪`, 'Feasibility study, treatment plant, environmental impact'])
-              : dataRow(['⚠️ Study Fund', `Deficit: ${fmt(Math.abs(cfProjection2027.budgetRemaining2027))} ₪`, 'Transport projected to exceed operational budget']),
+          ...(exportProj.current.budgetRemaining2027 !== null ? [
+            exportProj.current.budgetRemaining2027 >= 0
+              ? dataRow(['🔬 Study Fund (projected residual)', `${fmt(exportProj.current.budgetRemaining2027)} ₪`, 'Feasibility study, treatment plant, environmental impact'])
+              : dataRow(['⚠️ Study Fund', `Deficit: ${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`, 'Transport projected to exceed operational budget']),
           ] : []),
         ]),
         blank(),
@@ -1381,28 +1426,29 @@ export default function ReportsPage() {
 
       // 5. Projection to End of 2027
       h1('5. Projection to End of 2027 — Current Scenario (Baseline)'),
-      p(`Summary metrics below reflect the Current (Baseline) scenario. Detailed monthly tables for all three scenarios follow in Sections 5.1–5.3. Projection horizon: ${cfProjection2027.monthsRemaining} months remaining to December 2027.`),
+      p(`Summary metrics below reflect the Current (Baseline) scenario. Detailed monthly tables for all three scenarios follow in Sections 5.1–5.3. Projection horizon: ${exportForecastMonths} months (next month → December 2027) — obligation-based, consistent with monthly tables.`),
       blank(),
       tbl([
         hdrRow(['Indicator', 'Value', 'Explanation']),
-        dataRow(['Months Remaining to Dec 2027', `${cfProjection2027.monthsRemaining}`, 'From next month to Dec 2027']),
-        dataRow(['Estimated Total Cost by End 2027', `${fmt(cfProjection2027.estimatedTotal)} ₪`, 'Current cost + (months × avg monthly cost)']),
-        ...(cfOperationalBudget > 0 && cfProjection2027.budgetRemaining2027 !== null ? [
+        dataRow(['Forecast Months (next month → Dec 2027)', `${exportForecastMonths}`, 'Number of future months included in projection']),
+        dataRow(['Projection Base (completed + est. current month)', `${fmt(exportBase)} ₪`, `${fmt(_expCompCum)} ₪ completed + ${fmt(estCurrentMonthFull ?? 0)} ₪ current month est.`]),
+        dataRow(['Estimated Total Obligation by End 2027', `${fmt(exportProj.current.estimatedTotal)} ₪`, `Base + ${exportForecastMonths} × ${fmt(cfAllScenarios.current.monthly.cost)} ₪`]),
+        ...(cfOperationalBudget > 0 && exportProj.current.budgetRemaining2027 !== null ? [
           dataRow([
-            cfProjection2027.budgetRemaining2027 >= 0 ? 'Expected Surplus' : 'Expected Deficit',
-            `${cfProjection2027.budgetRemaining2027 >= 0 ? '' : '-'}${fmt(Math.abs(cfProjection2027.budgetRemaining2027))} ₪`,
-            cfProjection2027.budgetRemaining2027 >= 0 ? 'Budget sufficient through end of 2027' : 'Budget will be exhausted before end of 2027',
+            exportProj.current.budgetRemaining2027 >= 0 ? 'Expected Surplus End 2027' : 'Expected Deficit End 2027',
+            `${exportProj.current.budgetRemaining2027 >= 0 ? '' : '-'}${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`,
+            exportProj.current.budgetRemaining2027 >= 0 ? 'Budget sufficient through end of 2027' : 'Budget will be exhausted before end of 2027',
           ]),
-          dataRow(['Funding Exhaustion Date (Current Rate)', cfProjection2027.exhaustionDate ?? 'N/A', 'Date budget runs out at current spending rate']),
-          ...(cfProjection2027.requiredMonthlyCost !== null ? [
-            dataRow(['Required Monthly Spend (to exhaust by Dec 2027)', `${fmt(cfProjection2027.requiredMonthlyCost)} ₪`, `${cfProjection2027.requiredMonthlyTrips ?? '?'} trips/month`]),
-            dataRow(['Difference from Current Rate', `${cfProjection2027.costDiff !== null && cfProjection2027.costDiff > 0 ? '+' : ''}${fmt(cfProjection2027.costDiff ?? 0)} ₪/month`, cfProjection2027.costDiff !== null && cfProjection2027.costDiff > 0 ? 'Need to increase spending' : 'Current rate already sufficient']),
+          dataRow(['Funding Exhaustion Date (Current Rate)', exportProj.current.exhaustionDate ?? 'N/A', 'Date when budget runs out at current spending rate']),
+          ...(exportRequiredMonthlyCost !== null ? [
+            dataRow(['Required Monthly Spend (to exhaust by Dec 2027)', `${fmt(exportRequiredMonthlyCost)} ₪`, `${exportRequiredMonthlyTrips ?? '?'} trips/month`]),
+            dataRow(['Difference from Current Rate', `${exportCostDiff !== null && exportCostDiff > 0 ? '+' : ''}${fmt(exportCostDiff ?? 0)} ₪/month`, exportCostDiff !== null && exportCostDiff > 0 ? 'Need to increase spending' : 'Current rate already sufficient']),
           ] : []),
-          ...(cfProjection2027.tripsToExhaust !== null ? [
-            dataRow(['Remaining Trips Budget Can Fund', `${cfProjection2027.tripsToExhaust.toLocaleString('en-US')} trips`, 'At current avg cost per trip']),
+          ...(exportProj.current.tripsToExhaust !== null ? [
+            dataRow(['Remaining Trips Budget Can Fund', `${exportProj.current.tripsToExhaust.toLocaleString('en-US')} trips`, 'At current avg cost per trip']),
           ] : []),
-          ...(cfProjection2027.volumeToExhaust !== null && cfProjection2027.volumeToExhaust > 0 ? [
-            dataRow(['Sludge Volume Covered by Remaining Budget', `${cfProjection2027.volumeToExhaust.toLocaleString('en-US')} m³`, 'Based on avg m³/trip from historical data']),
+          ...(exportVolumeToExhaust !== null && exportVolumeToExhaust > 0 ? [
+            dataRow(['Sludge Volume Covered by Remaining Budget', `${exportVolumeToExhaust.toLocaleString('en-US')} m³`, 'Based on avg m³/trip from historical data']),
           ] : []),
         ] : []),
       ]),
@@ -1494,28 +1540,28 @@ export default function ReportsPage() {
         ]),
         dataRow([
           'Estimated Total to Dec 2027 — الإجمالي حتى ديسمبر 2027',
-          `${fmt(cfAllScenarios.current.estimatedTotal)} ₪`,
-          cfAllScenarios.partialReady ? `${fmt(cfAllScenarios.partial.estimatedTotal)} ₪` : '—',
-          cfAllScenarios.fullReady ? `${fmt(cfAllScenarios.full.estimatedTotal)} ₪` : '—',
+          `${fmt(exportProj.current.estimatedTotal)} ₪`,
+          cfAllScenarios.partialReady && exportProj.partial ? `${fmt(exportProj.partial.estimatedTotal)} ₪` : '—',
+          cfAllScenarios.fullReady && exportProj.full ? `${fmt(exportProj.full.estimatedTotal)} ₪` : '—',
         ]),
         ...(cfBudget > 0 ? [
           dataRow([
             'Budget Remaining End 2027 — متبقي الميزانية نهاية 2027',
-            cfAllScenarios.current.budgetRemaining2027 !== null ? `${fmt(cfAllScenarios.current.budgetRemaining2027)} ₪` : '—',
-            cfAllScenarios.partialReady && cfAllScenarios.partial.budgetRemaining2027 !== null ? `${fmt(cfAllScenarios.partial.budgetRemaining2027)} ₪` : '—',
-            cfAllScenarios.fullReady && cfAllScenarios.full.budgetRemaining2027 !== null ? `${fmt(cfAllScenarios.full.budgetRemaining2027)} ₪` : '—',
+            exportProj.current.budgetRemaining2027 !== null ? `${fmt(exportProj.current.budgetRemaining2027)} ₪` : '—',
+            cfAllScenarios.partialReady && exportProj.partial?.budgetRemaining2027 !== null ? `${fmt(exportProj.partial!.budgetRemaining2027!)} ₪` : '—',
+            cfAllScenarios.fullReady && exportProj.full?.budgetRemaining2027 !== null ? `${fmt(exportProj.full!.budgetRemaining2027!)} ₪` : '—',
           ]),
           dataRow([
             'Budget Exhaustion Date — تاريخ نفاد الميزانية',
-            cfAllScenarios.current.exhaustionDate ?? 'After Dec 2027',
-            cfAllScenarios.partialReady ? (cfAllScenarios.partial.exhaustionDate ?? 'After Dec 2027') : '—',
-            cfAllScenarios.fullReady ? (cfAllScenarios.full.exhaustionDate ?? 'After Dec 2027') : '—',
+            exportProj.current.exhaustionDate ?? 'After Dec 2027',
+            cfAllScenarios.partialReady && exportProj.partial ? (exportProj.partial.exhaustionDate ?? 'After Dec 2027') : '—',
+            cfAllScenarios.fullReady && exportProj.full ? (exportProj.full.exhaustionDate ?? 'After Dec 2027') : '—',
           ]),
           dataRow([
             'Trips Until Budget Exhausted — نقلات حتى نفاد الميزانية',
-            cfAllScenarios.current.tripsToExhaust?.toLocaleString('en-US') ?? '—',
-            cfAllScenarios.partialReady ? (cfAllScenarios.partial.tripsToExhaust?.toLocaleString('en-US') ?? '—') : '—',
-            cfAllScenarios.fullReady ? (cfAllScenarios.full.tripsToExhaust?.toLocaleString('en-US') ?? '—') : '—',
+            exportProj.current.tripsToExhaust?.toLocaleString('en-US') ?? '—',
+            cfAllScenarios.partialReady && exportProj.partial ? (exportProj.partial.tripsToExhaust?.toLocaleString('en-US') ?? '—') : '—',
+            cfAllScenarios.fullReady && exportProj.full ? (exportProj.full.tripsToExhaust?.toLocaleString('en-US') ?? '—') : '—',
           ]),
         ] : []),
         dataRow([
