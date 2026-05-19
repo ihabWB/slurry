@@ -1005,41 +1005,101 @@ export default function ReportsPage() {
       },
     })
 
-    const milestoneRow = (text: string, colSpan: number) => new TableRow({
-      children: [
-        new TableCell({
-          columnSpan: colSpan,
-          children: [new Paragraph({
-            children: [new TextRun({ text, bold: true, color: 'FFFFFF', size: 20 })],
-            alignment: AlignmentType.CENTER,
-          })],
-          shading: { type: ShadingType.CLEAR, fill: 'D97706' },
-          margins: { top: 100, bottom: 100, left: 150, right: 150 },
-        }),
-      ],
-    })
-
     // Prefix sums: prevTranchesSum[i] = P[0]+…+P[i-1]
     const prevTranchesSum = BUDGET_TRANCHES.map((_, i) =>
       BUDGET_TRANCHES.slice(0, i).reduce((s, t) => s + t.planned, 0)
     )
 
+    // Current month extrapolated to full month (scenario-independent — uses actual partial data)
+    const _curEntry = cfMonthlyHistory.find(m => m.month === cfCurrentYM)
+    const estCurrentMonthFull: number | null = (_curEntry && _curEntry.cost > 0)
+      ? Math.round(_curEntry.cost * (1 + CF_MUN_RATE) * new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() / now.getDate())
+      : null
+
+    // Pre-compute which milestones were already crossed in historical data
+    // Uses same cumulative method as the tables (obligation, current month extrapolated)
+    const historicalMilestoneCrossings: ({ consumed: number; remaining: number; cumAtCrossing: number } | null)[] =
+      cfEligibilityThresholds.map((threshold, ti) => {
+        let cum = 0
+        for (const m of cfMonthlyHistory) {
+          const cost = m.month === cfCurrentYM
+            ? (estCurrentMonthFull ?? Math.round(m.cost * (1 + CF_MUN_RATE)))
+            : Math.round(m.cost * (1 + CF_MUN_RATE))
+          cum += cost
+          if (cum >= threshold) {
+            const consumed = Math.round(cum - prevTranchesSum[ti])
+            const remaining = Math.max(0, Math.round(BUDGET_TRANCHES[ti].planned - consumed))
+            return { consumed, remaining, cumAtCrossing: Math.round(cum) }
+          }
+        }
+        return null
+      })
+
+    // Amber milestone cell (multi-line)
+    const mCell = (lines: string[], span = 1) => new TableCell({
+      columnSpan: span,
+      children: lines.map((line, idx) => new Paragraph({
+        children: [new TextRun({ text: line, bold: idx === 0, color: 'FFFFFF', size: idx === 0 ? 20 : 18 })],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 40 },
+      })),
+      shading: { type: ShadingType.CLEAR, fill: 'D97706' },
+      margins: { top: 90, bottom: 90, left: 120, right: 120 },
+    })
+
+    // Multi-column milestone row with carry-over chain
+    // Side-effect: sets remainingAtCrossing[ti] = remaining (for next milestone's carry)
+    const buildMilestoneRow = (
+      ti: number, month: string, cumulative: number, colCount: number,
+      remainingAtCrossing: (number | null)[],
+    ): TableRow => {
+      const threshold = cfEligibilityThresholds[ti]
+      const tranche = BUDGET_TRANCHES[ti]
+      const consumed = Math.round(cumulative - prevTranchesSum[ti])
+      const remaining = Math.max(0, Math.round(tranche.planned - consumed))
+      const consumedPct = Math.round(consumed / tranche.planned * 100)
+      remainingAtCrossing[ti] = remaining // save for next milestone's carry
+      const carryFromPrev = ti > 0 ? (remainingAtCrossing[ti - 1] ?? 0) : null
+
+      const col1 = mCell([
+        `▼ TRANCHE ${ti + 1} ELIGIBLE — End of ${month}`,
+        `${tranche.label}  |  $${tranche.usd.toLocaleString()} = ${Math.round(tranche.planned).toLocaleString()} ₪`,
+        `Threshold: ${Math.round(threshold).toLocaleString()} ₪  |  Actual cumulative: ${cumulative.toLocaleString()} ₪`,
+      ])
+      const col2 = mCell(
+        carryFromPrev !== null
+          ? [`Carry from Tranche ${ti}:`, `${carryFromPrev.toLocaleString()} ₪`, `(unused after Tranche ${ti} milestone)`]
+          : [`First Tranche`, `No carry-in`],
+      )
+      const col3 = mCell([
+        `Consumed from T${ti + 1}:`,
+        `${consumed.toLocaleString()} ₪`,
+        `(${consumedPct}% of ${Math.round(tranche.planned).toLocaleString()} ₪)`,
+      ])
+      const col4 = mCell([
+        `Remaining in T${ti + 1}:`,
+        `${remaining.toLocaleString()} ₪`,
+      ])
+
+      if (colCount >= 4) {
+        return new TableRow({ children: [col1, col2, col3, col4] })
+      } else {
+        return new TableRow({ children: [col1, col2, mCell([
+          `Consumed: ${consumed.toLocaleString()} ₪ (${consumedPct}%)  |  Remaining: ${remaining.toLocaleString()} ₪`,
+        ])] })
+      }
+    }
+
     // Build 6-month forecast for any scenario monthly rate
     const buildScenarioForecast = (monthlyCost: number, monthlyTrips: number) => {
-      const now2 = new Date()
       const completedHistory = cfMonthlyHistory.filter(m => m.month < cfCurrentYM)
       const completedCumulative = completedHistory.length > 0 ? completedHistory[completedHistory.length - 1].cumulative : 0
-      const currentMonthEntry = cfMonthlyHistory.find(m => m.month === cfCurrentYM)
-      let estimatedCurrentMonth = monthlyCost
-      if (currentMonthEntry && currentMonthEntry.cost > 0) {
-        const daysInMonth = new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()
-        const dayOfMonth = now2.getDate()
-        estimatedCurrentMonth = Math.round(currentMonthEntry.cost * (1 + CF_MUN_RATE) * daysInMonth / dayOfMonth)
-      }
+      // Use same extrapolated current month as build2027ScenarioData for consistency
+      const estimatedCurrentMonth = estCurrentMonthFull ?? monthlyCost
       let cum = completedCumulative + estimatedCurrentMonth
       const results: { month: string; trips: number; cost: number; cumulative: number }[] = []
       for (let i = 1; i <= 6; i++) {
-        const d = new Date(now2.getFullYear(), now2.getMonth() + i, 1)
+        const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
         const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         cum += monthlyCost
         results.push({ month, trips: monthlyTrips, cost: monthlyCost, cumulative: Math.round(cum) })
@@ -1048,30 +1108,38 @@ export default function ReportsPage() {
     }
 
     // Build full 2027 scenario data (historical actuals + scenario-rate forecast)
+    // Current month is extrapolated to full month — same basis as buildScenarioForecast (consistency)
     const build2027ScenarioData = (monthlyCost: number) => {
-      const now2 = new Date()
-      const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[] = []
-      cfMonthlyHistory.forEach(m => {
-        // Use obligation (cost × 1.14) — thresholds are in obligation terms
+      const data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null; type: string }[] = []
+      let runCum = 0
+      // Completed months (before current month)
+      cfMonthlyHistory.filter(m => m.month < cfCurrentYM).forEach(m => {
+        const cost = Math.round(m.cost * (1 + CF_MUN_RATE))
+        runCum += cost
         data.push({
-          month: m.month,
-          cost: Math.round(m.cost * (1 + CF_MUN_RATE)),
-          forecastCost: null,
-          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - m.cumulative)) : null,
+          month: m.month, cost, forecastCost: null,
+          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - runCum)) : null,
+          type: 'Actual',
         })
       })
-      const lastCumulative = cfMonthlyHistory.length > 0 ? cfMonthlyHistory[cfMonthlyHistory.length - 1].cumulative : 0
-      let cum2 = lastCumulative
+      // Current month: extrapolated to full month (same as buildScenarioForecast)
+      const estCurrent = estCurrentMonthFull ?? monthlyCost
+      runCum += estCurrent
+      data.push({
+        month: cfCurrentYM, cost: estCurrent, forecastCost: null,
+        remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - runCum)) : null,
+        type: 'Current (est.)',
+      })
+      // Forecast months from next month onwards
       for (let i = 1; i <= 60; i++) {
-        const d = new Date(now2.getFullYear(), now2.getMonth() + i, 1)
+        const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
         if (d.getFullYear() > 2027) break
-        cum2 += monthlyCost
+        runCum += monthlyCost
         const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         data.push({
-          month,
-          cost: null,
-          forecastCost: Math.round(monthlyCost),
-          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - cum2)) : null,
+          month, cost: null, forecastCost: Math.round(monthlyCost),
+          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - runCum)) : null,
+          type: 'Forecast',
         })
         if (d.getFullYear() === 2027 && d.getMonth() === 11) break
       }
@@ -1080,23 +1148,18 @@ export default function ReportsPage() {
 
     // Build 6-month forecast table rows with milestone injection
     const buildForecastTableRows = (forecast: { month: string; trips: number; cost: number; cumulative: number }[]) => {
-      const crossed = cfEligibilityThresholds.map(t => cfTotalObligation >= t)
+      // Initialize carry state from historical crossings (consistent with build2027TableRows)
+      const remainingAtCrossing: (number | null)[] = historicalMilestoneCrossings.map(h => h?.remaining ?? null)
+      const crossed = historicalMilestoneCrossings.map(h => h !== null)
       const rows: TableRow[] = [
         hdrRow(['Month', 'Expected Trips', 'Monthly Obligation (₪)', 'Cumulative Obligation (₪)']),
       ]
       forecast.forEach(m => {
-        // Data row first — milestone appears AFTER (end-of-month crossing)
         rows.push(dataRow([m.month, String(m.trips), fmt(m.cost), fmt(m.cumulative)]))
         cfEligibilityThresholds.forEach((threshold, ti) => {
           if (!crossed[ti] && m.cumulative >= threshold) {
             crossed[ti] = true
-            const consumed = Math.round(m.cumulative - prevTranchesSum[ti])
-            const remaining = Math.max(0, Math.round(BUDGET_TRANCHES[ti].planned - consumed))
-            const consumedPct = Math.round(consumed / BUDGET_TRANCHES[ti].planned * 100)
-            rows.push(milestoneRow(
-              `▼ End of ${m.month} — TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | Amount: $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Threshold: ${Math.round(threshold).toLocaleString()} ₪ | Actual reached: ${m.cumulative.toLocaleString()} ₪ | Consumed from tranche: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining in tranche: ${remaining.toLocaleString()} ₪`,
-              4,
-            ))
+            rows.push(buildMilestoneRow(ti, m.month, m.cumulative, 4, remainingAtCrossing))
           }
         })
       })
@@ -1104,34 +1167,28 @@ export default function ReportsPage() {
     }
 
     // Build 2027 table rows with milestone injection
-    const build2027TableRows = (data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null }[]) => {
+    const build2027TableRows = (data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null; type: string }[]) => {
       const colCount = 3 + (cfOperationalBudget > 0 ? 1 : 0)
+      // For 2027 table: build carry state from scratch as we traverse full history
+      const remainingAtCrossing: (number | null)[] = cfEligibilityThresholds.map(() => null)
       const crossed = cfEligibilityThresholds.map(() => false)
       let runningCum = 0
       const rows: TableRow[] = [
         hdrRow(['Month', 'Type', 'Monthly Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
       ]
       data.forEach(row => {
-        // cost is obligation for historical months (m.cost × 1.14) and for forecast (already obligation)
         const monthCost = row.cost ?? row.forecastCost ?? 0
         runningCum += monthCost
-        // Data row first — milestone appears AFTER (end-of-month crossing)
         rows.push(dataRow([
           row.month,
-          row.cost !== null ? 'Actual' : 'Forecast',
+          row.type,
           fmt(monthCost),
           ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
         ]))
         cfEligibilityThresholds.forEach((threshold, ti) => {
           if (!crossed[ti] && runningCum >= threshold) {
             crossed[ti] = true
-            const consumed = Math.round(runningCum - prevTranchesSum[ti])
-            const remaining = Math.max(0, Math.round(BUDGET_TRANCHES[ti].planned - consumed))
-            const consumedPct = Math.round(consumed / BUDGET_TRANCHES[ti].planned * 100)
-            rows.push(milestoneRow(
-              `▼ End of ${row.month} — TRANCHE ${ti + 1} ELIGIBLE: "${BUDGET_TRANCHES[ti].label}" | Amount: $${BUDGET_TRANCHES[ti].usd.toLocaleString()} = ${BUDGET_TRANCHES[ti].planned.toLocaleString()} ₪ | Threshold: ${Math.round(threshold).toLocaleString()} ₪ | Actual reached: ${Math.round(runningCum).toLocaleString()} ₪ | Consumed from tranche: ${consumed.toLocaleString()} ₪ (${consumedPct}%) | Remaining in tranche: ${remaining.toLocaleString()} ₪`,
-              colCount,
-            ))
+            rows.push(buildMilestoneRow(ti, row.month, Math.round(runningCum), colCount, remainingAtCrossing))
           }
         })
       })
