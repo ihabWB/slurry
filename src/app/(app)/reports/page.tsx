@@ -684,6 +684,28 @@ export default function ReportsPage() {
     ? Math.max(0, Math.floor((cfOperationalBudget - cfTotalObligation) / cfAvgMonthly.cost))
     : null
 
+  // ── مشتقات النهج النشط — تُستخدم في كل العرض على الشاشة ──
+  const _uiIsB = cfContingencyApproach === 'B'
+  // الميزانية المرجعية للنقل: كاملة (ب) أو تشغيلية بعد حسم الاحتياطي (أ)
+  const _uiActiveBudget = _uiIsB ? cfBudget : cfOperationalBudget
+  const _uiRemainingNow = _uiActiveBudget > 0 ? Math.max(0, _uiActiveBudget - cfTotalObligation) : 0
+  const _uiRunwayMonths = cfAvgMonthly.cost > 0 && _uiActiveBudget > 0
+    ? Math.max(0, Math.floor(_uiRemainingNow / cfAvgMonthly.cost)) : null
+  const _uiPctConsumed = _uiActiveBudget > 0 ? Math.min(100, Math.round(cfTotalObligation / _uiActiveBudget * 100)) : 0
+  const _uiGap = _uiActiveBudget > 0 ? _uiActiveBudget - cfEstimatedTotalCost : null
+  // تاريخ نفاد الميزانية تحت النهج النشط
+  const _arabicMoUI = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+  const _uiExhaustObj = _uiRemainingNow > 0 && cfAvgMonthly.cost > 0
+    ? new Date(new Date().getFullYear(), new Date().getMonth() + Math.ceil(_uiRemainingNow / cfAvgMonthly.cost), 1) : null
+  const _uiExhaustDate = _uiExhaustObj
+    ? `${_arabicMoUI[_uiExhaustObj.getMonth()]} ${_uiExhaustObj.getFullYear()}` : null
+  const _uiExhaustBefore2027 = _uiExhaustObj !== null &&
+    (_uiExhaustObj.getFullYear() < 2027 || (_uiExhaustObj.getFullYear() === 2027 && _uiExhaustObj.getMonth() <= 11))
+  const _uiApproachLabel = _uiIsB ? 'النهج (ب) — احتياطي من الفائض' : 'النهج (أ) — احتياطي مسبق'
+  const _uiApproachBudgetLabel = _uiIsB
+    ? `الميزانية الكاملة (${cfBudget > 0 ? cfBudget.toLocaleString() : '—'} ₪ — بلا حسم مسبق)`
+    : `الميزانية التشغيلية (${cfOperationalBudget > 0 ? cfOperationalBudget.toLocaleString() : '—'} ₪ — بعد حسم ${cfContingencyPct}% احتياطي)`
+
   // توقع حتى نهاية 2027
   const cfProjection2027 = useMemo(() => {
     const now = new Date()
@@ -795,6 +817,23 @@ export default function ReportsPage() {
     const fullReady = cfSa3irTripsPerMonth > 0 && cfSa3irCostPerTrip > 0
     return { current, partial, partialReady, full, fullReady, regularCostPerTrip: Math.round(regularCostPerTrip * (1 + CF_MUN_RATE)) }
   }, [cfMonthlyHistory, cfCurrentYM, cfSmoothingAlpha, cfOperationalBudget, cfTotalObligation, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip, ewma])
+
+  // ── مشتقات النهج المتأخرة — تتطلب cfAllScenarios + cfProjection2027 ──
+  // فائض نهاية 2027 لكل سيناريو
+  const _uiSurplusC = _uiActiveBudget > 0 ? Math.round(_uiActiveBudget - cfAllScenarios.current.estimatedTotal) : 0
+  const _uiSurplusP = _uiActiveBudget > 0 && cfAllScenarios.partialReady ? Math.round(_uiActiveBudget - cfAllScenarios.partial.estimatedTotal) : 0
+  const _uiSurplusF = _uiActiveBudget > 0 && cfAllScenarios.fullReady ? Math.round(_uiActiveBudget - cfAllScenarios.full.estimatedTotal) : 0
+  // صندوق الدراسة: (ب) = فائض إجمالي × (100-احتياطي)% — (أ) = الفائض = صندوق مباشرة
+  const _uiStudyC = _uiIsB ? Math.max(0, Math.round(_uiSurplusC * (1 - cfContingencyPct / 100))) : Math.max(0, _uiSurplusC)
+  const _uiStudyP = cfAllScenarios.partialReady ? (_uiIsB ? Math.max(0, Math.round(_uiSurplusP * (1 - cfContingencyPct / 100))) : Math.max(0, _uiSurplusP)) : 0
+  const _uiStudyF = cfAllScenarios.fullReady ? (_uiIsB ? Math.max(0, Math.round(_uiSurplusF * (1 - cfContingencyPct / 100))) : Math.max(0, _uiSurplusF)) : 0
+  // مقاييس توقع 2027 تحت النهج النشط
+  const _uiRequired = cfProjection2027.monthsRemaining > 0 && _uiRemainingNow > 0
+    ? Math.round(_uiRemainingNow / cfProjection2027.monthsRemaining) : null
+  const _uiRequiredTrips = _uiRequired !== null && cfAvgCostPerTrip > 0
+    ? Math.ceil(_uiRequired / cfAvgCostPerTrip) : null
+  const _uiCostDiff = _uiRequired !== null ? _uiRequired - cfAvgMonthly.cost : null
+  const _uiTripsDiff = _uiRequiredTrips !== null ? _uiRequiredTrips - cfAvgMonthly.trips : null
 
   const cfQuarterlyAnalysis = useMemo(() =>
     BUDGET_TRANCHES.map((t, i) => {
@@ -1369,31 +1408,45 @@ export default function ReportsPage() {
           dataRow(['Municipality Share (14%)', `${fmt(cfTotalObligation - cfTotalCost)} ₪`, '14% paid to municipality on top of trip cost']),
           dataRow(['Net Paid to Contractor', `${fmt(cfClosedStats.netPaid)} ₪`, 'Closed claims: actual cash transferred']),
           dataRow(['Retention Held (Deferred)', `${fmt(cfClosedStats.retentionHeld)} ₪`, 'Withheld from contractor — returned at project end']),
-          dataRow(['Operational Budget Consumed', `${Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}%`, `${fmt(cfTotalObligation)} ₪ of ${fmt(cfOperationalBudget)} ₪`]),
-          dataRow(['Operational Budget Remaining (Transport)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, `${Math.round(cfProjection2027.remainingBudgetNow / cfOperationalBudget * 100)}% of operational`]),
+          dataRow(['Operational Budget Consumed', `${_uiPctConsumed}%`, `${fmt(cfTotalObligation)} ₪ of ${fmt(_uiActiveBudget)} ₪ (${_uiIsB ? 'full budget' : 'operational budget'})`]),
+          dataRow([`Budget Remaining (vs ${_uiIsB ? 'Full' : 'Operational'} Budget)`, `${fmt(_uiRemainingNow)} ₪`, `${_uiIsB ? 'Full budget' : 'Operational budget (90%)'} minus total obligation`]),
         ]),
       ] : [p('No budget configured. Please set project_budget in Settings.', { color: 'EF4444' })]),
       blank(),
 
       // 2b. Budget Allocation
       ...(cfBudget > 0 ? [
-        h1('2b. Budget Allocation — توزيع الميزانية'),
-        p(`Total Project Budget: ${fmt(cfBudget)} ₪  |  Contingency (${cfContingencyPct}%): ${fmt(cfContingencyAmt)} ₪  |  Operational (${100 - cfContingencyPct}%): ${fmt(cfOperationalBudget)} ₪`),
+        h1(`2b. Budget Allocation — توزيع الميزانية | ${_approachLabel}`),
+        p(_isApproachB
+          ? `الميزانية الكاملة (${fmt(cfBudget)} ₪) متاحة للنقل — الاحتياطي (${cfContingencyPct}%) يُحسم من الفائض لاحقاً وليس مسبقاً`
+          : `Total Budget: ${fmt(cfBudget)} ₪  |  Contingency (${cfContingencyPct}%): ${fmt(cfContingencyAmt)} ₪  |  Operational (${100 - cfContingencyPct}%): ${fmt(cfOperationalBudget)} ₪`),
         blank(),
         tbl([
           hdrRow(['Budget Component', 'Amount (₪)', 'Notes']),
           dataRow(['Total Budget (Gross)', `${fmt(cfBudget)} ₪`, 'Full allocation from funder']),
-          dataRow([`🔒 Contingency Reserve (${cfContingencyPct}%)`, `${fmt(cfContingencyAmt)} ₪`, 'Locked emergency reserve — not for transport']),
-          dataRow([`💼 Operational Budget (${100 - cfContingencyPct}%)`, `${fmt(cfOperationalBudget)} ₪`, 'Shared: transport obligations + study fund residual']),
-          dataRow(['🚛 Transport Obligations (actual to date)', `${fmt(cfTotalObligation)} ₪`, `${Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}% of operational budget`]),
+          _isApproachB
+            ? dataRow(['💼 Available for Transport — Full Budget (B)', `${fmt(cfBudget)} ₪`, 'No upfront contingency deduction'])
+            : dataRow([`🔒 Contingency Reserve (${cfContingencyPct}%)`, `${fmt(cfContingencyAmt)} ₪`, 'Locked emergency reserve — not for transport']),
+          _isApproachB
+            ? dataRow(['🚛 Transport Obligations (actual to date)', `${fmt(cfTotalObligation)} ₪`, `${_uiPctConsumed}% of full budget`])
+            : dataRow([`💼 Operational Budget (${100 - cfContingencyPct}%)`, `${fmt(cfOperationalBudget)} ₪`, 'Shared: transport obligations + study fund residual']),
+          ...(_isApproachB ? [] : [
+            dataRow(['🚛 Transport Obligations (actual to date)', `${fmt(cfTotalObligation)} ₪`, `${_uiPctConsumed}% of operational budget`]),
+          ]),
           ...(exportProj.current.estimatedTotal > cfTotalObligation ? [
             dataRow(['🔮 Remaining Transport Forecast (to end 2027)', `${fmt(exportProj.current.estimatedTotal - cfTotalObligation)} ₪`, `${exportForecastMonths} months × ${fmt(cfAllScenarios.current.monthly.cost)} ₪/month (obligation-based)`]),
           ] : []),
-          ...(exportProj.current.budgetRemaining2027 !== null ? [
-            exportProj.current.budgetRemaining2027 >= 0
-              ? dataRow(['🔬 الدراسة الشاملة — Study Fund', `${fmt(exportProj.current.budgetRemaining2027)} ₪`, `الفائض المتوقع (20%/20%/20%/40%) يوليو–ديسمبر 2026${_studyConservative ? ` — دفعة أولى (تحفظي): ${fmt(_studyConservative[0].amount)} ₪` : ''} — تفاصيل في القسم 7`])
-              : dataRow(['⚠️ Study Fund', `Deficit: ${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`, 'Transport projected to exceed operational budget']),
-          ] : []),
+          ...(_isApproachB ? [
+            dataRow([`📦 Gross Surplus (B) End 2027`, `${fmt(_optBSurp.current)} ₪`, `Full budget (${fmt(cfBudget)} ₪) − Estimated total transport`]),
+            dataRow([`🔒 Contingency from Surplus (${cfContingencyPct}%)`, `${fmt(Math.round(Math.max(0, _optBSurp.current) * cfContingencyPct / 100))} ₪`, `${cfContingencyPct}% × Gross Surplus (B)`]),
+            dataRow([`🔬 Study Fund (${100 - cfContingencyPct}% of surplus) — صندوق الدراسة (ب)`, `${fmt(_activeStudyBudgetC)} ₪`, 'تفاصيل في القسم 7']),
+          ] : [
+            ...(exportProj.current.budgetRemaining2027 !== null ? [
+              exportProj.current.budgetRemaining2027 >= 0
+                ? dataRow(['🔬 الدراسة الشاملة — Study Fund (A)', `${fmt(exportProj.current.budgetRemaining2027)} ₪`, `الفائض المتوقع${_studyConservative ? ` — دفعة أولى (تحفظي): ${fmt(_studyConservative[0].amount)} ₪` : ''} — تفاصيل في القسم 7`])
+                : dataRow(['⚠️ Study Fund', `Deficit: ${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`, 'Transport projected to exceed operational budget']),
+            ] : []),
+          ]),
         ]),
         blank(),
       ] : []),
@@ -1515,11 +1568,16 @@ export default function ReportsPage() {
         dataRow(['Projection Base (completed + est. current month)', `${fmt(exportBase)} ₪`, `${fmt(_expCompCum)} ₪ completed + ${fmt(estCurrentMonthFull ?? 0)} ₪ current month est.`]),
         dataRow(['Estimated Total Obligation by End 2027', `${fmt(exportProj.current.estimatedTotal)} ₪`, `Base + ${exportForecastMonths} × ${fmt(cfAllScenarios.current.monthly.cost)} ₪`]),
         ...(cfOperationalBudget > 0 && exportProj.current.budgetRemaining2027 !== null ? [
-          dataRow([
-            exportProj.current.budgetRemaining2027 >= 0 ? 'Expected Surplus End 2027' : 'Expected Deficit End 2027',
-            `${exportProj.current.budgetRemaining2027 >= 0 ? '' : '-'}${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`,
-            exportProj.current.budgetRemaining2027 >= 0 ? 'Budget sufficient through end of 2027' : 'Budget will be exhausted before end of 2027',
-          ]),
+          _isApproachB
+            ? dataRow(['Gross Surplus End 2027 (B) — الفائض الإجمالي (ب)', `${fmt(_optBSurp.current)} ₪`, `Full budget (${fmt(cfBudget)} ₪) − Estimated total transport`])
+            : dataRow([
+                exportProj.current.budgetRemaining2027 >= 0 ? 'Expected Surplus End 2027 (A) — الفائض (أ)' : 'Expected Deficit End 2027',
+                `${exportProj.current.budgetRemaining2027 >= 0 ? '' : '-'}${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`,
+                exportProj.current.budgetRemaining2027 >= 0 ? 'Operational budget sufficient through 2027' : 'Budget will be exhausted before end of 2027',
+              ]),
+          _isApproachB
+            ? dataRow([`🔬 Study Fund (B) — صندوق الدراسة (ب)`, `${fmt(_activeStudyBudgetC)} ₪`, `${100 - cfContingencyPct}% × Gross Surplus (B) — في القسم 7`])
+            : dataRow([`🔬 Study Fund (A) — صندوق الدراسة (أ)`, `${fmt(_ssBudgetC)} ₪`, 'Full surplus allocated to study — contingency deducted upfront']),
           dataRow(['Funding Exhaustion Date (Current Rate)', exportProj.current.exhaustionDate ?? 'N/A', 'Date when budget runs out at current spending rate']),
           ...(exportRequiredMonthlyCost !== null ? [
             dataRow(['Required Monthly Spend (to exhaust by Dec 2027)', `${fmt(exportRequiredMonthlyCost)} ₪`, `${exportRequiredMonthlyTrips ?? '?'} trips/month`]),
@@ -2714,13 +2772,14 @@ export default function ReportsPage() {
                   </CardBody>
                 </Card>
                 {/* فائض أو عجز متوقع */}
-                <Card className={'border ' + (cfGap !== null ? (cfGap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-violet-50 border-violet-100')}>
+                <Card className={'border ' + (_uiGap !== null ? (_uiGap >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100') : 'bg-violet-50 border-violet-100')}>
                   <CardBody className="text-center py-4">
-                    <p className="text-2xl mb-1">{cfGap !== null ? (cfGap >= 0 ? '🟢' : '🔴') : '🔮'}</p>
-                    <p className={'text-xl font-bold ' + (cfGap !== null ? (cfGap >= 0 ? 'text-emerald-700' : 'text-red-700') : 'text-violet-700')}>
-                      {cfGap !== null ? Math.abs(Math.round(cfGap)).toLocaleString() + ' ₪' : Math.round(cfEstimatedTotalCost).toLocaleString() + ' ₪'}
+                    <p className="text-2xl mb-1">{_uiGap !== null ? (_uiGap >= 0 ? '🟢' : '🔴') : '🔮'}</p>
+                    <p className={'text-xl font-bold ' + (_uiGap !== null ? (_uiGap >= 0 ? 'text-emerald-700' : 'text-red-700') : 'text-violet-700')}>
+                      {_uiGap !== null ? Math.abs(Math.round(_uiGap)).toLocaleString() + ' ₪' : Math.round(cfEstimatedTotalCost).toLocaleString() + ' ₪'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">{cfGap !== null ? (cfGap >= 0 ? 'فائض متوقع' : 'عجز متوقع') : 'تكلفة متوقعة (6 أشهر)'}</p>
+                    <p className="text-xs text-slate-500 mt-1">{_uiGap !== null ? (_uiGap >= 0 ? 'فائض متوقع' : 'عجز متوقع') : 'تكلفة متوقعة (6 أشهر)'}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{_uiApproachLabel}</p>
                   </CardBody>
                 </Card>
               </div>
@@ -2753,19 +2812,20 @@ export default function ReportsPage() {
                     </CardBody>
                   </Card>
                 )}
-                {cfRunwayMonths !== null && (
-                  <Card className={`border ${cfRunwayMonths <= 2 ? 'bg-red-50 border-red-100' : cfRunwayMonths <= 4 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                {_uiRunwayMonths !== null && (
+                  <Card className={`border ${_uiRunwayMonths <= 2 ? 'bg-red-50 border-red-100' : _uiRunwayMonths <= 4 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
                     <CardBody className="py-3 text-center">
-                      <p className={`text-lg font-bold ${cfRunwayMonths <= 2 ? 'text-red-700' : cfRunwayMonths <= 4 ? 'text-amber-700' : 'text-emerald-700'}`}>{cfRunwayMonths} شهر</p>
+                      <p className={`text-lg font-bold ${_uiRunwayMonths <= 2 ? 'text-red-700' : _uiRunwayMonths <= 4 ? 'text-amber-700' : 'text-emerald-700'}`}>{_uiRunwayMonths} شهر</p>
                       <p className="text-xs text-slate-500 mt-0.5">رصيد الميزانية المتبقي (runway)</p>
+                      <p className="text-xs text-slate-400">{_uiApproachLabel}</p>
                     </CardBody>
                   </Card>
                 )}
-                  {cfBudget > 0 && cfTotalCost > 0 && cfOperationalBudget > 0 && (
+                  {cfBudget > 0 && cfTotalCost > 0 && _uiActiveBudget > 0 && (
                   <Card className="border bg-violet-50 border-violet-100">
                     <CardBody className="py-3 text-center">
-                      <p className="text-lg font-bold text-violet-700">{Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}%</p>
-                      <p className="text-xs text-slate-500 mt-0.5">نسبة الصرف من الميزانية التشغيلية</p>
+                      <p className="text-lg font-bold text-violet-700">{_uiPctConsumed}%</p>
+                      <p className="text-xs text-slate-500 mt-0.5">نسبة الصرف ({_uiIsB ? 'من الميزانية الكاملة' : 'من الميزانية التشغيلية'})</p>
                     </CardBody>
                   </Card>
                 )}
@@ -2971,7 +3031,7 @@ export default function ReportsPage() {
                           <td className="px-4 py-3 text-center text-orange-600">{Math.round(cfTotalCost).toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-amber-600 font-bold">{cfTotalObligation.toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-violet-600 font-bold">{cfTotalObligation.toLocaleString()} ₪</td>
-                          {cfOperationalBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(cfOperationalBudget - cfTotalObligation).toLocaleString()} ₪</td>}
+                          {_uiActiveBudget > 0 && <td className="px-4 py-3 text-center text-emerald-600">{Math.round(_uiRemainingNow).toLocaleString()} ₪</td>}
                         </tr>
                       </tfoot>
                     </table>
@@ -2982,27 +3042,52 @@ export default function ReportsPage() {
 
               {/* ── بطاقة توزيع الميزانية ── */}
               {cfLoaded && cfBudget > 0 && (
-                <div className="rounded-2xl border-2 border-red-200 bg-gradient-to-br from-red-50/40 to-white overflow-hidden">
-                  <div className="px-4 py-3 border-b border-red-100 bg-red-50/60">
-                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">🔒 توزيع الميزانية الإجمالية</h2>
-                    <p className="text-xs text-slate-400 mt-0.5">احتياطي طوارئ محجوز + ميزانية تشغيلية مشتركة (نقل وترحيل + دراسة شاملة لاحقاً)</p>
+                <div className={`rounded-2xl border-2 overflow-hidden ${_uiIsB ? 'border-violet-200 bg-gradient-to-br from-violet-50/30 to-white' : 'border-red-200 bg-gradient-to-br from-red-50/40 to-white'}`}>
+                  <div className={`px-4 py-3 border-b ${_uiIsB ? 'border-violet-100 bg-violet-50/60' : 'border-red-100 bg-red-50/60'}`}>
+                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      {_uiIsB ? '📊' : '🔒'} توزيع الميزانية — {_uiApproachLabel}
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {_uiIsB
+                        ? `الميزانية الكاملة (${cfBudget.toLocaleString()} ₪) متاحة للنقل — الاحتياطي (${cfContingencyPct}%) يُحسم من الفائض لاحقاً`
+                        : `احتياطي طوارئ محجوز (${cfContingencyPct}%) + ميزانية تشغيلية مشتركة (نقل وترحيل + دراسة شاملة لاحقاً)`}
+                    </p>
                   </div>
                   <div className="p-4 space-y-3">
                     {/* شريط التوزيع */}
                     <div className="flex rounded-lg overflow-hidden h-6 text-xs font-semibold">
-                      <div
-                        className="flex items-center justify-center bg-red-300 text-red-900"
-                        style={{ width: `${cfContingencyPct}%` }}
-                      >🔒 {cfContingencyPct}%</div>
-                      {cfOperationalBudget > 0 && (() => {
+                      {_uiIsB ? (() => {
+                        const spentPct = _uiPctConsumed
+                        const surplusOfFull = cfBudget > 0 ? Math.max(0, Math.round((cfBudget - cfAllScenarios.current.estimatedTotal) / cfBudget * 100)) : 0
+                        const contingencyOfFull = Math.round(surplusOfFull * cfContingencyPct / 100)
+                        const studyOfFull = surplusOfFull - contingencyOfFull
+                        const transportOfFull = Math.min(spentPct, 100 - surplusOfFull)
+                        const pendingOfFull = Math.max(0, 100 - transportOfFull - surplusOfFull)
+                        return <>
+                          <div className="flex items-center justify-center bg-blue-400 text-white" style={{ width: `${transportOfFull}%` }}>
+                            {transportOfFull > 8 ? `🚛 ${transportOfFull}%` : ''}
+                          </div>
+                          {pendingOfFull > 0 && (
+                            <div className="flex items-center justify-center bg-blue-200 text-blue-800" style={{ width: `${pendingOfFull}%` }}>
+                              {pendingOfFull > 6 ? '⏳' : ''}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-center bg-amber-300 text-amber-900" style={{ width: `${contingencyOfFull}%` }}>
+                            {contingencyOfFull > 5 ? `🔒 ${cfContingencyPct}%` : ''}
+                          </div>
+                          <div className={`flex items-center justify-center text-white ${studyOfFull > 0 ? 'bg-emerald-400' : 'bg-slate-300'}`} style={{ width: `${studyOfFull}%` }}>
+                            {studyOfFull > 8 ? `🔬 ${studyOfFull}%` : ''}
+                          </div>
+                        </>
+                      })() : (() => {
                         const spentPct = Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))
                         const restPct = 100 - spentPct
-                        const studyFund = cfProjection2027.budgetRemaining2027
                         return <>
+                          <div className="flex items-center justify-center bg-red-300 text-red-900" style={{ width: `${cfContingencyPct}%` }}>🔒 {cfContingencyPct}%</div>
                           <div className="flex items-center justify-center bg-blue-400 text-white" style={{ width: `${(100 - cfContingencyPct) * spentPct / 100}%` }}>
                             {spentPct > 8 ? `🚛 ${spentPct}%` : ''}
                           </div>
-                          <div className={`flex items-center justify-center text-white ${studyFund && studyFund > 0 ? 'bg-emerald-400' : 'bg-slate-300'}`} style={{ width: `${(100 - cfContingencyPct) * restPct / 100}%` }}>
+                          <div className={`flex items-center justify-center text-white ${_uiStudyC > 0 ? 'bg-emerald-400' : 'bg-slate-300'}`} style={{ width: `${(100 - cfContingencyPct) * restPct / 100}%` }}>
                             {restPct > 8 ? `🔬 ${restPct}%` : ''}
                           </div>
                         </>
@@ -3010,31 +3095,47 @@ export default function ReportsPage() {
                     </div>
                     {/* الأرقام */}
                     <div className="grid grid-cols-3 gap-3">
-                      <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
-                        <p className="text-xs text-red-500 mb-1 font-medium">🔒 احتياطي طوارئ ({cfContingencyPct}%)</p>
-                        <p className="text-lg font-bold text-red-700">{cfContingencyAmt.toLocaleString()} ₪</p>
-                        <p className="text-xs text-red-400">محجوز — لا يُمَس</p>
-                      </div>
-                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                        <p className="text-xs text-blue-500 mb-1 font-medium">🚛 منفَق (نقل وترحيل)</p>
-                        <p className="text-lg font-bold text-blue-700">{cfTotalObligation.toLocaleString()} ₪</p>
-                        <p className="text-xs text-blue-400">{Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}% من الميزانية التشغيلية</p>
-                      </div>
-                      <div className={`border rounded-xl p-3 text-center ${cfProjection2027.budgetRemaining2027 && cfProjection2027.budgetRemaining2027 > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                      {_uiIsB ? (
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                          <p className="text-xs text-blue-500 mb-1 font-medium">🚛 منفَق (نقل + 14% بلدية)</p>
+                          <p className="text-lg font-bold text-blue-700">{cfTotalObligation.toLocaleString()} ₪</p>
+                          <p className="text-xs text-blue-400">{_uiPctConsumed}% من الميزانية الكاملة</p>
+                        </div>
+                      ) : (
+                        <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
+                          <p className="text-xs text-red-500 mb-1 font-medium">🔒 احتياطي طوارئ ({cfContingencyPct}%)</p>
+                          <p className="text-lg font-bold text-red-700">{cfContingencyAmt.toLocaleString()} ₪</p>
+                          <p className="text-xs text-red-400">محجوز — لا يُمَس</p>
+                        </div>
+                      )}
+                      {_uiIsB ? (
+                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
+                          <p className="text-xs text-amber-600 mb-1 font-medium">🔒 احتياطي من الفائض ({cfContingencyPct}%)</p>
+                          <p className="text-lg font-bold text-amber-700">
+                            {_uiSurplusC > 0 ? Math.round(_uiSurplusC * cfContingencyPct / 100).toLocaleString() : '0'} ₪
+                          </p>
+                          <p className="text-xs text-amber-400">يُحسم من الفائض — ليس مسبقاً</p>
+                        </div>
+                      ) : (
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                          <p className="text-xs text-blue-500 mb-1 font-medium">🚛 منفَق (نقل وترحيل)</p>
+                          <p className="text-lg font-bold text-blue-700">{cfTotalObligation.toLocaleString()} ₪</p>
+                          <p className="text-xs text-blue-400">{_uiPctConsumed}% من الميزانية التشغيلية</p>
+                        </div>
+                      )}
+                      <div className={`border rounded-xl p-3 text-center ${_uiStudyC > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
                         <p className="text-xs text-emerald-600 mb-1 font-medium">🔬 صندوق الدراسة الشاملة</p>
-                        {cfProjection2027.budgetRemaining2027 !== null ? (
-                          <>
-                            <p className={`text-lg font-bold ${cfProjection2027.budgetRemaining2027 > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                              {cfProjection2027.budgetRemaining2027 > 0 ? cfProjection2027.budgetRemaining2027.toLocaleString() : '0'} ₪
-                            </p>
-                            <p className="text-xs text-slate-400">متوقع بعد نهاية 2027</p>
-                          </>
-                        ) : <p className="text-sm text-slate-400">يحتاج ميزانية</p>}
+                        <p className={`text-lg font-bold ${_uiStudyC > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                          {_uiStudyC > 0 ? _uiStudyC.toLocaleString() : '0'} ₪
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {_uiIsB ? `${100 - cfContingencyPct}% × الفائض الإجمالي` : 'متوقع بعد نهاية 2027'}
+                        </p>
                       </div>
                     </div>
                     <div className="flex justify-between text-xs text-slate-500 px-1">
                       <span>الميزانية الإجمالية: <strong className="text-slate-700">{cfBudget.toLocaleString()} ₪</strong></span>
-                      <span>الميزانية التشغيلية ({100 - cfContingencyPct}%): <strong className="text-slate-700">{cfOperationalBudget.toLocaleString()} ₪</strong></span>
+                      <span>{_uiApproachBudgetLabel}</span>
                     </div>
                   </div>
                 </div>
@@ -3393,18 +3494,36 @@ export default function ReportsPage() {
                         </tr>
                         {/* متبقي الميزانية نهاية 2027 */}
                         {cfBudget > 0 && (
+                          <>
                           <tr className="hover:bg-slate-50/60">
-                            <td className="px-4 py-2.5 text-slate-600 font-medium">متبقي الميزانية نهاية 2027</td>
-                            <td className={`text-center px-3 py-2.5 font-bold ${(cfAllScenarios.current.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {cfAllScenarios.current.budgetRemaining2027 !== null ? `${cfAllScenarios.current.budgetRemaining2027.toLocaleString()} ₪` : '—'}
+                            <td className="px-4 py-2.5 text-slate-600 font-medium">
+                              فائض نهاية 2027 <span className="text-xs font-normal text-slate-400">({_uiIsB ? 'فائض إجمالي (ب)' : 'فائض (أ)'})</span>
                             </td>
-                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.partialReady ? 'text-slate-300' : (cfAllScenarios.partial.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {cfAllScenarios.partialReady && cfAllScenarios.partial.budgetRemaining2027 !== null ? `${cfAllScenarios.partial.budgetRemaining2027.toLocaleString()} ₪` : '—'}
+                            <td className={`text-center px-3 py-2.5 font-bold ${_uiSurplusC >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {`${_uiSurplusC.toLocaleString()} ₪`}
                             </td>
-                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.fullReady ? 'text-slate-300' : (cfAllScenarios.full.budgetRemaining2027 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {cfAllScenarios.fullReady && cfAllScenarios.full.budgetRemaining2027 !== null ? `${cfAllScenarios.full.budgetRemaining2027.toLocaleString()} ₪` : '—'}
+                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.partialReady ? 'text-slate-300' : _uiSurplusP >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {cfAllScenarios.partialReady ? `${_uiSurplusP.toLocaleString()} ₪` : '—'}
+                            </td>
+                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.fullReady ? 'text-slate-300' : _uiSurplusF >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {cfAllScenarios.fullReady ? `${_uiSurplusF.toLocaleString()} ₪` : '—'}
                             </td>
                           </tr>
+                          <tr className="bg-emerald-50/40 hover:bg-emerald-50/70">
+                            <td className="px-4 py-2.5 text-emerald-700 font-semibold">
+                              🔬 صندوق الدراسة <span className="text-xs font-normal text-slate-400">{_uiIsB ? `(${100 - cfContingencyPct}% × فائض ب)` : '(= الفائض أ)'}</span>
+                            </td>
+                            <td className={`text-center px-3 py-2.5 font-bold ${_uiStudyC > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                              {`${_uiStudyC.toLocaleString()} ₪`}
+                            </td>
+                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.partialReady ? 'text-slate-300' : _uiStudyP > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                              {cfAllScenarios.partialReady ? `${_uiStudyP.toLocaleString()} ₪` : '—'}
+                            </td>
+                            <td className={`text-center px-3 py-2.5 font-bold ${!cfAllScenarios.fullReady ? 'text-slate-300' : _uiStudyF > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                              {cfAllScenarios.fullReady ? `${_uiStudyF.toLocaleString()} ₪` : '—'}
+                            </td>
+                          </tr>
+                          </>
                         )}
                         {/* تاريخ نفاد الميزانية */}
                         {cfBudget > 0 && (
@@ -3504,8 +3623,8 @@ export default function ReportsPage() {
                           <th className="text-center px-2 py-1.5 text-xs text-amber-600 font-semibold border-b border-amber-100 bg-amber-50/60" colSpan={3}>جاف 🪨</th>
                           <th className="text-center px-3 py-3 text-xs text-violet-700 font-semibold bg-violet-50" rowSpan={2}>إجمالي الالتزام<br/><span className="font-normal text-violet-400">(+14%)</span></th>
                           <th className="text-center px-3 py-3 text-xs text-violet-600 font-semibold" rowSpan={2}>تراكمي</th>
-                          {cfOperationalBudget > 0 && <th className="text-center px-3 py-3 text-xs text-emerald-600 font-semibold" rowSpan={2}>ميزانية متبقية</th>}
-                          {cfOperationalBudget > 0 && <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold" rowSpan={2}>الحالة</th>}
+                          {_uiActiveBudget > 0 && <th className="text-center px-3 py-3 text-xs text-emerald-600 font-semibold" rowSpan={2}>ميزانية متبقية</th>}
+                          {_uiActiveBudget > 0 && <th className="text-center px-3 py-3 text-xs text-slate-500 font-semibold" rowSpan={2}>الحالة</th>}
                         </tr>
                         <tr className="border-b border-violet-100">
                           <th className="text-center px-2 py-1.5 text-xs text-blue-500 font-medium bg-blue-50/40">نقلات</th>
@@ -3518,8 +3637,9 @@ export default function ReportsPage() {
                       </thead>
                       <tbody>
                         {cfForecast.map((m, i) => {
-                          const isDeficit = cfOperationalBudget > 0 && m.cumulative > cfOperationalBudget
-                          const isWarning = cfOperationalBudget > 0 && !isDeficit && m.budgetRemaining < cfAvgMonthly.cost * 2
+                          const _uiRemDisp = _uiActiveBudget > 0 ? Math.max(0, _uiActiveBudget - m.cumulative) : m.budgetRemaining
+                          const isDeficit = _uiActiveBudget > 0 && m.cumulative > _uiActiveBudget
+                          const isWarning = _uiActiveBudget > 0 && !isDeficit && _uiRemDisp < cfAvgMonthly.cost * 2
                           return (
                             <tr key={m.month} className={`border-b border-slate-50 ${isDeficit ? 'bg-red-50/60' : isWarning ? 'bg-amber-50/40' : i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                               <td className="px-3 py-2.5 font-medium text-slate-600 whitespace-nowrap">{m.month}</td>
@@ -3531,12 +3651,12 @@ export default function ReportsPage() {
                               <td className="px-2 py-2.5 text-center text-amber-700 font-medium">{m.solidCost.toLocaleString()} ₪</td>
                               <td className="px-3 py-2.5 text-center text-orange-600 font-bold">{Math.round(m.cost).toLocaleString()} ₪</td>
                               <td className="px-3 py-2.5 text-center text-violet-600 font-medium">{m.cumulative.toLocaleString()} ₪</td>
-                              {cfOperationalBudget > 0 && (
+                              {_uiActiveBudget > 0 && (
                                 <td className={`px-3 py-2.5 text-center font-semibold ${isDeficit ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                  {isDeficit ? `−${Math.round(m.cumulative - cfOperationalBudget).toLocaleString()} ₪` : `${Math.round(m.budgetRemaining).toLocaleString()} ₪`}
+                                  {isDeficit ? `−${Math.round(m.cumulative - _uiActiveBudget).toLocaleString()} ₪` : `${Math.round(_uiRemDisp).toLocaleString()} ₪`}
                                 </td>
                               )}
-                              {cfOperationalBudget > 0 && (
+                              {_uiActiveBudget > 0 && (
                                 <td className="px-3 py-2.5 text-center">
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isDeficit ? 'bg-red-100 text-red-700' : isWarning ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                     {isDeficit ? '🔴 عجز' : isWarning ? '🟡 تحذير' : '🟢 كافية'}
@@ -3572,25 +3692,25 @@ export default function ReportsPage() {
                   {cfBudget > 0 ? (
                     <>
                       {/* بانر الحالة */}
-                      {cfProjection2027.exhaustionDate && (
+                      {_uiExhaustDate && (
                         <div className={`rounded-xl px-4 py-3 mb-4 flex items-start gap-3 ${
-                          cfProjection2027.exhaustionIsBeforeEnd2027
+                          _uiExhaustBefore2027
                             ? 'bg-red-50 border border-red-200'
                             : 'bg-emerald-50 border border-emerald-200'
                         }`}>
-                          <span className="text-xl mt-0.5">{cfProjection2027.exhaustionIsBeforeEnd2027 ? '⚠️' : '✅'}</span>
+                          <span className="text-xl mt-0.5">{_uiExhaustBefore2027 ? '⚠️' : '✅'}</span>
                           <div>
                             <p className={`font-bold text-sm ${
-                              cfProjection2027.exhaustionIsBeforeEnd2027 ? 'text-red-700' : 'text-emerald-700'
+                              _uiExhaustBefore2027 ? 'text-red-700' : 'text-emerald-700'
                             }`}>
-                              {cfProjection2027.exhaustionIsBeforeEnd2027
-                                ? `بالمعدل الحالي، سينفد التمويل في ${cfProjection2027.exhaustionDate}`
-                                : `بالمعدل الحالي، التمويل كافٍ حتى ${cfProjection2027.exhaustionDate}`}
+                              {_uiExhaustBefore2027
+                                ? `بالمعدل الحالي، سينفد التمويل في ${_uiExhaustDate}`
+                                : `بالمعدل الحالي، التمويل كافٍ حتى ${_uiExhaustDate}`}
                             </p>
                             <p className="text-xs text-slate-500 mt-0.5">
-                              {cfProjection2027.exhaustionIsBeforeEnd2027
-                                ? `قبل نهاية 2027 بـ ${cfProjection2027.monthsBefore2027End} شهراً — لازم رفع معدل الصرف`
-                                : `سيتبقى ${cfProjection2027.budgetRemaining2027 !== null ? Math.abs(Math.round(cfProjection2027.budgetRemaining2027)).toLocaleString() : '—'} ₪ فائض بنهاية ديسمبر 2027`}
+                              {_uiExhaustBefore2027
+                                ? 'لازم رفع معدل الصرف قبل نهاية 2027'
+                                : `سيتبقى ${_uiSurplusC > 0 ? _uiSurplusC.toLocaleString() : '0'} ₪ فائض بنهاية ديسمبر 2027 (${_uiApproachLabel})`}
                             </p>
                           </div>
                         </div>
@@ -3601,36 +3721,36 @@ export default function ReportsPage() {
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
                           <p className="text-xs text-slate-500 mb-1">تاريخ نفاد التمويل</p>
                           <p className={`text-base font-bold ${
-                            cfProjection2027.exhaustionIsBeforeEnd2027 ? 'text-red-600' : 'text-emerald-600'
-                          }`}>{cfProjection2027.exhaustionDate ?? '—'}</p>
-                          <p className="text-xs text-slate-400">بالمعدل الحالي</p>
+                            _uiExhaustBefore2027 ? 'text-red-600' : 'text-emerald-600'
+                          }`}>{_uiExhaustDate ?? '—'}</p>
+                          <p className="text-xs text-slate-400">{_uiApproachLabel}</p>
                         </div>
-                        {cfProjection2027.requiredMonthlyCost !== null && (
+                        {_uiRequired !== null && (
                           <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
                             <p className="text-xs text-slate-500 mb-1">المعدل الشهري المطلوب</p>
-                            <p className="text-base font-bold text-blue-700">{cfProjection2027.requiredMonthlyCost.toLocaleString()} ₪</p>
-                            {cfProjection2027.requiredMonthlyTrips !== null && (
-                              <p className="text-xs text-blue-500">{cfProjection2027.requiredMonthlyTrips} نقلة/شهر</p>
+                            <p className="text-base font-bold text-blue-700">{_uiRequired.toLocaleString()} ₪</p>
+                            {_uiRequiredTrips !== null && (
+                              <p className="text-xs text-blue-500">{_uiRequiredTrips} نقلة/شهر</p>
                             )}
                           </div>
                         )}
-                        {cfProjection2027.costDiff !== null && (
+                        {_uiCostDiff !== null && (
                           <div className={`border rounded-xl p-3 text-center ${
-                            cfProjection2027.costDiff > 0 ? 'bg-amber-50 border-amber-100' : 'bg-violet-50 border-violet-100'
+                            _uiCostDiff > 0 ? 'bg-amber-50 border-amber-100' : 'bg-violet-50 border-violet-100'
                           }`}>
                             <p className="text-xs text-slate-500 mb-1">الفارق عن المعدل الحالي</p>
                             <p className={`text-base font-bold ${
-                              cfProjection2027.costDiff > 0 ? 'text-amber-700' : 'text-violet-700'
+                              _uiCostDiff > 0 ? 'text-amber-700' : 'text-violet-700'
                             }`}>
-                              {cfProjection2027.costDiff > 0 ? '▲' : '▼'} {Math.abs(cfProjection2027.costDiff).toLocaleString()} ₪/شهر
+                              {_uiCostDiff > 0 ? '▲' : '▼'} {Math.abs(_uiCostDiff).toLocaleString()} ₪/شهر
                             </p>
-                            {cfProjection2027.tripsDiff !== null && (
+                            {_uiTripsDiff !== null && (
                               <p className={`text-xs ${
-                                cfProjection2027.costDiff > 0 ? 'text-amber-600' : 'text-violet-600'
+                                _uiCostDiff > 0 ? 'text-amber-600' : 'text-violet-600'
                               }`}>
-                                {cfProjection2027.costDiff > 0
-                                  ? `+${cfProjection2027.tripsDiff} نقلة/شهر للاستنفاد`
-                                  : `${cfProjection2027.tripsDiff} نقلة/شهر أقل كافية`}
+                                {_uiCostDiff > 0
+                                  ? `+${_uiTripsDiff} نقلة/شهر للاستنفاد`
+                                  : `${_uiTripsDiff} نقلة/شهر أقل كافية`}
                               </p>
                             )}
                           </div>
