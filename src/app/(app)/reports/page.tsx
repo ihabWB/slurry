@@ -1610,10 +1610,16 @@ export default function ReportsPage() {
         ]),
         ...(cfBudget > 0 ? [
           dataRow([
-            'Budget Remaining End 2027 — متبقي الميزانية نهاية 2027',
+            'Surplus (A) End 2027 — After Upfront Contingency — الفائض (أ) نهاية 2027: بعد الاحتياطي المسبق',
             exportProj.current.budgetRemaining2027 !== null ? `${fmt(exportProj.current.budgetRemaining2027)} ₪` : '—',
             cfAllScenarios.partialReady && exportProj.partial?.budgetRemaining2027 !== null ? `${fmt(exportProj.partial!.budgetRemaining2027!)} ₪` : '—',
             cfAllScenarios.fullReady && exportProj.full?.budgetRemaining2027 !== null ? `${fmt(exportProj.full!.budgetRemaining2027!)} ₪` : '—',
+          ]),
+          dataRow([
+            'Gross Surplus (B) End 2027 — Full Budget Base — الفائض الإجمالي (ب) نهاية 2027: من الميزانية الكاملة',
+            `${fmt(cfBudget - exportProj.current.estimatedTotal)} ₪`,
+            cfAllScenarios.partialReady && exportProj.partial ? `${fmt(cfBudget - exportProj.partial.estimatedTotal)} ₪` : '—',
+            cfAllScenarios.fullReady && exportProj.full ? `${fmt(cfBudget - exportProj.full.estimatedTotal)} ₪` : '—',
           ]),
           dataRow([
             'Budget Exhaustion Date — تاريخ نفاد الميزانية',
@@ -1709,7 +1715,7 @@ export default function ReportsPage() {
 
       // 7. Study Fund Payment Schedule
       h1('7. Study Fund Payment Schedule — جدولة دفعات الدراسة الشاملة'),
-      p(`النهج الحالي: الفائض = الميزانية التشغيلية (${cfOperationalBudget > 0 ? fmt(cfOperationalBudget) : 'غير محدد'} ₪ — بعد حسم ${cfContingencyPct}% احتياطي مسبق) ناقص التكاليف المتوقعة حتى ديسمبر 2027. التوزيع: 20% يوليو، 20% سبتمبر، 20% نوفمبر، 40% ديسمبر 2026. المبالغ تختلف بحسب السيناريو — انظر القسم 7.1 للنهج البديل (احتياطي من الفائض — Option B).`),
+      p(`النهج (أ) — مستند إلى عمود "الفائض (أ)" في جدول 6.2 أعلاه. الفائض (أ) = الميزانية التشغيلية (${cfOperationalBudget > 0 ? fmt(cfOperationalBudget) : 'غير محدد'} ₪ — بعد حسم ${cfContingencyPct}% احتياطي مسبق) ناقص التكاليف حتى ديسمبر 2027. مبالغ دفعات هذا القسم = عمود الفائض (أ) لكل سيناريو. التوزيع: 20% يوليو، 20% سبتمبر، 20% نوفمبر، 40% ديسمبر 2026. انظر القسم 7.1 للنهج (ب).`),
       blank(),
       tbl([
         hdrRow(['الدفعة', 'التاريخ', 'النسبة', 'السيناريو الحالي', 'سعير جزئي', 'سعير كامل']),
@@ -1758,7 +1764,7 @@ export default function ReportsPage() {
 
       // 7.1 Alternative: Contingency from Surplus (Option B)
       h2(`7.1 النهج البديل — احتياطي من الفائض (Option B: ${cfContingencyPct}% من الفائض)`),
-      p(`بدلاً من اقتطاع ${cfContingencyPct}% احتياطياً مسبقاً من الميزانية الكاملة، يُحسب الاحتياطي هنا كـ ${cfContingencyPct}% من الفائض المتحقق بعد إجمالي تكاليف النقل. الفارق: ${cfContingencyPct}% من تكاليف النقل تنتقل لصالح ميزانية الدراسة.`),
+      p(`النهج (ب) — مستند إلى عمود "الفائض الإجمالي (ب)" في جدول 6.2 أعلاه. الفائض (ب) = الميزانية الكاملة ناقص تكاليف النقل (دون احتياطي مسبق). مبالغ دفعات هذا القسم = ${100 - cfContingencyPct}% × عمود الفائض (ب). الفارق عن النهج (أ): يوفر دائماً ${cfContingencyPct}% من تكاليف النقل إضافيةً لميزانية الدراسة.`),
       blank(),
       ...(cfBudget > 0 ? [
         tbl([
