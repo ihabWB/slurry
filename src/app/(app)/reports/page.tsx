@@ -474,6 +474,7 @@ export default function ReportsPage() {
   const [cfSa3irCostPerTrip, setCfSa3irCostPerTrip] = useState(0)
   const [cfSmoothingAlpha, setCfSmoothingAlpha] = useState(0.6) // معامل EWMA
   const [cfContingencyPct, setCfContingencyPct] = useState(10) // % احتياطي طوارئ
+  const [cfContingencyApproach, setCfContingencyApproach] = useState<'A' | 'B'>('B') // النهج المعتمد: A=احتياطي مسبق، B=احتياطي من الفائض
   const cfMainChartRef = useRef<HTMLDivElement>(null)
   const cf2027ChartRef = useRef<HTMLDivElement>(null)
 
@@ -1141,6 +1142,22 @@ export default function ReportsPage() {
     const _optBConsStudy = _optBStudyAmt(_optBConsSurp)
     const studyScheduleB = _optBConsStudy > 0 ? _getStudySchedB(_optBConsMonthlyCost, _optBConsStudy) : null
 
+    // Active approach derived vars (A = upfront contingency, B = contingency from surplus)
+    const _isApproachB = cfContingencyApproach === 'B'
+    const _activeStudyBudgetC = _isApproachB ? _optBStudyAmt(_optBSurp.current) : _ssBudgetC
+    const _activeStudyBudgetP = _isApproachB ? _optBStudyAmt(_optBSurp.partial) : _ssBudgetP
+    const _activeStudyBudgetF = _isApproachB ? _optBStudyAmt(_optBSurp.full) : _ssBudgetF
+    const _activeConsSched = _isApproachB ? studyScheduleB : _studyConservative
+    const _activeConsBudget = _isApproachB ? _optBConsStudy : (cfAllScenarios.fullReady ? _ssBudgetF : cfAllScenarios.partialReady ? _ssBudgetP : _ssBudgetC)
+    const _activeConsLabel = _isApproachB ? _optBConsLabel : (cfAllScenarios.fullReady ? 'سعير كامل (الأعلى تكلفة)' : cfAllScenarios.partialReady ? 'سعير جزئي' : 'السيناريو الحالي')
+    const _approachLabel = _isApproachB ? '(ب) — احتياطي من الفائض' : '(أ) — احتياطي مسبق'
+    const _approachBasisNote = _isApproachB
+      ? `الفائض (ب) = الميزانية الكاملة (${cfBudget > 0 ? fmt(cfBudget) : 'غير محدد'} ₪) ناقص التكاليف حتى ديسمبر 2027 — دون احتياطي مسبق. مبالغ الدراسة = ${100 - cfContingencyPct}% × الفائض (ب). المبالغ = عمود "الفائض الإجمالي (ب)" في جدول 6.2. التوزيع: 20% يوليو، 20% سبتمبر، 20% نوفمبر، 40% ديسمبر 2026.`
+      : `الفائض (أ) = الميزانية التشغيلية (${cfOperationalBudget > 0 ? fmt(cfOperationalBudget) : 'غير محدد'} ₪ — بعد حسم ${cfContingencyPct}% احتياطي مسبق) ناقص التكاليف حتى ديسمبر 2027. المبالغ = عمود "الفائض (أ)" في جدول 6.2. التوزيع: 20% يوليو، 20% سبتمبر، 20% نوفمبر، 40% ديسمبر 2026.`
+    const _activeFlowNote = _isApproachB
+      ? 'ملاحظة: التدفق النقدي المتاح = الميزانية الكاملة الحرة في تاريخ الدفعة (بعد حسم تكاليف النقل المتراكمة) ناقص الدفعات السابقة للدراسة.'
+      : 'ملاحظة: التدفق النقدي المتاح = الميزانية التشغيلية الحرة في تاريخ الدفعة (بعد حسم تكاليف النقل المتراكمة) ناقص الدفعات السابقة للدراسة.'
+
     // Amber milestone cell (multi-line)
     const mCell = (lines: string[], span = 1) => new TableCell({
       columnSpan: span,
@@ -1610,13 +1627,13 @@ export default function ReportsPage() {
         ]),
         ...(cfBudget > 0 ? [
           dataRow([
-            'Surplus (A) End 2027 — After Upfront Contingency — الفائض (أ) نهاية 2027: بعد الاحتياطي المسبق',
+            `Surplus (A) End 2027 — After Upfront Contingency — الفائض (أ) نهاية 2027${!_isApproachB ? ' ✓ (معتمد)' : ''}`,
             exportProj.current.budgetRemaining2027 !== null ? `${fmt(exportProj.current.budgetRemaining2027)} ₪` : '—',
             cfAllScenarios.partialReady && exportProj.partial?.budgetRemaining2027 !== null ? `${fmt(exportProj.partial!.budgetRemaining2027!)} ₪` : '—',
             cfAllScenarios.fullReady && exportProj.full?.budgetRemaining2027 !== null ? `${fmt(exportProj.full!.budgetRemaining2027!)} ₪` : '—',
           ]),
           dataRow([
-            'Gross Surplus (B) End 2027 — Full Budget Base — الفائض الإجمالي (ب) نهاية 2027: من الميزانية الكاملة',
+            `Gross Surplus (B) End 2027 — Full Budget Base — الفائض الإجمالي (ب) نهاية 2027${_isApproachB ? ' ✓ (معتمد)' : ''}`,
             `${fmt(cfBudget - exportProj.current.estimatedTotal)} ₪`,
             cfAllScenarios.partialReady && exportProj.partial ? `${fmt(cfBudget - exportProj.partial.estimatedTotal)} ₪` : '—',
             cfAllScenarios.fullReady && exportProj.full ? `${fmt(cfBudget - exportProj.full.estimatedTotal)} ₪` : '—',
@@ -1713,9 +1730,9 @@ export default function ReportsPage() {
         blank(),
       ]),
 
-      // 7. Study Fund Payment Schedule
-      h1('7. Study Fund Payment Schedule — جدولة دفعات الدراسة الشاملة'),
-      p(`النهج (أ) — مستند إلى عمود "الفائض (أ)" في جدول 6.2 أعلاه. الفائض (أ) = الميزانية التشغيلية (${cfOperationalBudget > 0 ? fmt(cfOperationalBudget) : 'غير محدد'} ₪ — بعد حسم ${cfContingencyPct}% احتياطي مسبق) ناقص التكاليف حتى ديسمبر 2027. مبالغ دفعات هذا القسم = عمود الفائض (أ) لكل سيناريو. التوزيع: 20% يوليو، 20% سبتمبر، 20% نوفمبر، 40% ديسمبر 2026. انظر القسم 7.1 للنهج (ب).`),
+      // 7. Study Fund Payment Schedule — unified (approach selected by user)
+      h1(`7. Study Fund Payment Schedule — جدولة دفعات الدراسة | النهج ${_approachLabel}`),
+      p(_approachBasisNote),
       blank(),
       tbl([
         hdrRow(['الدفعة', 'التاريخ', 'النسبة', 'السيناريو الحالي', 'سعير جزئي', 'سعير كامل']),
@@ -1723,97 +1740,39 @@ export default function ReportsPage() {
           pd.label,
           pd.engDate,
           `${Math.round(_studyPcts[i] * 100)}%`,
-          studySchedule.current ? `${fmt(studySchedule.current[i].amount)} ₪` : 'لا فائض',
-          studySchedule.partial ? `${fmt(studySchedule.partial[i].amount)} ₪` : (cfAllScenarios.partialReady ? 'لا فائض' : '—'),
-          studySchedule.full    ? `${fmt(studySchedule.full[i].amount)} ₪`    : (cfAllScenarios.fullReady    ? 'لا فائض' : '—'),
+          _activeStudyBudgetC > 0 ? `${fmt(Math.round(_activeStudyBudgetC * _studyPcts[i]))} ₪` : 'لا فائض',
+          cfAllScenarios.partialReady ? (_activeStudyBudgetP > 0 ? `${fmt(Math.round(_activeStudyBudgetP * _studyPcts[i]))} ₪` : 'لا فائض') : '—',
+          cfAllScenarios.fullReady ? (_activeStudyBudgetF > 0 ? `${fmt(Math.round(_activeStudyBudgetF * _studyPcts[i]))} ₪` : 'لا فائض') : '—',
         ])),
         dataRow([
           'الإجمالي', '2026', '100%',
-          `${fmt(_ssBudgetC)} ₪`,
-          cfAllScenarios.partialReady ? (_ssBudgetP > 0 ? `${fmt(_ssBudgetP)} ₪` : 'لا فائض') : '—',
-          cfAllScenarios.fullReady    ? (_ssBudgetF > 0 ? `${fmt(_ssBudgetF)} ₪` : 'لا فائض') : '—',
+          `${fmt(_activeStudyBudgetC)} ₪`,
+          cfAllScenarios.partialReady ? (_activeStudyBudgetP > 0 ? `${fmt(_activeStudyBudgetP)} ₪` : 'لا فائض') : '—',
+          cfAllScenarios.fullReady ? (_activeStudyBudgetF > 0 ? `${fmt(_activeStudyBudgetF)} ₪` : 'لا فائض') : '—',
         ]),
       ]),
       blank(),
       ...(() => {
-        if (!_studyConservative) return [
-          p('لا يوجد فائض متوقع بنهاية 2027 في أي سيناريو — الدراسة ستحتاج إلى تمويل خارج الميزانية التشغيلية.', { color: 'EF4444' }),
+        if (!_activeConsSched) return [
+          p('لا يوجد فائض متوقع بنهاية 2027 في أي سيناريو — الدراسة ستحتاج إلى تمويل خارج الميزانية.', { color: 'EF4444' }),
           blank(),
         ]
-        const _budgetCons = cfAllScenarios.fullReady ? _ssBudgetF : cfAllScenarios.partialReady ? _ssBudgetP : _ssBudgetC
-        const _scenLbl = cfAllScenarios.fullReady ? 'سعير كامل (الأعلى تكلفة)' : cfAllScenarios.partialReady ? 'سعير جزئي' : 'السيناريو الحالي'
         return [
-          p(`التوصية التحفظية — بناءً على ${_scenLbl}: إجمالي الدراسة ${fmt(_budgetCons)} ₪`),
+          p(`التوصية التحفظية — بناءً على ${_activeConsLabel}: إجمالي الدراسة ${fmt(_activeConsBudget)} ₪`),
           blank(),
           tbl([
             hdrRow(['الدفعة', 'التاريخ', 'المبلغ المقترح', 'النسبة', 'التدفق النقدي المتاح']),
-            ..._studyConservative.map(row => dataRow([
+            ..._activeConsSched.map(row => dataRow([
               row.label,
               row.engDate,
               `${fmt(row.amount)} ₪`,
               `${Math.round(row.pct * 100)}%`,
               `${fmt(row.availableForStudy)} ₪`,
             ])),
-            dataRow(['الإجمالي', '2026', `${fmt(_budgetCons)} ₪`, '100%', '']),
+            dataRow(['الإجمالي', '2026', `${fmt(_activeConsBudget)} ₪`, '100%', '']),
           ]),
           blank(),
-          p('ملاحظة: التدفق النقدي المتاح = الميزانية الحرة في تاريخ الدفعة (بعد حسم تكاليف النقل المتراكمة) ناقص الدفعات السابقة للدراسة. القيم موجبة دائمًا لأن مجموع الدراسة = الفائض بعد إجمالي النقل حتى 2027.', { color: '64748B' }),
-          blank(),
-        ]
-      })(),
-
-      // 7.1 Alternative: Contingency from Surplus (Option B)
-      h2(`7.1 النهج البديل — احتياطي من الفائض (Option B: ${cfContingencyPct}% من الفائض)`),
-      p(`النهج (ب) — مستند إلى عمود "الفائض الإجمالي (ب)" في جدول 6.2 أعلاه. الفائض (ب) = الميزانية الكاملة ناقص تكاليف النقل (دون احتياطي مسبق). مبالغ دفعات هذا القسم = ${100 - cfContingencyPct}% × عمود الفائض (ب). الفارق عن النهج (أ): يوفر دائماً ${cfContingencyPct}% من تكاليف النقل إضافيةً لميزانية الدراسة.`),
-      blank(),
-      ...(cfBudget > 0 ? [
-        tbl([
-          hdrRow(['السيناريو', 'التكاليف المتوقعة 2027', 'الفائض (من T الكامل)', `احتياطي ${cfContingencyPct}%`, `ميزانية الدراسة ${100 - cfContingencyPct}%`]),
-          dataRow([
-            'السيناريو الحالي',
-            `${fmt(exportProj.current.estimatedTotal)} ₪`,
-            `${fmt(_optBSurp.current)} ₪`,
-            `${fmt(_optBCont(_optBSurp.current))} ₪`,
-            `${fmt(_optBStudyAmt(_optBSurp.current))} ₪`,
-          ]),
-          ...(cfAllScenarios.partialReady && exportProj.partial ? [dataRow([
-            'سعير جزئي',
-            `${fmt(exportProj.partial.estimatedTotal)} ₪`,
-            `${fmt(_optBSurp.partial)} ₪`,
-            `${fmt(_optBCont(_optBSurp.partial))} ₪`,
-            `${fmt(_optBStudyAmt(_optBSurp.partial))} ₪`,
-          ])] : []),
-          ...(cfAllScenarios.fullReady && exportProj.full ? [dataRow([
-            'سعير كامل',
-            `${fmt(exportProj.full.estimatedTotal)} ₪`,
-            `${fmt(_optBSurp.full)} ₪`,
-            `${fmt(_optBCont(_optBSurp.full))} ₪`,
-            `${fmt(_optBStudyAmt(_optBSurp.full))} ₪`,
-          ])] : []),
-        ]),
-        blank(),
-      ] : [p('الميزانية الكاملة غير محددة — تحليل Option B غير متاح.', { color: '94A3B8' }), blank()]),
-      ...(() => {
-        if (cfBudget <= 0 || !studyScheduleB) return [
-          ...(cfBudget > 0 ? [p('لا فائض متوقع من الميزانية الكاملة في السيناريو التحفظي.', { color: 'EF4444' }), blank()] : []),
-        ]
-        const _currentConsBudget = cfAllScenarios.fullReady ? _ssBudgetF : cfAllScenarios.partialReady ? _ssBudgetP : _ssBudgetC
-        return [
-          p(`جدول الدفعات (Option B — التحفظي: ${_optBConsLabel}): إجمالي الدراسة ${fmt(_optBConsStudy)} ₪`),
-          blank(),
-          tbl([
-            hdrRow(['الدفعة', 'التاريخ', 'المبلغ (Option B)', 'النسبة', 'التدفق النقدي المتاح']),
-            ...studyScheduleB.map(row => dataRow([
-              row.label,
-              row.engDate,
-              `${fmt(row.amount)} ₪`,
-              `${Math.round(row.pct * 100)}%`,
-              `${fmt(row.availableForStudy)} ₪`,
-            ])),
-            dataRow(['الإجمالي', '2026', `${fmt(_optBConsStudy)} ₪`, '100%', '']),
-          ]),
-          blank(),
-          p(`مقارنة المنهجين (${_optBConsLabel}): النهج الحالي → دراسة ${fmt(_currentConsBudget)} ₪ | Option B → دراسة ${fmt(_optBConsStudy)} ₪ | الفارق لصالح الدراسة: +${fmt(_optBConsStudy - _currentConsBudget)} ₪`, { color: '16A34A' }),
+          p(_activeFlowNote, { color: '64748B' }),
           blank(),
         ]
       })(),
@@ -1849,7 +1808,7 @@ export default function ReportsPage() {
       cfTrips, cfForecast, cfProjection2027, cf2027ChartData, cfCurrentYM,
       cfScenario, cfMainChartRef, cf2027ChartRef,
       cfAllScenarios, cfLongTripPerMonth, cfLongTripCost, cfSa3irTripsPerMonth, cfSa3irCostPerTrip,
-      cfTranchesReceived, cfQuarterlyAnalysis, cfLiquidity, cfEligibilityThresholds])
+      cfTranchesReceived, cfQuarterlyAnalysis, cfLiquidity, cfEligibilityThresholds, cfContingencyApproach])
 
   const exportCfExcel = () => {
     const histRows = cfMonthlyHistory.map(m => ({
@@ -2699,7 +2658,12 @@ export default function ReportsPage() {
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Activity size={16} /> تحليل التدفق النقدي والتوقعات</h2>
                 {cfLoaded && (
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs">
+                      <span className="text-slate-400 ml-1">نهج الاحتياطي:</span>
+                      <button onClick={() => setCfContingencyApproach('A')} className={`rounded px-1.5 py-0.5 font-medium transition-colors ${cfContingencyApproach === 'A' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-200'}`}>(أ) مسبق</button>
+                      <button onClick={() => setCfContingencyApproach('B')} className={`rounded px-1.5 py-0.5 font-medium transition-colors ${cfContingencyApproach === 'B' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-200'}`}>(ب) من الفائض</button>
+                    </div>
                     <Button variant="success" size="sm" onClick={exportCfExcel}><FileSpreadsheet size={14} /> تصدير Excel</Button>
                     <Button variant="secondary" size="sm" onClick={exportCfWord} disabled={cfWordExporting}><FileText size={14} /> {cfWordExporting ? 'جاري التصدير...' : 'تصدير Word'}</Button>
                   </div>
