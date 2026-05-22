@@ -1088,16 +1088,18 @@ export default function ReportsPage() {
       if (_fd.getFullYear() === 2027 && _fd.getMonth() === 11) break
     }
     const _expArabicMonths = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+    // Active budget for export — full (B) or operational after contingency (A)
+    const _exportActiveBudget = cfContingencyApproach === 'B' ? cfBudget : cfOperationalBudget
     const getExportProj = (monthlyCost: number, monthlyTrips: number) => {
       const estimatedTotal = Math.round(exportBase + exportForecastMonths * monthlyCost)
-      const budgetRemaining2027 = cfOperationalBudget > 0 ? Math.round(cfOperationalBudget - estimatedTotal) : null
-      const remainingNow = cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - cfTotalObligation)) : 0
-      const monthsToExhaust = monthlyCost > 0 && cfOperationalBudget > 0 ? remainingNow / monthlyCost : null
+      const budgetRemaining2027 = _exportActiveBudget > 0 ? Math.round(_exportActiveBudget - estimatedTotal) : null
+      const remainingNow = _exportActiveBudget > 0 ? Math.max(0, Math.round(_exportActiveBudget - cfTotalObligation)) : 0
+      const monthsToExhaust = monthlyCost > 0 && _exportActiveBudget > 0 ? remainingNow / monthlyCost : null
       const exhaustionDateObj = monthsToExhaust !== null
         ? new Date(now.getFullYear(), now.getMonth() + Math.ceil(monthsToExhaust), 1) : null
       const exhaustionDate = exhaustionDateObj
         ? `${_expArabicMonths[exhaustionDateObj.getMonth()]} ${exhaustionDateObj.getFullYear()}` : null
-      const tripsToExhaust = monthlyCost > 0 && monthlyTrips > 0 && cfOperationalBudget > 0
+      const tripsToExhaust = monthlyCost > 0 && monthlyTrips > 0 && _exportActiveBudget > 0
         ? Math.floor(remainingNow / (monthlyCost / monthlyTrips)) : null
       return { estimatedTotal, budgetRemaining2027, exhaustionDate, tripsToExhaust, remainingNow }
     }
@@ -1140,9 +1142,10 @@ export default function ReportsPage() {
         return { ...pd, pct: _studyPcts[i], amount, budgetFreeAtDate, availableForStudy, feasible }
       })
     }
-    const _ssBudgetC = Math.max(0, exportProj.current.budgetRemaining2027 ?? 0)
-    const _ssBudgetP = exportProj.partial ? Math.max(0, exportProj.partial.budgetRemaining2027 ?? 0) : 0
-    const _ssBudgetF = exportProj.full    ? Math.max(0, exportProj.full.budgetRemaining2027    ?? 0) : 0
+    // Approach A study budgets: always based on operational budget (approach A, contingency deducted upfront)
+    const _ssBudgetC = cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - exportProj.current.estimatedTotal)) : 0
+    const _ssBudgetP = cfAllScenarios.partialReady && exportProj.partial && cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - exportProj.partial.estimatedTotal)) : 0
+    const _ssBudgetF = cfAllScenarios.fullReady && exportProj.full && cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - exportProj.full.estimatedTotal)) : 0
     const studySchedule = {
       current: _ssBudgetC > 0 ? _getStudySched(cfAllScenarios.current.monthly.cost, _ssBudgetC) : null,
       partial: cfAllScenarios.partialReady && _ssBudgetP > 0
@@ -1280,7 +1283,7 @@ export default function ReportsPage() {
         runCum += cost
         data.push({
           month: m.month, cost, forecastCost: null,
-          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - runCum)) : null,
+          remaining: _exportActiveBudget > 0 ? Math.max(0, Math.round(_exportActiveBudget - runCum)) : null,
           type: 'Actual',
         })
       })
@@ -1289,7 +1292,7 @@ export default function ReportsPage() {
       runCum += estCurrent
       data.push({
         month: cfCurrentYM, cost: estCurrent, forecastCost: null,
-        remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - runCum)) : null,
+        remaining: _exportActiveBudget > 0 ? Math.max(0, Math.round(_exportActiveBudget - runCum)) : null,
         type: 'Current (est.)',
       })
       // Forecast months from next month onwards
@@ -1300,7 +1303,7 @@ export default function ReportsPage() {
         const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         data.push({
           month, cost: null, forecastCost: Math.round(monthlyCost),
-          remaining: cfOperationalBudget > 0 ? Math.max(0, Math.round(cfOperationalBudget - runCum)) : null,
+          remaining: _exportActiveBudget > 0 ? Math.max(0, Math.round(_exportActiveBudget - runCum)) : null,
           type: 'Forecast',
         })
         if (d.getFullYear() === 2027 && d.getMonth() === 11) break
@@ -1330,13 +1333,13 @@ export default function ReportsPage() {
 
     // Build 2027 table rows with milestone injection
     const build2027TableRows = (data: { month: string; cost: number | null; forecastCost: number | null; remaining: number | null; type: string }[]) => {
-      const colCount = 3 + (cfOperationalBudget > 0 ? 1 : 0)
+      const colCount = 3 + (_exportActiveBudget > 0 ? 1 : 0)
       // For 2027 table: build carry state from scratch as we traverse full history
       const remainingAtCrossing: (number | null)[] = cfEligibilityThresholds.map(() => null)
       const crossed = cfEligibilityThresholds.map(() => false)
       let runningCum = 0
       const rows: TableRow[] = [
-        hdrRow(['Month', 'Type', 'Monthly Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        hdrRow(['Month', 'Type', 'Monthly Obligation (₪)', ...(_exportActiveBudget > 0 ? [`Budget Remaining (₪) — ${cfContingencyApproach === 'B' ? 'Full Budget (B)' : 'Operational (A)'}`] : [])]),
       ]
       data.forEach(row => {
         const monthCost = row.cost ?? row.forecastCost ?? 0
@@ -1345,7 +1348,7 @@ export default function ReportsPage() {
           row.month,
           row.type,
           fmt(monthCost),
-          ...(cfOperationalBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : cfOperationalBudget > 0 ? ['—'] : []),
+          ...(_exportActiveBudget > 0 && row.remaining !== null ? [fmt(row.remaining)] : _exportActiveBudget > 0 ? ['—'] : []),
         ]))
         cfEligibilityThresholds.forEach((threshold, ti) => {
           if (!crossed[ti] && runningCum >= threshold) {
@@ -1387,8 +1390,8 @@ export default function ReportsPage() {
         dataRow(['Avg Obligation per Trip', cfAvgCostPerTrip > 0 ? `${fmt(cfAvgCostPerTrip)} ₪` : 'N/A', 'cfTotalObligation ÷ priced trips']),
         dataRow(['Months of Historical Data', `${cfMonthlyHistory.length} months`, `Current month (${cfCurrentYM}) is partial`]),
         ...(cfBudget > 0 ? [
-          dataRow(['Budget Remaining (Transport, vs Operational)', `${fmt(cfProjection2027.remainingBudgetNow)} ₪`, 'Operational budget (excl. contingency) minus total obligation']),
-          dataRow(['% of Operational Budget Consumed', `${Math.min(100, Math.round(cfTotalObligation / cfOperationalBudget * 100))}%`, 'Obligation vs transport+study operational budget']),
+          dataRow([`Budget Remaining (${cfContingencyApproach === 'B' ? 'Full Budget — B' : 'Operational — A'})`, `${fmt(Math.max(0, _exportActiveBudget - cfTotalObligation))} ₪`, cfContingencyApproach === 'B' ? 'Full budget minus total obligation — approach B (no upfront contingency)' : 'Operational budget (excl. contingency) minus total obligation — approach A']),
+          dataRow([`% of ${cfContingencyApproach === 'B' ? 'Full' : 'Operational'} Budget Consumed`, `${Math.min(100, Math.round(cfTotalObligation / _exportActiveBudget * 100))}%`, `Obligation vs ${cfContingencyApproach === 'B' ? 'full budget (approach B)' : `operational budget after ${cfContingencyPct}% contingency (approach A)`}`]),
         ] : []),
       ]),
       blank(),
@@ -1456,11 +1459,11 @@ export default function ReportsPage() {
       p(`Historical trip cost data aggregated by month. The current month (${cfCurrentYM}) is partial and excluded from forecasting averages. Cumulative column reflects obligation = trip cost × 1.14 (includes 14% municipality share).`),
       blank(),
       tbl([
-        hdrRow(['Month', 'Trips', 'Working Days', 'Liquid', 'Solid', 'Net Cost (₪)', 'Municipality 14% (₪)', 'Total Obligation (₪)', 'Cumulative Obligation (₪)', ...(cfOperationalBudget > 0 ? ['Budget Remaining (₪)'] : [])]),
+        hdrRow(['Month', 'Trips', 'Working Days', 'Liquid', 'Solid', 'Net Cost (₪)', 'Municipality 14% (₪)', 'Total Obligation (₪)', 'Cumulative Obligation (₪)', ...(_exportActiveBudget > 0 ? [`Budget Remaining (₪) — ${cfContingencyApproach === 'B' ? 'Full Budget (B)' : 'Operational (A)'}`] : [])]),
         ...cfMonthlyHistory.map(m => {
           const monthObligation = Math.round(m.cost * (1 + CF_MUN_RATE))
           const municipalityShare = Math.round(m.cost * CF_MUN_RATE)
-          const remaining = cfOperationalBudget > 0 ? cfOperationalBudget - m.cumulative : null
+          const remaining = _exportActiveBudget > 0 ? _exportActiveBudget - m.cumulative : null
           return dataRow([
             m.month + (m.month === cfCurrentYM ? ' (partial)' : ''),
             String(m.trips),
@@ -1471,7 +1474,7 @@ export default function ReportsPage() {
             fmt(municipalityShare),
             fmt(monthObligation),
             fmt(m.cumulative),
-            ...(cfOperationalBudget > 0 && remaining !== null ? [fmt(remaining)] : []),
+            ...(_exportActiveBudget > 0 && remaining !== null ? [fmt(remaining)] : []),
           ])
         }),
         dataRow([
@@ -1484,7 +1487,7 @@ export default function ReportsPage() {
           fmt(Math.round(cfTotalCost * CF_MUN_RATE)),
           fmt(cfTotalObligation),
           fmt(cfTotalObligation),
-          ...(cfOperationalBudget > 0 ? [fmt(cfProjection2027.remainingBudgetNow)] : []),
+          ...(_exportActiveBudget > 0 ? [fmt(Math.max(0, _exportActiveBudget - cfTotalObligation))] : []),
         ]),
       ]),
       blank(),
@@ -1567,13 +1570,13 @@ export default function ReportsPage() {
         dataRow(['Forecast Months (next month → Dec 2027)', `${exportForecastMonths}`, 'Number of future months included in projection']),
         dataRow(['Projection Base (completed + est. current month)', `${fmt(exportBase)} ₪`, `${fmt(_expCompCum)} ₪ completed + ${fmt(estCurrentMonthFull ?? 0)} ₪ current month est.`]),
         dataRow(['Estimated Total Obligation by End 2027', `${fmt(exportProj.current.estimatedTotal)} ₪`, `Base + ${exportForecastMonths} × ${fmt(cfAllScenarios.current.monthly.cost)} ₪`]),
-        ...(cfOperationalBudget > 0 && exportProj.current.budgetRemaining2027 !== null ? [
+        ...(_exportActiveBudget > 0 ? [
           _isApproachB
             ? dataRow(['Gross Surplus End 2027 (B) — الفائض الإجمالي (ب)', `${fmt(_optBSurp.current)} ₪`, `Full budget (${fmt(cfBudget)} ₪) − Estimated total transport`])
             : dataRow([
-                exportProj.current.budgetRemaining2027 >= 0 ? 'Expected Surplus End 2027 (A) — الفائض (أ)' : 'Expected Deficit End 2027',
-                `${exportProj.current.budgetRemaining2027 >= 0 ? '' : '-'}${fmt(Math.abs(exportProj.current.budgetRemaining2027))} ₪`,
-                exportProj.current.budgetRemaining2027 >= 0 ? 'Operational budget sufficient through 2027' : 'Budget will be exhausted before end of 2027',
+                _ssBudgetC >= 0 ? 'Expected Surplus End 2027 (A) — الفائض (أ)' : 'Expected Deficit End 2027',
+                `${_ssBudgetC >= 0 ? '' : '-'}${fmt(Math.abs(_ssBudgetC))} ₪`,
+                _ssBudgetC >= 0 ? 'Operational budget sufficient through 2027' : 'Budget will be exhausted before end of 2027',
               ]),
           _isApproachB
             ? dataRow([`🔬 Study Fund (B) — صندوق الدراسة (ب)`, `${fmt(_activeStudyBudgetC)} ₪`, `${100 - cfContingencyPct}% × Gross Surplus (B) — في القسم 7`])
@@ -1686,9 +1689,9 @@ export default function ReportsPage() {
         ...(cfBudget > 0 ? [
           dataRow([
             `Surplus (A) End 2027 — After Upfront Contingency — الفائض (أ) نهاية 2027${!_isApproachB ? ' ✓ (معتمد)' : ''}`,
-            exportProj.current.budgetRemaining2027 !== null ? `${fmt(exportProj.current.budgetRemaining2027)} ₪` : '—',
-            cfAllScenarios.partialReady && exportProj.partial?.budgetRemaining2027 !== null ? `${fmt(exportProj.partial!.budgetRemaining2027!)} ₪` : '—',
-            cfAllScenarios.fullReady && exportProj.full?.budgetRemaining2027 !== null ? `${fmt(exportProj.full!.budgetRemaining2027!)} ₪` : '—',
+            cfOperationalBudget > 0 ? `${fmt(Math.round(cfOperationalBudget - exportProj.current.estimatedTotal))} ₪` : '—',
+            cfAllScenarios.partialReady && exportProj.partial ? `${fmt(Math.round(cfOperationalBudget - exportProj.partial.estimatedTotal))} ₪` : '—',
+            cfAllScenarios.fullReady && exportProj.full ? `${fmt(Math.round(cfOperationalBudget - exportProj.full.estimatedTotal))} ₪` : '—',
           ]),
           dataRow([
             `Gross Surplus (B) End 2027 — Full Budget Base — الفائض الإجمالي (ب) نهاية 2027${_isApproachB ? ' ✓ (معتمد)' : ''}`,
