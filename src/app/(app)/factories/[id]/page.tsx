@@ -1,239 +1,445 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import { ArrowRight, Truck, DollarSign, AlertTriangle, Printer } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { use } from 'react'
+import { ArrowRight, Edit2, MapPin, Phone, User, Plus, Trash2, FileText, CreditCard, Hash, Droplets } from 'lucide-react'
 import Link from 'next/link'
-import { getFactory, getFactoryStatement } from '@/lib/api'
+import { getFactory, getTrips, getPayments, deletePayment } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import Modal from '@/components/ui/Modal'
+import { showToast } from '@/components/ui/Toast'
+import { useAuth } from '@/context/AuthContext'
 import { format } from 'date-fns'
-import { jsPDF } from 'jspdf'
 import type { Factory } from '@/lib/supabase/database.types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Statement = any
+type Trip = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Payment = any
 
-export default function FactoryDetailPage() {
-  const { id } = useParams<{ id: string }>()
-  const [factory, setFactory] = useState<Factory | null>(null)
-  const [statement, setStatement] = useState<Statement>(null)
-  const [loading, setLoading] = useState(true)
+const approvalBadge = (s: string) => {
+  if (s === 'approved')         return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">معتمدة ✓</span>
+  if (s === 'pending_approval') return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">بانتظار الاعتماد</span>
+  if (s === 'rejected')         return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">مرفوضة</span>
+  return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">مسودة</span>
+}
 
-  useEffect(() => {
-    if (!id) return
-    Promise.all([getFactory(id), getFactoryStatement(id)])
-      .then(([f, s]) => { setFactory(f); setStatement(s) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
+const payStatusBadge = (s: string, m: string | null) => {
+  if (s === 'paid' && m === 'cash')  return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">💵 دفع نقدي</span>
+  if (s === 'paid' && m === 'later') return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">🏦 دُفعت لاحقاً</span>
+  return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">⏳ ذمة</span>
+}
+
+function fmt(d: string) {
+  try { return format(new Date(d), 'yyyy/MM/dd') } catch { return d }
+}
+
+export default function FactoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const { canEdit } = useAuth()
+  const [factory, setFactory]   = useState<Factory | null>(null)
+  const [trips,   setTrips]     = useState<Trip[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [tab, setTab]           = useState<'trips' | 'payments'>('trips')
+  const [deleteTarget, setDeleteTarget] = useState<Payment | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [fac, tripsData, paymentsData] = await Promise.all([
+        getFactory(id),
+        getTrips({ factory_id: id }),
+        getPayments({ factory_id: id }),
+      ])
+      setFactory(fac)
+      setTrips(tripsData ?? [])
+      setPayments(paymentsData ?? [])
+    } catch {
+      showToast('error', 'فشل تحميل بيانات المصنع')
+    } finally {
+      setLoading(false)
+    }
   }, [id])
 
-  const exportPDF = () => {
-    if (!factory || !statement) return
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    doc.setFont('helvetica')
-    doc.setFontSize(16)
-    doc.text(`Factory Statement: ${factory.name}`, 20, 20)
-    doc.setFontSize(11)
-    doc.text(`Owner: ${factory.owner_name}  |  Phone: ${factory.phone}`, 20, 30)
-    doc.text(`Total Trips: ${statement.totalTrips}  |  Total Amount: ${statement.totalAmount} ILS`, 20, 38)
-    doc.text(`Total Paid: ${statement.totalPaid} ILS  |  Balance: ${statement.balance} ILS`, 20, 46)
-    doc.line(20, 50, 190, 50)
-    doc.text('Trips:', 20, 58)
-    let y = 65
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    statement.trips?.forEach((t: any, i: number) => {
-      doc.setFontSize(9)
-      doc.text(`${i + 1}. ${format(new Date(t.created_at), 'dd/MM/yyyy HH:mm')}  |  ${t.payment_status === 'paid' ? 'Paid' : 'Credit'}  |  ${t.amount} ILS`, 20, y)
-      y += 6
-      if (y > 270) { doc.addPage(); y = 20 }
-    })
-    doc.save(`statement-${factory.name}.pdf`)
+  useEffect(() => { load() }, [load])
+
+  const handleDeletePayment = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deletePayment(deleteTarget.id)
+      showToast('success', 'تم حذف الدفعة')
+      setDeleteTarget(null)
+      load()
+    } catch { showToast('error', 'فشل حذف الدفعة') }
+    finally { setDeleting(false) }
   }
 
-  const cashTrips = statement?.trips?.filter((t: any) => t.payment_method === 'cash').length ?? 0
-  const laterTrips = statement?.trips?.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').length ?? 0
-  const creditTrips = statement?.trips?.filter((t: any) => t.payment_status === 'credit').length ?? 0
+  // ── Derived financials ──────────────────────────────────────
+  const approvedTrips   = trips.filter((t: Trip) => t.approval_status === 'approved')
+  const totalTrips      = approvedTrips.length
+  const creditTrips     = approvedTrips.filter((t: Trip) => t.payment_status === 'credit')
+  const totalObligation = approvedTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const totalDebt       = creditTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const totalPaidCash   = approvedTrips
+    .filter((t: Trip) => t.payment_status === 'paid' && t.payment_method === 'cash')
+    .reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const paymentsTotal   = payments.reduce((s: number, p: Payment) => s + Number(p.amount_paid), 0)
+  const totalIn         = totalPaidCash + paymentsTotal
+  const balance         = totalDebt - paymentsTotal
+  const isDebt          = balance > 0
+  const isCreditBal     = balance < 0
 
-  if (loading) return <div className="text-center py-16 text-slate-400">جارّي التحميل...</div>
-  if (!factory) return <div className="text-center py-16 text-red-500">المصنع غير موجود</div>
+  if (loading) {
+    return (
+      <div className="space-y-4 animate-pulse">
+        <div className="h-10 bg-slate-100 rounded-xl w-64" />
+        <div className="h-24 bg-slate-100 rounded-xl" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}
+        </div>
+        <div className="h-64 bg-slate-100 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (!factory) {
+    return (
+      <div className="text-center py-16">
+        <p className="text-4xl mb-3">🏭</p>
+        <p className="text-slate-500">المصنع غير موجود</p>
+        <Link href="/factories" className="mt-4 inline-block">
+          <Button variant="secondary" size="sm"><ArrowRight size={14} /> عودة للمصانع</Button>
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/factories">
-          <Button variant="ghost" size="sm"><ArrowRight size={16} /> رجوع</Button>
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-slate-800">{factory.name}</h1>
-          <p className="text-sm text-slate-500">{factory.owner_name} · {factory.phone}</p>
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Link href="/factories">
+            <Button variant="ghost" size="sm"><ArrowRight size={16} /> المصانع</Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">{factory.name}</h1>
+            <p className="text-sm text-slate-500 mt-0.5">كشف حساب شامل</p>
+          </div>
         </div>
-        <Button variant="secondary" size="sm" onClick={exportPDF}>
-          <Printer size={14} /> تصدير PDF
-        </Button>
+        <div className="flex gap-2">
+          {canEdit && (
+            <Link href={`/payments/new?factory_id=${factory.id}`}>
+              <Button size="sm"><Plus size={14} /> تسجيل دفعة</Button>
+            </Link>
+          )}
+          {canEdit && (
+            <Link href={`/factories?edit=${factory.id}`}>
+              <Button variant="secondary" size="sm"><Edit2 size={14} /> تعديل المصنع</Button>
+            </Link>
+          )}
+        </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card className="border-blue-100">
-          <CardBody className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50">
-              <Truck size={16} className="text-blue-600" />
+      {/* ── Factory info card ── */}
+      <Card>
+        <CardBody>
+          <div className="flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-700">
+            <div className="flex items-center gap-2">
+              <User size={14} className="text-slate-400 flex-shrink-0" />
+              <span>{factory.owner_name}</span>
             </div>
-            <div>
-              <p className="text-xs text-slate-500">إجمالي النقلات</p>
-              <p className="font-bold text-slate-800">{statement?.totalTrips ?? 0} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
+            <div className="flex items-center gap-2">
+              <Phone size={14} className="text-slate-400 flex-shrink-0" />
+              <span dir="ltr">{factory.phone}</span>
             </div>
-          </CardBody>
-        </Card>
-        <Card className="border-green-100">
-          <CardBody className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-50">
-              <span className="text-sm">💵</span>
+            <div className="flex items-center gap-2">
+              <MapPin size={14} className="text-slate-400 flex-shrink-0" />
+              <span>{factory.region || 'غير محدد'}</span>
             </div>
-            <div>
-              <p className="text-xs text-slate-500">نقداً فور</p>
-              <p className="font-bold text-green-700">{cashTrips} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
-            </div>
-          </CardBody>
-        </Card>
-        <Card className="border-blue-100">
-          <CardBody className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50">
-              <span className="text-sm">🏦</span>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">مسوّاة لاحقاً</p>
-              <p className="font-bold text-blue-700">{laterTrips} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
-            </div>
-          </CardBody>
-        </Card>
-        <Card className="border-amber-100">
-          <CardBody className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber-50">
-              <AlertTriangle size={16} className="text-amber-600" />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">غير مسوّاة</p>
-              <p className="font-bold text-amber-700">{creditTrips} <span className="text-xs font-normal text-slate-500">نقلة</span></p>
-            </div>
-          </CardBody>
-        </Card>
-        {/* بطاقة الذمم غير المسواة */}
-        <Card className={statement?.debt > 0 ? 'border-red-200 bg-red-50/30' : 'border-emerald-100'}>
-          <CardBody className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${statement?.debt > 0 ? 'bg-red-100' : 'bg-emerald-50'}`}>
-              <DollarSign size={16} className={statement?.debt > 0 ? 'text-red-600' : 'text-emerald-600'} />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">ذمم غير مسواة</p>
-              <p className={`font-bold text-lg ${statement?.debt > 0 ? 'text-red-700' : 'text-emerald-600'}`}>
-                {statement?.debt > 0 ? `${Number(statement.debt).toLocaleString()} ₪` : '—'}
-              </p>
-              {(statement?.debt ?? 0) === 0 && (
-                <p className="text-xs text-emerald-500">لا ذمم معلّقة ✓</p>
-              )}
-            </div>
-          </CardBody>
-        </Card>
+            {factory.tag_number && (
+              <div className="flex items-center gap-2">
+                <Hash size={14} className="text-slate-400 flex-shrink-0" />
+                <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">TAG: {factory.tag_number}</span>
+              </div>
+            )}
+            {factory.waste_type && (
+              <div className="flex items-center gap-2">
+                <Droplets size={14} className="text-slate-400 flex-shrink-0" />
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  factory.waste_type === 'liquid' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {factory.waste_type === 'liquid' ? '💧 سائل' : '🪨 جاف'}
+                </span>
+              </div>
+            )}
+            {factory.lat != null && factory.lng != null && (
+              <div className="flex items-center gap-2">
+                <MapPin size={14} className="text-slate-400 flex-shrink-0" />
+                <span dir="ltr" className="text-xs text-slate-400">{Number(factory.lat).toFixed(5)}, {Number(factory.lng).toFixed(5)}</span>
+              </div>
+            )}
+          </div>
+        </CardBody>
+      </Card>
 
-        {/* بطاقة الرصيد الدائن */}
-        <Card className={statement?.creditBalance > 0 ? 'border-blue-300 bg-blue-50/40' : 'border-slate-100'}>
-          <CardBody className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${statement?.creditBalance > 0 ? 'bg-blue-100' : 'bg-slate-50'}`}>
-              <span className="text-base">{statement?.creditBalance > 0 ? '💳' : <DollarSign size={16} className="text-slate-300" />}</span>
+      {/* ── KPI Cards ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardBody className="text-center py-4">
+            <p className="text-3xl font-bold text-slate-800">{totalTrips}</p>
+            <p className="text-xs text-slate-500 mt-1">إجمالي النقلات المعتمدة</p>
+          </CardBody>
+        </Card>
+        <Card className={creditTrips.length > 0 ? 'border-red-200' : ''}>
+          <CardBody className="text-center py-4">
+            <p className={`text-3xl font-bold ${creditTrips.length > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+              {creditTrips.length}
+            </p>
+            <p className="text-xs text-slate-500 mt-1">نقلات الذمة</p>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="text-center py-4">
+            <p className="text-3xl font-bold text-slate-700">{totalObligation.toLocaleString()}</p>
+            <p className="text-xs text-slate-500 mt-1">إجمالي الالتزامات (₪)</p>
+          </CardBody>
+        </Card>
+        <Card className={isDebt ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}>
+          <CardBody className="text-center py-4">
+            {isDebt ? (
+              <>
+                <p className="text-3xl font-bold text-red-600">{balance.toLocaleString()}</p>
+                <p className="text-xs text-red-500 mt-1">ذمة مستحقة (₪)</p>
+              </>
+            ) : isCreditBal ? (
+              <>
+                <p className="text-3xl font-bold text-emerald-600">{Math.abs(balance).toLocaleString()}</p>
+                <p className="text-xs text-emerald-600 mt-1">💳 رصيد دائن (₪)</p>
+              </>
+            ) : (
+              <>
+                <p className="text-3xl font-bold text-emerald-600">ملتزم</p>
+                <p className="text-xs text-emerald-600 mt-1">✓ لا توجد ذمم</p>
+              </>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* Extra row: total in/out */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardBody className="flex items-center gap-4">
+            <div className="p-3 bg-emerald-100 rounded-xl flex-shrink-0">
+              <CreditCard size={20} className="text-emerald-600" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">رصيد دائن للمصنع</p>
-              <p className={`font-bold text-lg ${statement?.creditBalance > 0 ? 'text-blue-700' : 'text-slate-400'}`}>
-                {statement?.creditBalance > 0 ? `${Number(statement.creditBalance).toLocaleString()} ₪` : '—'}
-              </p>
-              {(statement?.creditBalance ?? 0) > 0 && (
-                <p className="text-xs text-blue-500 mt-0.5">يُغطى تلقائياً للنقلات القادمة</p>
-              )}
+              <p className="text-xl font-bold text-slate-800">{totalIn.toLocaleString()} ₪</p>
+              <p className="text-xs text-slate-500">إجمالي المبالغ المُحصَّلة <span className="text-slate-400">(نقدي + دفعات)</span></p>
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="flex items-center gap-4">
+            <div className="p-3 bg-blue-100 rounded-xl flex-shrink-0">
+              <FileText size={20} className="text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xl font-bold text-slate-800">{paymentsTotal.toLocaleString()} ₪</p>
+              <p className="text-xs text-slate-500">مجموع الدفعات المُسجَّلة</p>
             </div>
           </CardBody>
         </Card>
       </div>
 
-      {/* Trips Table */}
-      <Card>
-        <CardHeader>
-          <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Truck size={16} /> سجل النقلات</h2>
-        </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">#</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">تاريخ النقلة</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">المبلغ</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">الحالة</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">ملاحظات</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {statement?.trips?.map((t: any, i: number) => (
-                <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50">
-                  <td className="px-6 py-3 text-slate-400 text-xs">{i + 1}</td>
-                  <td className="px-6 py-3 text-slate-700 font-medium">{t.trip_date ? format(new Date(t.trip_date), 'dd/MM/yyyy') : format(new Date(t.created_at), 'dd/MM/yyyy')}</td>
-                  <td className="px-6 py-3 font-semibold">{t.amount} ₪</td>
-                  <td className="px-6 py-3">
-                    {t.payment_method === 'cash' ? (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">💵 نقداً</span>
-                    ) : t.payment_status === 'paid' && t.payment_method === 'later' ? (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">🏦 مسوّاة</span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700">⏳ ذمة</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-3 text-slate-500 text-xs">{t.notes ?? '—'}</td>
-                </tr>
-              ))}
-              {(!statement?.trips || statement.trips.length === 0) && (
-                <tr><td colSpan={5} className="text-center py-8 text-slate-400">لا توجد نقلات</td></tr>
-              )}
-            </tbody>
-          </table>
+      {/* ── Tabs ── */}
+      <div className="border-b border-slate-200">
+        <div className="flex">
+          <button
+            onClick={() => setTab('trips')}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'trips'
+                ? 'border-blue-500 text-blue-700 bg-blue-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            النقلات ({trips.length})
+          </button>
+          <button
+            onClick={() => setTab('payments')}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'payments'
+                ? 'border-blue-500 text-blue-700 bg-blue-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            الدفعات ({payments.length})
+          </button>
         </div>
-      </Card>
+      </div>
 
-      {/* Payments Table */}
-      <Card>
-        <CardHeader>
-          <h2 className="font-semibold text-slate-800 flex items-center gap-2"><DollarSign size={16} /> سجل الدفعات</h2>
-        </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">التاريخ</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">المبلغ المدفوع</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">ملاحظات</th>
-                <th className="text-right px-6 py-3 text-xs text-slate-500 font-medium">وصل القبض</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {statement?.payments?.map((p: any) => (
-                <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
-                  <td className="px-6 py-3 text-slate-600">{format(new Date(p.date), 'dd/MM/yyyy')}</td>
-                  <td className="px-6 py-3 font-semibold text-emerald-700">{p.amount_paid} ₪</td>
-                  <td className="px-6 py-3 text-slate-500 text-xs">{p.notes ?? '—'}</td>
-                  <td className="px-6 py-3">
-                    {p.receipt_image_url ? (
-                      <a href={p.receipt_image_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-xs hover:underline">عرض الوصل</a>
-                    ) : '—'}
-                  </td>
-                </tr>
-              ))}
-              {(!statement?.payments || statement.payments.length === 0) && (
-                <tr><td colSpan={4} className="text-center py-8 text-slate-400">لا توجد دفعات</td></tr>
+      {/* ── Trips Tab ── */}
+      {tab === 'trips' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-slate-800">سجل النقلات</h2>
+              {canEdit && (
+                <Link href={`/trips/new?factory_id=${factory.id}`}>
+                  <Button size="sm" variant="secondary"><Plus size={14} /> نقلة جديدة</Button>
+                </Link>
               )}
-            </tbody>
-          </table>
+            </div>
+          </CardHeader>
+          <CardBody className="p-0">
+            {trips.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <p className="text-3xl mb-2">🚛</p>
+                <p className="text-sm">لا توجد نقلات مسجلة لهذا المصنع</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-100">
+                    <tr>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">التاريخ</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">رقم الكوبون</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">نوع الربو</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الحجم</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">المساهمة (₪)</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الدفع</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الاعتماد</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">ملاحظات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {trips.map((t: Trip) => (
+                      <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap" dir="ltr">{fmt(t.trip_date)}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-slate-600">{t.coupon_number || <span className="text-slate-300">—</span>}</td>
+                        <td className="px-4 py-3">
+                          {t.waste_type === 'liquid' && <span className="text-blue-600 text-xs">💧 سائل</span>}
+                          {t.waste_type === 'solid'  && <span className="text-amber-600 text-xs">🪨 جاف</span>}
+                          {!t.waste_type             && <span className="text-slate-300 text-xs">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">
+                          {t.volume_m3 != null ? `${t.volume_m3} م³` : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-800">
+                          {Number(t.factory_contribution ?? 50).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3">{payStatusBadge(t.payment_status, t.payment_method)}</td>
+                        <td className="px-4 py-3">{approvalBadge(t.approval_status)}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate">{t.notes || <span className="text-slate-300">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                    <tr>
+                      <td colSpan={4} className="px-4 py-3 text-xs font-semibold text-slate-600">
+                        الإجمالي — {approvedTrips.length} نقلة معتمدة / {creditTrips.length} ذمة
+                      </td>
+                      <td className="px-4 py-3 font-bold text-slate-800">{totalObligation.toLocaleString()} ₪</td>
+                      <td colSpan={3} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {/* ── Payments Tab ── */}
+      {tab === 'payments' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-slate-800">سجل الدفعات</h2>
+              {canEdit && (
+                <Link href={`/payments/new?factory_id=${factory.id}`}>
+                  <Button size="sm"><Plus size={14} /> تسجيل دفعة</Button>
+                </Link>
+              )}
+            </div>
+          </CardHeader>
+          <CardBody className="p-0">
+            {payments.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <p className="text-3xl mb-2">💰</p>
+                <p className="text-sm">لا توجد دفعات مسجلة لهذا المصنع</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-100">
+                    <tr>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">التاريخ</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">المبلغ (₪)</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">ملاحظات</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">وصل</th>
+                      {canEdit && <th className="px-4 py-3" />}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {payments.map((p: Payment) => (
+                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap" dir="ltr">{fmt(p.date)}</td>
+                        <td className="px-4 py-3 font-bold text-emerald-700">{Number(p.amount_paid).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs max-w-xs truncate">{p.notes || <span className="text-slate-300">—</span>}</td>
+                        <td className="px-4 py-3">
+                          {p.receipt_image_url
+                            ? <a href={p.receipt_image_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-xs">عرض الوصل</a>
+                            : <span className="text-slate-300 text-xs">—</span>
+                          }
+                        </td>
+                        {canEdit && (
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => setDeleteTarget(p)}
+                              className="text-slate-300 hover:text-red-500 transition-colors"
+                              title="حذف الدفعة"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                    <tr>
+                      <td className="px-4 py-3 text-xs font-semibold text-slate-600">الإجمالي</td>
+                      <td className="px-4 py-3 font-bold text-emerald-700">{paymentsTotal.toLocaleString()} ₪</td>
+                      <td colSpan={canEdit ? 3 : 2} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {/* ── Delete Payment Confirm Modal ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="حذف الدفعة"
+        size="sm"
+      >
+        <p className="text-sm text-slate-600 mb-4">
+          هل أنت متأكد من حذف هذه الدفعة؟ ({Number(deleteTarget?.amount_paid ?? 0).toLocaleString()} ₪ — {deleteTarget?.date})
+        </p>
+        <div className="flex gap-3">
+          <Button variant="danger" onClick={handleDeletePayment} loading={deleting} className="flex-1">حذف</Button>
+          <Button variant="secondary" onClick={() => setDeleteTarget(null)} className="flex-1">إلغاء</Button>
         </div>
-      </Card>
+      </Modal>
     </div>
   )
 }

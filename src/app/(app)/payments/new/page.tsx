@@ -8,13 +8,14 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { showToast } from '@/components/ui/Toast'
 import type { Factory } from '@/lib/supabase/database.types'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 
 export default function NewPaymentPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [factories, setFactories] = useState<Factory[]>([])
-  const [factoryId, setFactoryId] = useState('')
+  const [factoryId, setFactoryId] = useState(searchParams.get('factory_id') ?? '')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [notes, setNotes] = useState('')
