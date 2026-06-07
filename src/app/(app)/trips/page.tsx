@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
+import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, ChevronUp, ChevronsUpDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
 import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval, getRecentApprovedTrips } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -316,6 +316,10 @@ export default function TripsPage() {
   const [showFilters, setShowFilters]       = useState(false)
   const [unpricedOnly, setUnpricedOnly]     = useState(() => searchParams.get('unpriced') === '1')
 
+  // ── ترتيب الجدول ─────────────────────────────────
+  const [sortField, setSortField] = useState<'trip_date' | 'coupon_number' | null>(null)
+  const [sortDir, setSortDir]     = useState<'asc' | 'desc'>('desc')
+
   // ── View modal ───────────────────────────────────
   const [viewTrip, setViewTrip] = useState<Trip | null>(null)
 
@@ -471,6 +475,22 @@ export default function TripsPage() {
       wt, vol, dist, ds, maxDist,
     }
   }, [editForm, pricingRules, editContribPerTrip])
+
+  // ── ترتيب النقلات ─────────────────────────────────
+  const sortedTrips = useMemo(() => {
+    if (!sortField) return trips
+    return [...trips].sort((a, b) => {
+      const va = (a[sortField] ?? '')
+      const vb = (b[sortField] ?? '')
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [trips, sortField, sortDir])
+
+  function toggleSort(field: 'trip_date' | 'coupon_number') {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir('asc') }
+  }
 
   const handleSave = async () => {
     if (!editTrip) return
@@ -808,8 +828,18 @@ export default function TripsPage() {
                 <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">المبلغ</th>
                 <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">الدفع</th>
                 <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">الاعتماد</th>
-                <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">تاريخ النقلة</th>
-                <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">الكوبون</th>
+                <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">
+                  <button onClick={() => toggleSort('trip_date')} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
+                    تاريخ النقلة
+                    {sortField === 'trip_date' ? (sortDir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />) : <ChevronsUpDown size={13} className="opacity-40" />}
+                  </button>
+                </th>
+                <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">
+                  <button onClick={() => toggleSort('coupon_number')} className="flex items-center gap-1 hover:text-slate-800 transition-colors">
+                    الكوبون
+                    {sortField === 'coupon_number' ? (sortDir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />) : <ChevronsUpDown size={13} className="opacity-40" />}
+                  </button>
+                </th>
                 <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">ملاحظات</th>
                 <th className="px-4 py-3 text-xs text-slate-500 font-medium min-w-[120px]">إجراءات</th>
               </tr>
@@ -820,7 +850,7 @@ export default function TripsPage() {
               ) : trips.length === 0 ? (
                 <tr><td colSpan={11} className="text-center py-10 text-slate-400">لا توجد نقلات بهذه الفلاتر</td></tr>
               ) : (
-                trips.map((t: Trip, i: number) => {
+                sortedTrips.map((t: Trip, i: number) => {
                   const apStatus: ApprovalStatus = t.approval_status ?? 'draft'
                   const apInfo = APPROVAL_LABELS[apStatus]
                   const editable = canEditTrip(t)
