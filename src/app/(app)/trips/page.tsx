@@ -617,14 +617,15 @@ export default function TripsPage() {
 
   const handleExport = () => {
     if (trips.length === 0) { showToast('error', 'لا توجد نقلات للتصدير'); return }
-    const headers = ['#', 'المصنع', 'المنطقة', 'نوع الربو', 'الحجم (م³)', 'المبلغ (₪)', 'حالة الدفع', 'حالة الاعتماد', 'تاريخ النقلة', 'رقم الكوبون', 'السائق', 'نوع المركبة', 'موقع التفريغ', 'ملاحظات']
+    const headers = ['#', 'المصنع', 'المنطقة', 'نوع الربو', 'الحجم (م³)', 'سعر النقلة (₪)', 'مساهمة المصنع (₪)', 'حالة الدفع', 'حالة الاعتماد', 'تاريخ النقلة', 'رقم الكوبون', 'السائق', 'نوع المركبة', 'موقع التفريغ', 'ملاحظات']
     const rows = trips.map((t: Trip, i: number) => [
       i + 1,
       t.factories?.name ?? '',
       t.factories?.region ?? '',
       t.waste_type === 'liquid' ? 'سائل' : t.waste_type === 'solid' ? 'صلب' : '',
       t.volume_m3 ?? '',
-      t.amount ?? '',
+      t.trip_cost ?? '',
+      t.factory_contribution ?? '',
       t.payment_status === 'paid' ? 'مدفوع' : 'ذمة',
       APPROVAL_LABELS[t.approval_status as ApprovalStatus]?.label ?? t.approval_status ?? '',
       t.trip_date ?? '',
