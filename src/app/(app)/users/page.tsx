@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import type { UserRole } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { createUser, listUsers, updateUserRole, deleteUser, getLoginLogs } from '@/app/actions/users';
-import { UserPlus, Trash2, RefreshCw, Shield, Users, Eye, Monitor, Smartphone, Tablet, LogIn } from 'lucide-react';
+import { UserPlus, Trash2, RefreshCw, Shield, Users, Eye, Monitor, Smartphone, Tablet, LogIn, Truck } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
-
-type UserRole = 'admin' | 'manager' | 'viewer' | 'approver';
 
 interface UserRow {
   id: string;
@@ -32,6 +31,7 @@ const roleLabels: Record<UserRole, string> = {
   manager: 'مدير مشروع',
   viewer: 'مستخدم عادي',
   approver: 'مراجع اعتماد',
+  operator: 'مُشغّل نقلات',
 };
 
 const roleColors: Record<UserRole, string> = {
@@ -39,6 +39,7 @@ const roleColors: Record<UserRole, string> = {
   manager: 'bg-blue-100 text-blue-700',
   viewer: 'bg-slate-100 text-slate-600',
   approver: 'bg-amber-100 text-amber-700',
+  operator: 'bg-green-100 text-green-700',
 };
 
 const roleIcons: Record<UserRole, React.ReactNode> = {
@@ -46,6 +47,7 @@ const roleIcons: Record<UserRole, React.ReactNode> = {
   manager: <Users size={13} />,
   viewer: <Eye size={13} />,
   approver: <Shield size={13} />,
+  operator: <Truck size={13} />,
 };
 
 export default function UsersPage() {
@@ -202,6 +204,7 @@ export default function UsersPage() {
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="viewer">مستخدم عادي — عرض لوحة التحكم والخريطة</option>
+                <option value="operator">مُشغّل نقلات — إدخال النقلات فقط</option>
                 <option value="manager">مدير مشروع — إدخال البيانات والتقارير</option>
                 <option value="approver">مراجع اعتماد — مراجعة واعتماد النقلات فقط</option>
                 <option value="admin">مدير النظام — صلاحية كاملة</option>
@@ -265,6 +268,7 @@ export default function UsersPage() {
                       className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border-0 cursor-pointer ${roleColors[u.role]}`}
                     >
                       <option value="viewer">مستخدم عادي</option>
+                      <option value="operator">مُشغّل نقلات</option>
                       <option value="manager">مدير مشروع</option>
                       <option value="approver">مراجع اعتماد</option>
                       <option value="admin">مدير النظام</option>
@@ -293,7 +297,7 @@ export default function UsersPage() {
       <div className="mt-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
         <h3 className="text-sm font-medium text-slate-600 mb-3">مستويات الصلاحيات</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {(['admin', 'manager', 'approver', 'viewer'] as UserRole[]).map((r) => (
+          {(['admin', 'manager', 'operator', 'approver', 'viewer'] as UserRole[]).map((r) => (
             <div key={r} className={`rounded-lg p-3 ${roleColors[r]} flex gap-2`}>
               {roleIcons[r]}
               <div>
@@ -301,6 +305,7 @@ export default function UsersPage() {
                 <p className="text-xs opacity-75 mt-0.5">
                   {r === 'admin' && 'وصول كامل + إدارة المستخدمين'}
                   {r === 'manager' && 'إدخال البيانات والتقارير والخريطة'}
+                  {r === 'operator' && 'إدخال النقلات فقط'}
                   {r === 'approver' && 'مراجعة واعتماد النقلات فقط'}
                   {r === 'viewer' && 'عرض لوحة التحكم والخريطة'}
                 </p>

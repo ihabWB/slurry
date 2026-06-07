@@ -9,9 +9,11 @@ import { useEffect } from 'react'
 
 // المسارات المسموح بها للـ approver فقط
 const APPROVER_ALLOWED = ['/', '/trips']
+// المسارات المسموح بها للـ operator فقط
+const OPERATOR_ALLOWED = ['/trips']
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, isApprover } = useAuth()
+  const { user, loading, isApprover, isOperator } = useAuth()
   const { lang, dir } = useLang()
   const router = useRouter()
   const pathname = usePathname()
@@ -29,6 +31,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (!allowed) router.replace('/trips')
     }
   }, [loading, user, isApprover, pathname, router])
+
+  // operator: إعادة توجيه لأي مسار غير مسموح
+  useEffect(() => {
+    if (!loading && user && isOperator) {
+      const allowed = OPERATOR_ALLOWED.some(p => pathname === p || pathname.startsWith(p + '/'))
+      if (!allowed) router.replace('/trips')
+    }
+  }, [loading, user, isOperator, pathname, router])
 
   if (loading) {
     return (

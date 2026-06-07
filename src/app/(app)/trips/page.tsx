@@ -297,7 +297,7 @@ function NewTripModal({ onClose, onSuccess, isAdmin }: { onClose: () => void; on
 
 // ─── الصفحة الرئيسية ─────────────────────────────────────────
 export default function TripsPage() {
-  const { canEdit, isAdmin, canApprove } = useAuth()
+  const { canEdit, isAdmin, canApprove, isOperator } = useAuth()
   const searchParams = useSearchParams()
   const [trips, setTrips]   = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
@@ -681,8 +681,8 @@ export default function TripsPage() {
           <p className="text-sm text-slate-500 mt-0.5">{trips.length} نقلة في العرض الحالي</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {/* زر رفع للاعتماد — للمدير فقط */}
-          {canEdit && !isAdmin && stats.draft > 0 && (
+          {/* زر رفع للاعتماد — للمدير والمشغّل فقط */}
+          {(canEdit || isOperator) && !isAdmin && stats.draft > 0 && (
             <Button variant="secondary" size="lg" onClick={handleSubmitAll} loading={submitting}>
               <SendHorizonal size={15} /> رفع {stats.draft} نقلة للاعتماد
             </Button>
@@ -695,14 +695,14 @@ export default function TripsPage() {
             </Button>
           )}
           {canEdit && (
-            <>
-              <Link href="/trips/import">
-                <Button variant="secondary" size="lg"><Upload size={16} /> استيراد Excel</Button>
-              </Link>
-              <Button size="lg" onClick={() => setShowNew(true)}>
-                <Plus size={16} /> تسجيل نقلة
-              </Button>
-            </>
+            <Link href="/trips/import">
+              <Button variant="secondary" size="lg"><Upload size={16} /> استيراد Excel</Button>
+            </Link>
+          )}
+          {(canEdit || isOperator) && (
+            <Button size="lg" onClick={() => setShowNew(true)}>
+              <Plus size={16} /> تسجيل نقلة
+            </Button>
           )}
         </div>
       </div>

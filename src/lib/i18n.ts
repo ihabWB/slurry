@@ -21,10 +21,11 @@ export const translations = {
     admin:      { ar: 'الإدارة',    en: 'Admin' },
   },
   roles: {
-    admin:    { ar: 'مدير النظام',   en: 'System Admin' },
-    manager:  { ar: 'مدير مشروع',   en: 'Manager' },
-    viewer:   { ar: 'مستخدم عادي',  en: 'Viewer' },
-    approver: { ar: 'مراجع اعتماد', en: 'Approver' },
+    admin:    { ar: 'مدير النظام',    en: 'System Admin' },
+    manager:  { ar: 'مدير مشروع',    en: 'Manager' },
+    viewer:   { ar: 'مستخدم عادي',   en: 'Viewer' },
+    approver: { ar: 'مراجع اعتماد',  en: 'Approver' },
+    operator: { ar: 'مُشغّل نقلات',  en: 'Trip Operator' },
   },
   // ── Layout header ────────────────────────────────────────
   layout: {

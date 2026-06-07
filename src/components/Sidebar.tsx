@@ -12,7 +12,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const { user, signOut, isAdmin, canEdit, isApprover } = useAuth()
+  const { user, signOut, isAdmin, canEdit, isApprover, isOperator } = useAuth()
   const { lang, setLang, dir } = useLang()
   const [pendingCount, setPendingCount] = useState(0)
 
@@ -29,6 +29,8 @@ export default function Sidebar() {
   }
 
   function canShow(show: string, href?: string) {
+    // operator: يرى النقلات فقط
+    if (isOperator) return href === '/trips'
     // approver: يرى الداشبورد والنقلات فقط
     if (isApprover) return href === '/' || href === '/trips'
     if (show === 'always') return true

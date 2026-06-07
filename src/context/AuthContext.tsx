@@ -5,7 +5,7 @@ import { createBrowserClient } from '@supabase/ssr';
 import { getProfile } from '@/app/actions/profile';
 import { logLogin } from '@/app/actions/users';
 
-export type UserRole = 'admin' | 'manager' | 'viewer' | 'approver';
+export type UserRole = 'admin' | 'manager' | 'viewer' | 'approver' | 'operator';
 
 interface AuthUser {
   id: string;
@@ -24,6 +24,7 @@ interface AuthContextValue {
   canEdit: boolean;
   isApprover: boolean;
   canApprove: boolean;
+  isOperator: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -36,6 +37,7 @@ const AuthContext = createContext<AuthContextValue>({
   canEdit: false,
   isApprover: false,
   canApprove: false,
+  isOperator: false,
 });
 
 function makeClient() {
@@ -123,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canEdit: role === 'admin' || role === 'manager',
       isApprover: role === 'approver',
       canApprove: role === 'admin' || role === 'approver',
+      isOperator: role === 'operator',
     }}>
       {children}
     </AuthContext.Provider>
