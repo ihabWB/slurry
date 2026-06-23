@@ -1390,6 +1390,7 @@ export default function DisbursementsPage() {
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">#</th>
+                      <th className="text-center px-3 py-2.5 text-xs font-semibold text-slate-500">البند</th>
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">رقم الكوبون</th>
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">المصنع</th>
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-slate-500">تاريخ النقلة</th>
@@ -1401,7 +1402,16 @@ export default function DisbursementsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((t, i) => (
+                    {filtered.map((t, i) => {
+                      const maxDist = t.distance_km <= 7 ? 7 : 9999
+                      const matchedRule = (t.waste_type && t.volume_m3 && t.distance_km && t.dump_site)
+                        ? viewPricingRules.find((r: PricingRule) =>
+                            r.waste_type === t.waste_type &&
+                            r.volume_m3 === t.volume_m3 &&
+                            r.max_distance_km === maxDist &&
+                            r.dump_site === t.dump_site)
+                        : null
+                      return (
                       <tr key={t.id}
                         className={`border-b border-slate-50 ${
                           t.disbursement_excluded
@@ -1409,6 +1419,11 @@ export default function DisbursementsPage() {
                             : 'hover:bg-slate-50/60'
                         }`}>
                         <td className="px-3 py-2.5 text-slate-400 text-xs">{i + 1}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="font-mono text-xs font-bold text-slate-700">
+                            {matchedRule?.label ?? '—'}
+                          </span>
+                        </td>
                         <td className="px-3 py-2.5">
                           <span className="font-mono text-xs font-semibold text-slate-700">{t.coupon_number ?? '—'}</span>
                         </td>
@@ -1446,11 +1461,11 @@ export default function DisbursementsPage() {
                               : <span className="px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">مشمول</span>}
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-50 border-t-2 border-slate-200">
-                      <td colSpan={5} className="px-3 py-2.5 text-xs font-bold text-slate-600">
+                      <td colSpan={6} className="px-3 py-2.5 text-xs font-bold text-slate-600">
                         المجموع ({filtered.filter(t => !t.disbursement_excluded).length} نقلة)
                       </td>
                       <td className="px-3 py-2.5 text-sm font-bold text-slate-800">
@@ -1510,41 +1525,28 @@ export default function DisbursementsPage() {
                     <thead>
                       <tr className="border-b border-slate-200">
                         <th className="text-right pb-2 text-slate-500 font-semibold">البند</th>
-                        <th className="text-right pb-2 text-slate-500 font-semibold">الوصف</th>
                         <th className="text-center pb-2 text-slate-500 font-semibold">عدد النقلات</th>
-                        <th className="text-center pb-2 text-slate-500 font-semibold">سعر الوحدة</th>
-                        <th className="text-center pb-2 text-slate-500 font-semibold">الإجمالي</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map(r => (
                         <tr key={r.label} className="border-b border-slate-100">
                           <td className="py-1.5 font-mono font-bold text-slate-700">{r.label}</td>
-                          <td className="py-1.5 text-slate-500">{r.desc}</td>
                           <td className="py-1.5 text-center font-semibold text-slate-700">{r.count}</td>
-                          <td className="py-1.5 text-center text-slate-600">{r.unitPrice.toLocaleString()} ₪</td>
-                          <td className="py-1.5 text-center font-bold text-slate-800">{r.total.toLocaleString()} ₪</td>
                         </tr>
                       ))}
                       {unclassified > 0 && (
                         <tr className="border-b border-slate-100 opacity-60">
                           <td className="py-1.5 text-slate-400">—</td>
-                          <td className="py-1.5 text-slate-400">غير مصنّف</td>
                           <td className="py-1.5 text-center text-slate-500">{unclassified}</td>
-                          <td className="py-1.5 text-center">—</td>
-                          <td className="py-1.5 text-center">—</td>
                         </tr>
                       )}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-slate-300 bg-slate-50">
-                        <td colSpan={2} className="py-2 font-bold text-slate-700">الإجمالي</td>
+                        <td className="py-2 font-bold text-slate-700">الإجمالي</td>
                         <td className="py-2 text-center font-bold text-slate-800">
                           {rows.reduce((s, r) => s + r.count, 0) + unclassified}
-                        </td>
-                        <td />
-                        <td className="py-2 text-center font-bold text-slate-800">
-                          {rows.reduce((s, r) => s + r.total, 0).toLocaleString()} ₪
                         </td>
                       </tr>
                     </tfoot>
