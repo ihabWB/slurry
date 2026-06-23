@@ -1525,28 +1525,41 @@ export default function DisbursementsPage() {
                     <thead>
                       <tr className="border-b border-slate-200">
                         <th className="text-right pb-2 text-slate-500 font-semibold">البند</th>
+                        <th className="text-right pb-2 text-slate-500 font-semibold">الوصف</th>
                         <th className="text-center pb-2 text-slate-500 font-semibold">عدد النقلات</th>
+                        <th className="text-center pb-2 text-slate-500 font-semibold">سعر الوحدة</th>
+                        <th className="text-center pb-2 text-slate-500 font-semibold">الإجمالي</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map(r => (
                         <tr key={r.label} className="border-b border-slate-100">
                           <td className="py-1.5 font-mono font-bold text-slate-700">{r.label}</td>
+                          <td className="py-1.5 text-slate-500">{r.desc}</td>
                           <td className="py-1.5 text-center font-semibold text-slate-700">{r.count}</td>
+                          <td className="py-1.5 text-center text-slate-600">{r.unitPrice.toLocaleString()} ₪</td>
+                          <td className="py-1.5 text-center font-bold text-slate-800">{r.total.toLocaleString()} ₪</td>
                         </tr>
                       ))}
                       {unclassified > 0 && (
                         <tr className="border-b border-slate-100 opacity-60">
                           <td className="py-1.5 text-slate-400">—</td>
+                          <td className="py-1.5 text-slate-400">غير مصنّف</td>
                           <td className="py-1.5 text-center text-slate-500">{unclassified}</td>
+                          <td className="py-1.5 text-center">—</td>
+                          <td className="py-1.5 text-center">—</td>
                         </tr>
                       )}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-slate-300 bg-slate-50">
-                        <td className="py-2 font-bold text-slate-700">الإجمالي</td>
+                        <td colSpan={2} className="py-2 font-bold text-slate-700">الإجمالي</td>
                         <td className="py-2 text-center font-bold text-slate-800">
                           {rows.reduce((s, r) => s + r.count, 0) + unclassified}
+                        </td>
+                        <td />
+                        <td className="py-2 text-center font-bold text-slate-800">
+                          {rows.reduce((s, r) => s + r.total, 0).toLocaleString()} ₪
                         </td>
                       </tr>
                     </tfoot>
