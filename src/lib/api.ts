@@ -1316,12 +1316,12 @@ export async function getPricingRules(): Promise<PricingRule[]> {
   return data as PricingRule[]
 }
 
-export async function updatePricingRule(id: string, unit_price: number): Promise<void> {
+export async function updatePricingRule(id: string, unit_price: number, label?: string | null): Promise<void> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('pricing_rules')
-    .update({ unit_price })
+    .update({ unit_price, ...(label !== undefined ? { label } : {}) })
     .eq('id', id)
   if (error) throw error
 }
@@ -1441,7 +1441,7 @@ export async function getDisbursements(): Promise<Disbursement[]> {
  */
 export async function getTripsForDisbursement(from: string, to: string, mode: 'wizard' | 'view' = 'view') {
   const supabase = createClient()
-  const sel = 'id, trip_date, trip_cost, payment_status, waste_type, disbursement_excluded, excluded_until, coupon_number, factories(name)'
+  const sel = 'id, trip_date, trip_cost, factory_contribution, payment_status, waste_type, volume_m3, distance_km, dump_site, disbursement_excluded, excluded_until, coupon_number, factories(name)'
 
   // النقلات العادية في نطاق التاريخ
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

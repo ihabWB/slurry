@@ -26,6 +26,7 @@ export default function SettingsPage() {
 
   const [rules, setRules] = useState<PricingRule[]>([])
   const [editedPrices, setEditedPrices] = useState<Record<string, string>>({})
+  const [editedLabels, setEditedLabels] = useState<Record<string, string>>({})
   const [savingRule, setSavingRule] = useState<string | null>(null)
 
   const [settings, setSettings] = useState<AppSetting[]>([])
@@ -46,8 +47,10 @@ export default function SettingsPage() {
       setSettings(settingsData)
       // init edited values
       const priceMap: Record<string, string> = {}
-      rulesData.forEach(r => { priceMap[r.id] = String(r.unit_price) })
+      const labelMap: Record<string, string> = {}
+      rulesData.forEach(r => { priceMap[r.id] = String(r.unit_price); labelMap[r.id] = r.label ?? '' })
       setEditedPrices(priceMap)
+      setEditedLabels(labelMap)
       const settMap: Record<string, string> = {}
       settingsData.forEach(s => { settMap[s.key] = s.value })
       setEditedSettings(settMap)
@@ -62,10 +65,11 @@ export default function SettingsPage() {
   async function saveRule(rule: PricingRule) {
     const newPrice = parseFloat(editedPrices[rule.id])
     if (isNaN(newPrice) || newPrice <= 0) { showToast('error', 'السعر يجب أن يكون رقماً موجباً'); return }
+    const newLabel = editedLabels[rule.id]?.trim() || null
     setSavingRule(rule.id)
     try {
-      await updatePricingRule(rule.id, newPrice)
-      setRules(prev => prev.map(r => r.id === rule.id ? { ...r, unit_price: newPrice } : r))
+      await updatePricingRule(rule.id, newPrice, newLabel)
+      setRules(prev => prev.map(r => r.id === rule.id ? { ...r, unit_price: newPrice, label: newLabel } : r))
       showToast('success', 'تم حفظ السعر ✓')
     } catch { showToast('error', 'فشل الحفظ') }
     finally { setSavingRule(null) }
@@ -445,9 +449,11 @@ export default function SettingsPage() {
             <PricingTable
               rules={nearRules}
               editedPrices={editedPrices}
+              editedLabels={editedLabels}
               savingRule={savingRule}
               factoryContrib={factoryContrib}
               onChange={(id, val) => setEditedPrices(prev => ({ ...prev, [id]: val }))}
+              onLabelChange={(id, val) => setEditedLabels(prev => ({ ...prev, [id]: val }))}
               onSave={saveRule}
             />
 
@@ -460,9 +466,11 @@ export default function SettingsPage() {
             <PricingTable
               rules={farRules}
               editedPrices={editedPrices}
+              editedLabels={editedLabels}
               savingRule={savingRule}
               factoryContrib={factoryContrib}
               onChange={(id, val) => setEditedPrices(prev => ({ ...prev, [id]: val }))}
+              onLabelChange={(id, val) => setEditedLabels(prev => ({ ...prev, [id]: val }))}
               onSave={saveRule}
             />
           </>
@@ -483,13 +491,15 @@ export default function SettingsPage() {
 
 // ── Sub-component: جدول التسعيرة ──────────────────────────────
 function PricingTable({
-  rules, editedPrices, savingRule, factoryContrib, onChange, onSave,
+  rules, editedPrices, editedLabels, savingRule, factoryContrib, onChange, onLabelChange, onSave,
 }: {
   rules: PricingRule[]
   editedPrices: Record<string, string>
+  editedLabels: Record<string, string>
   savingRule: string | null
   factoryContrib: number
   onChange: (id: string, val: string) => void
+  onLabelChange: (id: string, val: string) => void
   onSave: (rule: PricingRule) => void
 }) {
   return (
@@ -497,6 +507,7 @@ function PricingTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-slate-50 border-b border-slate-100">
+            <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">البند</th>
             <th className="text-right px-5 py-3 text-xs text-slate-500 font-semibold">نوع الربو</th>
             <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">الحجم (م³)</th>
             <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">وجهة النقل</th>
@@ -511,10 +522,21 @@ function PricingTable({
         <tbody>
           {rules.map(rule => {
             const currentPrice = parseFloat(editedPrices[rule.id] ?? String(rule.unit_price))
-            const changed = editedPrices[rule.id] !== undefined &&
-              parseFloat(editedPrices[rule.id]) !== rule.unit_price
+            const priceChanged = editedPrices[rule.id] !== undefined && parseFloat(editedPrices[rule.id]) !== rule.unit_price
+            const labelChanged = (editedLabels[rule.id] ?? '') !== (rule.label ?? '')
+            const changed = priceChanged || labelChanged
             return (
               <tr key={rule.id} className={`border-b border-slate-50 hover:bg-slate-50 ${changed ? 'bg-amber-50/40' : ''}`}>
+                <td className="px-4 py-3 text-center">
+                  <input
+                    type="text"
+                    value={editedLabels[rule.id] ?? rule.label ?? ''}
+                    onChange={e => onLabelChange(rule.id, e.target.value)}
+                    placeholder="—"
+                    className="w-16 text-center border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    dir="ltr"
+                  />
+                </td>
                 <td className="px-5 py-3 font-medium text-slate-800">
                   {WASTE_LABEL[rule.waste_type]}
                 </td>

@@ -13,8 +13,10 @@ import {
   getUncoveredTripsInfo,
   getTripsForDisbursement,
   setTripDisbursementExclusion,
+  getPricingRules,
 } from '@/lib/api'
 import type { Disbursement } from '@/lib/supabase/database.types'
+import type { PricingRule } from '@/lib/api'
 import {
   Plus, RefreshCw, Lock, Trash2, RotateCcw, AlertTriangle, CheckCircle,
   Calendar, Banknote, FileText, X, ShieldCheck, Eye,
@@ -935,6 +937,7 @@ export default function DisbursementsPage() {
   const [viewTripsTarget, setViewTripsTarget] = useState<Disbursement | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [viewTripsList, setViewTripsList]   = useState<any[]>([])
+  const [viewPricingRules, setViewPricingRules] = useState<PricingRule[]>([])
   const [viewTripsLoading, setViewTripsLoading] = useState(false)
   const [viewTripsSearch, setViewTripsSearch]   = useState('')
   const [defaultRetentionPct, setDefaultRetentionPct] = useState(10)
@@ -1258,11 +1261,16 @@ export default function DisbursementsPage() {
               onViewTrips={async (disb) => {
                 setViewTripsTarget(disb)
                 setViewTripsList([])
+                setViewPricingRules([])
                 setViewTripsSearch('')
                 setViewTripsLoading(true)
                 try {
-                  const rows = await getTripsForDisbursement(disb.period_from, disb.period_to)
+                  const [rows, rules] = await Promise.all([
+                    getTripsForDisbursement(disb.period_from, disb.period_to),
+                    getPricingRules(),
+                  ])
                   setViewTripsList(rows)
+                  setViewPricingRules(rules)
                 } catch { /* silent */ }
                 finally { setViewTripsLoading(false) }
               }}
@@ -1458,6 +1466,92 @@ export default function DisbursementsPage() {
                 )
               })()}
             </div>
+
+            {/* ── تحليل البنود ── */}
+            {!viewTripsLoading && viewTripsList.length > 0 && viewPricingRules.length > 0 && (() => {
+              const includedTrips = viewTripsList.filter(t => !t.disbursement_excluded)
+              // مطابقة كل نقلة بقاعدة التسعيرة
+              type BandRow = { label: string; desc: string; count: number; unitPrice: number; total: number }
+              const bands: Record<string, BandRow> = {}
+              let unclassified = 0
+              for (const t of includedTrips) {
+                if (!t.waste_type || !t.volume_m3 || !t.distance_km || !t.dump_site) { unclassified++; continue }
+                const maxDist = t.distance_km <= 7 ? 7 : 9999
+                const rule = viewPricingRules.find((r: PricingRule) =>
+                  r.waste_type === t.waste_type &&
+                  r.volume_m3 === t.volume_m3 &&
+                  r.max_distance_km === maxDist &&
+                  r.dump_site === t.dump_site
+                )
+                if (!rule) { unclassified++; continue }
+                const key = rule.id
+                if (!bands[key]) {
+                  const wLabel = rule.waste_type === 'liquid' ? 'سائل' : 'جاف'
+                  const dLabel = rule.dump_site === 'municipal_dump'
+                    ? (rule.max_distance_km <= 7 ? 'مكب خلة الشرباتي' : 'مكب سعير')
+                    : 'عصارة الربو المركزية'
+                  bands[key] = {
+                    label: rule.label ?? '—',
+                    desc: `${wLabel} · ${rule.volume_m3}م³ · ${dLabel}`,
+                    count: 0, unitPrice: rule.unit_price, total: 0,
+                  }
+                }
+                bands[key].count++
+                bands[key].total += t.trip_cost ?? rule.unit_price
+              }
+              const rows = Object.values(bands).sort((a, b) => a.label.localeCompare(b.label))
+              if (rows.length === 0 && unclassified === 0) return null
+              return (
+                <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/50">
+                  <h4 className="text-xs font-semibold text-slate-600 mb-3 flex items-center gap-1.5">
+                    📋 تحليل البنود
+                  </h4>
+                  <table className="w-full text-xs" dir="rtl">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-right pb-2 text-slate-500 font-semibold">البند</th>
+                        <th className="text-right pb-2 text-slate-500 font-semibold">الوصف</th>
+                        <th className="text-center pb-2 text-slate-500 font-semibold">عدد النقلات</th>
+                        <th className="text-center pb-2 text-slate-500 font-semibold">سعر الوحدة</th>
+                        <th className="text-center pb-2 text-slate-500 font-semibold">الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(r => (
+                        <tr key={r.label} className="border-b border-slate-100">
+                          <td className="py-1.5 font-mono font-bold text-slate-700">{r.label}</td>
+                          <td className="py-1.5 text-slate-500">{r.desc}</td>
+                          <td className="py-1.5 text-center font-semibold text-slate-700">{r.count}</td>
+                          <td className="py-1.5 text-center text-slate-600">{r.unitPrice.toLocaleString()} ₪</td>
+                          <td className="py-1.5 text-center font-bold text-slate-800">{r.total.toLocaleString()} ₪</td>
+                        </tr>
+                      ))}
+                      {unclassified > 0 && (
+                        <tr className="border-b border-slate-100 opacity-60">
+                          <td className="py-1.5 text-slate-400">—</td>
+                          <td className="py-1.5 text-slate-400">غير مصنّف</td>
+                          <td className="py-1.5 text-center text-slate-500">{unclassified}</td>
+                          <td className="py-1.5 text-center">—</td>
+                          <td className="py-1.5 text-center">—</td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-slate-300 bg-slate-50">
+                        <td colSpan={2} className="py-2 font-bold text-slate-700">الإجمالي</td>
+                        <td className="py-2 text-center font-bold text-slate-800">
+                          {rows.reduce((s, r) => s + r.count, 0) + unclassified}
+                        </td>
+                        <td />
+                        <td className="py-2 text-center font-bold text-slate-800">
+                          {rows.reduce((s, r) => s + r.total, 0).toLocaleString()} ₪
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )
+            })()}
 
             <div className="px-5 py-3 border-t border-slate-100 flex justify-end flex-shrink-0">
               <button onClick={() => setViewTripsTarget(null)}
