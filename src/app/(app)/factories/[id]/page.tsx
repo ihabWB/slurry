@@ -83,12 +83,19 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
   const creditTrips     = approvedTrips.filter((t: Trip) => t.payment_status === 'credit')
   const totalObligation = approvedTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
   const totalDebt       = creditTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const coveredByPayments = approvedTrips
+    .filter((t: Trip) => t.payment_status === 'paid' && t.payment_method === 'later')
+    .reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
   const totalPaidCash   = approvedTrips
     .filter((t: Trip) => t.payment_status === 'paid' && t.payment_method === 'cash')
     .reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
   const paymentsTotal   = payments.reduce((s: number, p: Payment) => s + Number(p.amount_paid), 0)
   const totalIn         = totalPaidCash + paymentsTotal
-  const balance         = totalDebt - paymentsTotal
+  // الرصيد الصحيح: الدفعات المُسجَّلة ناقص ما غُطِّي بالفعل من نقلات paid/later
+  // الباقي إن وُجد هو رصيد دائن لم يُطبَّق بعد على نقلات ذمة
+  const effectiveCredit = Math.max(0, paymentsTotal - coveredByPayments)
+  const creditBalance   = Math.max(0, effectiveCredit - totalDebt)
+  const balance         = totalDebt > 0 ? totalDebt - effectiveCredit : -creditBalance
   const isDebt          = balance > 0
   const isCreditBal     = balance < 0
 
