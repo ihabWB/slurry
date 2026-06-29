@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { use } from 'react'
-import { ArrowRight, Edit2, MapPin, Phone, User, Plus, Trash2, FileText, CreditCard, Hash, Droplets } from 'lucide-react'
+import { ArrowRight, Edit2, MapPin, Phone, User, Plus, Trash2, Hash, Droplets } from 'lucide-react'
 import Link from 'next/link'
 import { getFactory, getTrips, getPayments, deletePayment, reconcileFactory } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -95,12 +95,10 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
     .reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
   const paymentsTotal   = payments.reduce((s: number, p: Payment) => s + Number(p.amount_paid), 0)
   const totalIn         = totalPaidCash + paymentsTotal
-  // الرصيد = إجمالي الالتزامات − إجمالي المُحصَّل (بسيط وصحيح في كل الحالات)
+  // الرصيد = ما على المصنع − ما دفعه المصنع (بسيط وصحيح في كل الحالات)
   const balance         = totalObligation - totalIn
   const isDebt          = balance > 0
   const isCreditBal     = balance < 0
-  // نقلات الذمة مُغطّاة فعلياً بالرصيد الدائن (موجودة في DB كـ credit لكن صافي الحساب إيجابي)
-  const creditsCoveredByBalance = !isDebt && creditTrips.length > 0
 
   if (loading) {
     return (
@@ -201,23 +199,21 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
         <Card>
           <CardBody className="text-center py-4">
             <p className="text-3xl font-bold text-slate-800">{totalTrips}</p>
-            <p className="text-xs text-slate-500 mt-1">إجمالي النقلات المعتمدة</p>
+            <p className="text-xs text-slate-500 mt-1">النقلات المعتمدة</p>
           </CardBody>
         </Card>
-        <Card className={isDebt && creditTrips.length > 0 ? 'border-red-200' : creditsCoveredByBalance ? 'border-amber-200' : ''}>
+        <Card className={isDebt && creditTrips.length > 0 ? 'border-red-200' : ''}>
           <CardBody className="text-center py-4">
-            <p className={`text-3xl font-bold ${isDebt && creditTrips.length > 0 ? 'text-red-600' : creditsCoveredByBalance ? 'text-amber-500' : 'text-emerald-600'}`}>
+            <p className={`text-3xl font-bold ${isDebt && creditTrips.length > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
               {creditTrips.length}
             </p>
-            <p className="text-xs text-slate-500 mt-1">
-              نقلات الذمة{creditsCoveredByBalance ? ' (مُغطّاة)' : ''}
-            </p>
+            <p className="text-xs text-slate-500 mt-1">نقلات الذمة غير المسواة</p>
           </CardBody>
         </Card>
         <Card>
           <CardBody className="text-center py-4">
             <p className="text-3xl font-bold text-slate-700">{totalObligation.toLocaleString()}</p>
-            <p className="text-xs text-slate-500 mt-1">إجمالي الالتزامات (₪)</p>
+            <p className="text-xs text-slate-500 mt-1">ما على المصنع (₪)</p>
           </CardBody>
         </Card>
         <Card className={isDebt ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}>
@@ -225,7 +221,7 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
             {isDebt ? (
               <>
                 <p className="text-3xl font-bold text-red-600">{balance.toLocaleString()}</p>
-                <p className="text-xs text-red-500 mt-1">ذمة مستحقة (₪)</p>
+                <p className="text-xs text-red-500 mt-1">متبقٍ للتسديد (₪)</p>
               </>
             ) : isCreditBal ? (
               <>
@@ -235,37 +231,33 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
             ) : (
               <>
                 <p className="text-3xl font-bold text-emerald-600">ملتزم</p>
-                <p className="text-xs text-emerald-600 mt-1">✓ لا توجد ذمم</p>
+                <p className="text-xs text-emerald-600 mt-1">✓ حساب مُسوًّى</p>
               </>
             )}
           </CardBody>
         </Card>
       </div>
 
-      {/* Extra row: total in/out */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card>
-          <CardBody className="flex items-center gap-4">
-            <div className="p-3 bg-emerald-100 rounded-xl flex-shrink-0">
-              <CreditCard size={20} className="text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-xl font-bold text-slate-800">{totalIn.toLocaleString()} ₪</p>
-              <p className="text-xs text-slate-500">إجمالي المبالغ المُحصَّلة <span className="text-slate-400">(نقدي + دفعات)</span></p>
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody className="flex items-center gap-4">
-            <div className="p-3 bg-blue-100 rounded-xl flex-shrink-0">
-              <FileText size={20} className="text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xl font-bold text-slate-800">{paymentsTotal.toLocaleString()} ₪</p>
-              <p className="text-xs text-slate-500">مجموع الدفعات المُسجَّلة</p>
-            </div>
-          </CardBody>
-        </Card>
+      {/* ── شريط المعادلة المرئية ── */}
+      <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm flex-wrap">
+        <span className="text-slate-500">ما على المصنع</span>
+        <span className="font-bold text-slate-800">{totalObligation.toLocaleString()} ₪</span>
+        <span className="text-slate-400">−</span>
+        <span className="text-slate-500">ما دفعه</span>
+        <span className="font-bold text-slate-800">{totalIn.toLocaleString()} ₪</span>
+        <span className="text-slate-400">=</span>
+        <span className={`font-bold text-base ${
+          isDebt ? 'text-red-600' : isCreditBal ? 'text-emerald-600' : 'text-slate-600'
+        }`}>
+          {isDebt
+            ? `${balance.toLocaleString()} ₪ متبقٍ للتسديد`
+            : isCreditBal
+            ? `${Math.abs(balance).toLocaleString()} ₪ رصيد دائن`
+            : 'حساب مُسوًّى ✓'}
+        </span>
+        <span className="mr-auto text-xs text-slate-400">
+          (نقدي: {totalPaidCash.toLocaleString()} ₪ + دفعات: {paymentsTotal.toLocaleString()} ₪)
+        </span>
       </div>
 
       {/* ── Tabs ── */}
