@@ -877,7 +877,7 @@ export async function reconcileFactory(factoryId: string): Promise<number> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('trips')
-      .select('id, factory_contribution, payment_status, payment_method')
+      .select('id, factory_contribution, payment_status, payment_method, approval_status')
       .eq('factory_id', factoryId)
       .order('trip_date', { ascending: true })
       .order('created_at', { ascending: true }),
@@ -890,26 +890,33 @@ export async function reconcileFactory(factoryId: string): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalPaid = (paymentsRes.data ?? []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
 
+  // نفس معادلة صفحة كشف الحساب: نعمل فقط على النقلات المعتمدة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const coveredByPayments = allTrips.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
+  const approvedTrips = allTrips.filter((t: any) => t.approval_status === 'approved')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const totalObligation = approvedTrips.reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const totalPaidCash = approvedTrips
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'cash')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const currentDebt = allTrips.filter((t: any) => t.payment_status === 'credit')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
+  const totalIn = totalPaidCash + totalPaid
+  const balance = totalObligation - totalIn // سالب = رصيد دائن
 
-  // الرصيد الدائن المتاح = ما دُفع − ما غُطِّي مسبقاً − الذمة الحالية
-  const availableCredit = Math.max(0, totalPaid - coveredByPayments - currentDebt)
+  // الرصيد الدائن المتاح (من نفس المعادلة التي تظهر في البطاقة)
+  const availableCredit = Math.max(0, -balance)
   if (availableCredit <= 0) return 0
 
+  // نقلات الذمة المعتمدة فقط، مرتبة من الأقدم للأحدث
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const creditTrips = allTrips.filter((t: any) => t.payment_status === 'credit')
+  const approvedCreditTrips = approvedTrips.filter((t: any) => t.payment_status === 'credit')
+
   let remaining = availableCredit
   const idsToSettle: string[] = []
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const trip of creditTrips as any[]) {
+  for (const trip of approvedCreditTrips as any[]) {
     const contrib = Number(trip.factory_contribution ?? 50)
     if (remaining >= contrib) {
       idsToSettle.push(trip.id)
