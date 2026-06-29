@@ -82,22 +82,17 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
   const totalTrips      = approvedTrips.length
   const creditTrips     = approvedTrips.filter((t: Trip) => t.payment_status === 'credit')
   const totalObligation = approvedTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
-  const totalDebt       = creditTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
-  const coveredByPayments = approvedTrips
-    .filter((t: Trip) => t.payment_status === 'paid' && t.payment_method === 'later')
-    .reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
   const totalPaidCash   = approvedTrips
     .filter((t: Trip) => t.payment_status === 'paid' && t.payment_method === 'cash')
     .reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
   const paymentsTotal   = payments.reduce((s: number, p: Payment) => s + Number(p.amount_paid), 0)
   const totalIn         = totalPaidCash + paymentsTotal
-  // الرصيد الصحيح: الدفعات المُسجَّلة ناقص ما غُطِّي بالفعل من نقلات paid/later
-  // الباقي إن وُجد هو رصيد دائن لم يُطبَّق بعد على نقلات ذمة
-  const effectiveCredit = Math.max(0, paymentsTotal - coveredByPayments)
-  const creditBalance   = Math.max(0, effectiveCredit - totalDebt)
-  const balance         = totalDebt > 0 ? totalDebt - effectiveCredit : -creditBalance
+  // الرصيد = إجمالي الالتزامات − إجمالي المُحصَّل (بسيط وصحيح في كل الحالات)
+  const balance         = totalObligation - totalIn
   const isDebt          = balance > 0
   const isCreditBal     = balance < 0
+  // نقلات الذمة مُغطّاة فعلياً بالرصيد الدائن (موجودة في DB كـ credit لكن صافي الحساب إيجابي)
+  const creditsCoveredByBalance = !isDebt && creditTrips.length > 0
 
   if (loading) {
     return (
@@ -201,12 +196,14 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
             <p className="text-xs text-slate-500 mt-1">إجمالي النقلات المعتمدة</p>
           </CardBody>
         </Card>
-        <Card className={creditTrips.length > 0 ? 'border-red-200' : ''}>
+        <Card className={isDebt && creditTrips.length > 0 ? 'border-red-200' : creditsCoveredByBalance ? 'border-amber-200' : ''}>
           <CardBody className="text-center py-4">
-            <p className={`text-3xl font-bold ${creditTrips.length > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+            <p className={`text-3xl font-bold ${isDebt && creditTrips.length > 0 ? 'text-red-600' : creditsCoveredByBalance ? 'text-amber-500' : 'text-emerald-600'}`}>
               {creditTrips.length}
             </p>
-            <p className="text-xs text-slate-500 mt-1">نقلات الذمة</p>
+            <p className="text-xs text-slate-500 mt-1">
+              نقلات الذمة{creditsCoveredByBalance ? ' (مُغطّاة)' : ''}
+            </p>
           </CardBody>
         </Card>
         <Card>
