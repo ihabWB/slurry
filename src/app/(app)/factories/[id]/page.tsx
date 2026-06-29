@@ -44,6 +44,7 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
   const [tab, setTab]           = useState<'trips' | 'payments'>('trips')
   const [deleteTarget, setDeleteTarget] = useState<Payment | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [tripFilter, setTripFilter] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -106,6 +107,21 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
   )
   const pendingLaterValue   = pendingLaterTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
   const futureBalance       = balance + pendingLaterValue  // الرصيد بعد اعتماد كل النقلات المعلقة
+  // تفصيل الدفع للنقلات المعتمدة
+  const approvedLater      = approvedTrips.filter((t: Trip) => t.payment_status === 'paid' && t.payment_method === 'later')
+  const approvedCashCount  = approvedTrips.filter((t: Trip) => t.payment_status === 'paid' && t.payment_method === 'cash').length
+  const approvedLaterCount = approvedLater.length
+  const approvedLaterValue = approvedLater.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const creditValue        = creditTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  // مجموعات الفلتر
+  const pendingTrips       = trips.filter((t: Trip) => t.approval_status === 'draft' || t.approval_status === 'pending_approval')
+  const rejectedTrips      = trips.filter((t: Trip) => t.approval_status === 'rejected')
+  const pendingObligation  = pendingTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const rejectedObligation = rejectedTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const displayTrips       = tripFilter === 'approved' ? approvedTrips
+    : tripFilter === 'pending'  ? pendingTrips
+    : tripFilter === 'rejected' ? rejectedTrips
+    : trips
 
   if (loading) {
     return (
@@ -323,74 +339,271 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
 
       {/* ── Trips Tab ── */}
       {tab === 'trips' && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-slate-800">سجل النقلات</h2>
-              {canEdit && (
-                <Link href={`/trips/new?factory_id=${factory.id}`}>
-                  <Button size="sm" variant="secondary"><Plus size={14} /> نقلة جديدة</Button>
-                </Link>
-              )}
+        <div className="space-y-4">
+
+          {/* ── مرشحات الفئة ── */}
+          <div className="flex gap-2 flex-wrap">
+            {([
+              { key: 'all' as const,      label: 'الكل',        count: trips.length },
+              { key: 'approved' as const, label: 'المعتمدة',     count: approvedTrips.length },
+              { key: 'pending' as const,  label: 'قيد الاعتماد', count: pendingTrips.length },
+              ...(rejectedTrips.length > 0
+                ? [{ key: 'rejected' as const, label: 'مرفوضة', count: rejectedTrips.length }]
+                : []),
+            ]).map(({ key, label, count }) => (
+              <button
+                key={key}
+                onClick={() => setTripFilter(key)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  tripFilter === key
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {label} ({count})
+              </button>
+            ))}
+          </div>
+
+          {/* ── بطاقات: الكل ── */}
+          {tripFilter === 'all' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card>
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-slate-800">{trips.length}</p>
+                  <p className="text-xs text-slate-500 mt-1">إجمالي النقلات</p>
+                </CardBody>
+              </Card>
+              <Card className="border-emerald-200">
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-emerald-700">{approvedTrips.length}</p>
+                  <p className="text-xs text-slate-500 mt-1">معتمدة</p>
+                  <p className="text-xs text-slate-400">{totalObligation.toLocaleString()} ₪</p>
+                </CardBody>
+              </Card>
+              <Card className={pendingTrips.length > 0 ? 'border-amber-200' : ''}>
+                <CardBody className="text-center py-3">
+                  <p className={`text-2xl font-bold ${pendingTrips.length > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                    {pendingTrips.length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">قيد الاعتماد</p>
+                  <p className="text-xs text-slate-400">{pendingObligation.toLocaleString()} ₪</p>
+                </CardBody>
+              </Card>
+              <Card className={rejectedTrips.length > 0 ? 'border-red-200' : ''}>
+                <CardBody className="text-center py-3">
+                  <p className={`text-2xl font-bold ${rejectedTrips.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                    {rejectedTrips.length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">مرفوضة</p>
+                  <p className="text-xs text-slate-400">{rejectedObligation.toLocaleString()} ₪</p>
+                </CardBody>
+              </Card>
             </div>
-          </CardHeader>
-          <CardBody className="p-0">
-            {trips.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <p className="text-3xl mb-2">🚛</p>
-                <p className="text-sm">لا توجد نقلات مسجلة لهذا المصنع</p>
+          )}
+
+          {/* ── بطاقات: المعتمدة ── */}
+          {tripFilter === 'approved' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Card>
+                  <CardBody className="text-center py-3">
+                    <p className="text-2xl font-bold text-slate-800">{approvedTrips.length}</p>
+                    <p className="text-xs text-slate-500 mt-1">عدد النقلات</p>
+                  </CardBody>
+                </Card>
+                <Card>
+                  <CardBody className="text-center py-3">
+                    <p className="text-2xl font-bold text-slate-700">{totalObligation.toLocaleString()} ₪</p>
+                    <p className="text-xs text-slate-500 mt-1">إجمالي الالتزام</p>
+                  </CardBody>
+                </Card>
+                <Card className="border-emerald-200">
+                  <CardBody className="text-center py-3">
+                    <p className="text-2xl font-bold text-emerald-600">{totalIn.toLocaleString()} ₪</p>
+                    <p className="text-xs text-slate-500 mt-1">إجمالي المدفوع</p>
+                    <p className="text-xs text-slate-400">نقدي: {totalPaidCash.toLocaleString()} + دفعات: {paymentsTotal.toLocaleString()}</p>
+                  </CardBody>
+                </Card>
+                <Card className={isDebt ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}>
+                  <CardBody className="text-center py-3">
+                    {isDebt ? (
+                      <>
+                        <p className="text-2xl font-bold text-red-600">{balance.toLocaleString()} ₪</p>
+                        <p className="text-xs text-red-500 mt-1">متبقٍ للتسديد</p>
+                      </>
+                    ) : isCreditBal ? (
+                      <>
+                        <p className="text-2xl font-bold text-emerald-600">{Math.abs(balance).toLocaleString()} ₪</p>
+                        <p className="text-xs text-emerald-600 mt-1">💳 رصيد دائن</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-bold text-emerald-600">ملتزم</p>
+                        <p className="text-xs text-emerald-600 mt-1">✓ مُسوًّى</p>
+                      </>
+                    )}
+                  </CardBody>
+                </Card>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b border-slate-100">
-                    <tr>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">التاريخ</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">رقم الكوبون</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">نوع الربو</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الحجم</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">المساهمة (₪)</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الدفع</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الاعتماد</th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">ملاحظات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {trips.map((t: Trip) => (
-                      <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap" dir="ltr">{fmt(t.trip_date)}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-600">{t.coupon_number || <span className="text-slate-300">—</span>}</td>
-                        <td className="px-4 py-3">
-                          {t.waste_type === 'liquid' && <span className="text-blue-600 text-xs">💧 سائل</span>}
-                          {t.waste_type === 'solid'  && <span className="text-amber-600 text-xs">🪨 جاف</span>}
-                          {!t.waste_type             && <span className="text-slate-300 text-xs">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600 text-xs">
-                          {t.volume_m3 != null ? `${t.volume_m3} م³` : <span className="text-slate-300">—</span>}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-slate-800">
-                          {Number(t.factory_contribution ?? 50).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">{payStatusBadge(t.payment_status, t.payment_method)}</td>
-                        <td className="px-4 py-3">{approvalBadge(t.approval_status)}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate">{t.notes || <span className="text-slate-300">—</span>}</td>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                  <div>
+                    <p className="text-sm font-bold text-emerald-700">{approvedCashCount} نقلة</p>
+                    <p className="text-xs text-slate-500">💵 نقدي — {totalPaidCash.toLocaleString()} ₪</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-100">
+                  <div>
+                    <p className="text-sm font-bold text-blue-700">{approvedLaterCount} نقلة</p>
+                    <p className="text-xs text-slate-500">🏦 دُفعت لاحقاً — {approvedLaterValue.toLocaleString()} ₪</p>
+                  </div>
+                </div>
+                <div className={`flex items-center gap-3 p-3 rounded-xl border ${
+                  creditTrips.length > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'
+                }`}>
+                  <div>
+                    <p className={`text-sm font-bold ${creditTrips.length > 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                      {creditTrips.length} نقلة
+                    </p>
+                    <p className="text-xs text-slate-500">⏳ ذمة — {creditValue.toLocaleString()} ₪</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── بطاقات: قيد الاعتماد ── */}
+          {tripFilter === 'pending' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="border-amber-200">
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-amber-600">{pendingTrips.length}</p>
+                  <p className="text-xs text-slate-500 mt-1">قيد الاعتماد</p>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-slate-700">{pendingObligation.toLocaleString()} ₪</p>
+                  <p className="text-xs text-slate-500 mt-1">الالتزام المحتمل</p>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-slate-600">
+                    {pendingTrips.filter((t: Trip) => t.payment_status === 'credit').length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">⏳ ذمة معلقة</p>
+                  <p className="text-xs text-slate-400">
+                    {pendingTrips
+                      .filter((t: Trip) => t.payment_status === 'credit')
+                      .reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+                      .toLocaleString()} ₪
+                  </p>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-blue-600">{pendingLaterTrips.length}</p>
+                  <p className="text-xs text-slate-500 mt-1">🏦 دُفعت لاحقاً</p>
+                  <p className="text-xs text-slate-400">{pendingLaterValue.toLocaleString()} ₪</p>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {/* ── بطاقات: مرفوضة ── */}
+          {tripFilter === 'rejected' && (
+            <div className="grid grid-cols-2 gap-3">
+              <Card className="border-red-200">
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-red-500">{rejectedTrips.length}</p>
+                  <p className="text-xs text-slate-500 mt-1">نقلات مرفوضة</p>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardBody className="text-center py-3">
+                  <p className="text-2xl font-bold text-slate-400">{rejectedObligation.toLocaleString()} ₪</p>
+                  <p className="text-xs text-slate-500 mt-1">قيمة مرفوضة (غير محتسبة في الرصيد)</p>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {/* ── الجدول ── */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-slate-800">
+                  {({ all: 'سجل النقلات', approved: 'النقلات المعتمدة', pending: 'النقلات قيد الاعتماد', rejected: 'النقلات المرفوضة' } as const)[tripFilter]}
+                </h2>
+                {canEdit && (
+                  <Link href={`/trips/new?factory_id=${factory.id}`}>
+                    <Button size="sm" variant="secondary"><Plus size={14} /> نقلة جديدة</Button>
+                  </Link>
+                )}
+              </div>
+            </CardHeader>
+            <CardBody className="p-0">
+              {displayTrips.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <p className="text-3xl mb-2">🚛</p>
+                  <p className="text-sm">لا توجد نقلات في هذه الفئة</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-100">
+                      <tr>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">التاريخ</th>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">رقم الكوبون</th>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">نوع الربو</th>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الحجم</th>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">المساهمة (₪)</th>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الدفع</th>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">الاعتماد</th>
+                        <th className="text-right px-4 py-3 text-xs font-medium text-slate-500">ملاحظات</th>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-slate-50 border-t-2 border-slate-200">
-                    <tr>
-                      <td colSpan={4} className="px-4 py-3 text-xs font-semibold text-slate-600">
-                        الإجمالي — {approvedTrips.length} نقلة معتمدة / {creditTrips.length} ذمة
-                      </td>
-                      <td className="px-4 py-3 font-bold text-slate-800">{totalObligation.toLocaleString()} ₪</td>
-                      <td colSpan={3} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </CardBody>
-        </Card>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {displayTrips.map((t: Trip) => (
+                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 text-slate-700 whitespace-nowrap" dir="ltr">{fmt(t.trip_date)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-slate-600">{t.coupon_number || <span className="text-slate-300">—</span>}</td>
+                          <td className="px-4 py-3">
+                            {t.waste_type === 'liquid' && <span className="text-blue-600 text-xs">💧 سائل</span>}
+                            {t.waste_type === 'solid'  && <span className="text-amber-600 text-xs">🪨 جاف</span>}
+                            {!t.waste_type             && <span className="text-slate-300 text-xs">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600 text-xs">
+                            {t.volume_m3 != null ? `${t.volume_m3} م³` : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-slate-800">
+                            {Number(t.factory_contribution ?? 50).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">{payStatusBadge(t.payment_status, t.payment_method)}</td>
+                          <td className="px-4 py-3">{approvalBadge(t.approval_status)}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate">{t.notes || <span className="text-slate-300">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                      <tr>
+                        <td colSpan={4} className="px-4 py-3 text-xs font-semibold text-slate-600">
+                          الإجمالي — {displayTrips.length} نقلة
+                        </td>
+                        <td className="px-4 py-3 font-bold text-slate-800">
+                          {displayTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0).toLocaleString()} ₪
+                        </td>
+                        <td colSpan={3} />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </div>
       )}
 
       {/* ── Payments Tab ── */}
