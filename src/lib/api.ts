@@ -835,8 +835,8 @@ export async function createPayment(payment: PaymentInsert) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
 
-    // الرصيد الدائن الموجود مسبقاً + الدفعة الجديدة = المبلغ الكلي المتاح للتغطية
-    const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments - currentDebt)
+    // الرصيد الدائن الموجود مسبقاً = ما دُفع مسبقاً ولم يُخصَّص بعد لأي نقلة
+    const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments)
     let remaining = Number(payment.amount_paid) + existingCredit
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -904,8 +904,17 @@ export async function reconcileFactory(factoryId: string): Promise<number> {
   const totalIn = totalPaidCash + totalPaid
   const balance = totalObligation - totalIn // سالب = رصيد دائن
 
-  // الرصيد الدائن المتاح (من نفس المعادلة التي تظهر في البطاقة)
-  const availableCredit = Math.max(0, -balance)
+  // حساب ما خُصِّص بالفعل من الدفعات لنقلات "دُفعت لاحقاً"
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const coveredByPaidLater = approvedTrips
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
+
+  // المتاح = مجموع الدفعات ناقص ما خُصِّص بالفعل
+  // (يشمل حالتي: رصيد دائن كلي، أو دفعات تغطي نقلات إضافية حتى مع وجود ذمة كلية)
+  const availableCredit = Math.max(0, totalPaid - coveredByPaidLater)
   if (availableCredit <= 0) return 0
 
   // نقلات الذمة المعتمدة فقط، مرتبة من الأقدم للأحدث
@@ -972,8 +981,8 @@ export async function previewPayment(factoryId: string, amountPaid: number): Pro
     .filter(t => t.payment_status === 'credit')
     .reduce((s: number, t) => s + Number(t.factory_contribution ?? 50), 0)
 
-  // الرصيد الدائن الموجود قبل هذه الدفعة
-  const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments - currentDebt)
+  // الرصيد الدائن الموجود قبل هذه الدفعة = ما دُفع مسبقاً ولم يُخصَّص بعد لأي نقلة
+  const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments)
 
   // نقلات الذمة مرتبة لتغطيتها
   const creditTrips = allTrips.filter(t => t.payment_status === 'credit')
