@@ -99,6 +99,13 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
   const balance         = totalObligation - totalIn
   const isDebt          = balance > 0
   const isCreditBal     = balance < 0
+  // النقلات المعلقة (draft / pending_approval) بحالة paid/later → ستستهلك من الرصيد عند اعتمادها
+  const pendingLaterTrips = trips.filter(
+    (t: Trip) => t.approval_status !== 'approved' && t.approval_status !== 'rejected'
+      && t.payment_status === 'paid' && t.payment_method === 'later'
+  )
+  const pendingLaterValue   = pendingLaterTrips.reduce((s: number, t: Trip) => s + Number(t.factory_contribution ?? 50), 0)
+  const futureBalance       = balance + pendingLaterValue  // الرصيد بعد اعتماد كل النقلات المعلقة
 
   if (loading) {
     return (
@@ -217,21 +224,49 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
           </CardBody>
         </Card>
         <Card className={isDebt ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}>
-          <CardBody className="text-center py-4">
+          <CardBody className="text-center py-4 space-y-1">
             {isDebt ? (
               <>
                 <p className="text-3xl font-bold text-red-600">{balance.toLocaleString()}</p>
-                <p className="text-xs text-red-500 mt-1">متبقٍ للتسديد (₪)</p>
+                <p className="text-xs text-red-500">متبقٍ للتسديد (₪)</p>
+                {pendingLaterValue > 0 && (
+                  <p className="text-xs text-amber-600 pt-1 border-t border-red-100">
+                    ⚠️ {pendingLaterTrips.length} نقلة معلقة ستزيد الذمة بـ {pendingLaterValue.toLocaleString()}₪
+                  </p>
+                )}
               </>
             ) : isCreditBal ? (
               <>
                 <p className="text-3xl font-bold text-emerald-600">{Math.abs(balance).toLocaleString()}</p>
-                <p className="text-xs text-emerald-600 mt-1">💳 رصيد دائن (₪)</p>
+                <p className="text-xs text-emerald-600">💳 رصيد دائن حالي (₪)</p>
+                {pendingLaterValue > 0 && (
+                  <div className="pt-1 border-t border-emerald-100 space-y-0.5">
+                    <p className="text-xs text-amber-600">
+                      ⚠️ {pendingLaterTrips.length} نقلة معلقة بـ {pendingLaterValue.toLocaleString()}₪
+                    </p>
+                    <p className={`text-xs font-medium ${
+                      futureBalance > 0 ? 'text-red-500'
+                      : futureBalance < 0 ? 'text-emerald-600'
+                      : 'text-slate-500'
+                    }`}>
+                      {futureBalance > 0
+                        ? `المتوقع: ذمة ${futureBalance.toLocaleString()}₪`
+                        : futureBalance < 0
+                        ? `المتوقع: رصيد ${Math.abs(futureBalance).toLocaleString()}₪`
+                        : 'المتوقع: ملتزم ✓'}
+                    </p>
+                  </div>
+                )}
               </>
             ) : (
               <>
                 <p className="text-3xl font-bold text-emerald-600">ملتزم</p>
-                <p className="text-xs text-emerald-600 mt-1">✓ حساب مُسوًّى</p>
+                <p className="text-xs text-emerald-600">✓ حساب مُسوًّى</p>
+                {pendingLaterValue > 0 && (
+                  <p className="text-xs text-amber-600 pt-1 border-t border-emerald-100">
+                    ⚠️ {pendingLaterTrips.length} نقلة معلقة ستضيف {pendingLaterValue.toLocaleString()}₪ بعد الاعتماد
+                  </p>
+                )}
               </>
             )}
           </CardBody>
