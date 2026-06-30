@@ -931,7 +931,17 @@ export default function TripsPage() {
                                 <Pencil size={13} />
                               </button>
                             )}
-                            {/* زر رفع للاعتماد — للمدير على المرفوضات */}
+                            {/* زر رفع للاعتماد — للمشغّل/مدير المشروع على المسودات */}
+                            {!canApprove && apStatus === 'draft' && (
+                              <button
+                                onClick={() => handleSubmitTrip(t.id)}
+                                disabled={submittingId === t.id}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold transition-colors disabled:opacity-50"
+                                title="رفع للاعتماد">
+                                {submittingId === t.id ? '...' : <><SendHorizonal size={11} /> رفع</>}
+                              </button>
+                            )}
+                            {/* زر رفع للاعتماد — للمشغّل/مدير المشروع على المرفوضات */}
                             {!canApprove && apStatus === 'rejected' && (
                               <button
                                 onClick={() => handleSubmitTrip(t.id)}

@@ -591,9 +591,31 @@ export async function getRecentApprovedTrips(limit = 20, offset = 0): Promise<Tr
 
 export async function deletePayment(id: string) {
   const supabase = createClient()
+
+  // جلب بيانات الدفعة أولاً للحصول على factory_id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: payment, error: fetchError } = await (supabase as any)
+    .from('payments').select('factory_id').eq('id', id).single()
+  if (fetchError) throw fetchError
+
+  // حذف الدفعة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('payments').delete().eq('id', id)
   if (error) throw error
+
+  // إعادة ضبط جميع نقلات "دُفعت لاحقاً" للمصنع → ذمة
+  if (payment?.factory_id) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('trips')
+      .update({ payment_status: 'credit', payment_method: null })
+      .eq('factory_id', payment.factory_id)
+      .eq('payment_status', 'paid')
+      .eq('payment_method', 'later')
+
+    // إعادة تطبيق الدفعات المتبقية لتغطية ما يكفيها
+    await reconcileFactory(payment.factory_id)
+  }
 }
 
 // ─── خطة vs فعلي ─────────────────────────────────────────────
@@ -873,6 +895,17 @@ export async function createPayment(payment: PaymentInsert) {
 export async function reconcileFactory(factoryId: string): Promise<number> {
   const supabase = createClient()
 
+  // ─── خطوة 1: إعادة ضبط كاملة — كل نقلات "دُفعت لاحقاً" تصبح ذمة
+  // هذا يُصحِّح أي بيانات خاطئة (مثل نقلات بقيت مغطاة بعد حذف الدفعة)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from('trips')
+    .update({ payment_status: 'credit', payment_method: null })
+    .eq('factory_id', factoryId)
+    .eq('payment_status', 'paid')
+    .eq('payment_method', 'later')
+
+  // ─── خطوة 2: جلب البيانات المحدّثة
   const [allTripsRes, paymentsRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
@@ -890,38 +923,16 @@ export async function reconcileFactory(factoryId: string): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalPaid = (paymentsRes.data ?? []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
 
-  // نفس معادلة صفحة كشف الحساب: نعمل فقط على النقلات المعتمدة
+  // نعمل فقط على النقلات المعتمدة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const approvedTrips = allTrips.filter((t: any) => t.approval_status === 'approved')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalObligation = approvedTrips.reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalPaidCash = approvedTrips
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'cash')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-  const totalIn = totalPaidCash + totalPaid
-  const balance = totalObligation - totalIn // سالب = رصيد دائن
 
-  // حساب ما خُصِّص بالفعل من الدفعات لنقلات "دُفعت لاحقاً"
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const coveredByPaidLater = approvedTrips
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-
-  // المتاح = مجموع الدفعات ناقص ما خُصِّص بالفعل
-  // (يشمل حالتي: رصيد دائن كلي، أو دفعات تغطي نقلات إضافية حتى مع وجود ذمة كلية)
-  const availableCredit = Math.max(0, totalPaid - coveredByPaidLater)
-  if (availableCredit <= 0) return 0
-
-  // نقلات الذمة المعتمدة فقط، مرتبة من الأقدم للأحدث
+  // ─── خطوة 3: إعادة تطبيق التغطية بناءً على الدفعات الفعلية الموجودة
+  // نقلات الذمة المعتمدة، مرتبة من الأقدم للأحدث
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const approvedCreditTrips = approvedTrips.filter((t: any) => t.payment_status === 'credit')
 
-  let remaining = availableCredit
+  let remaining = totalPaid
   const idsToSettle: string[] = []
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
