@@ -1086,26 +1086,21 @@ export async function getFactoryStatement(factory_id: string) {
 
 // ─── DASHBOARD STATS ─────────────────────────────────────────
 
+// Called from the signed-out /login page, so it can't rely on the
+// `authenticated`-only RLS policies on trips/factories/payments — it calls
+// the public get_login_stats() RPC instead, which exposes only these three
+// aggregate numbers (see supabase/migrations/tighten_core_rls.sql).
 export async function getLoginStats() {
   const supabase = createClient()
-  const [tripsRes, factoriesRes, paymentsRes, cashTripsRes] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('*', { count: 'exact', head: true }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('factories').select('*', { count: 'exact', head: true }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('payments').select('amount_paid'),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('id', { count: 'exact', head: true }).eq('payment_method', 'cash'),
-  ])
-  const cashTripsCount = cashTripsRes.count ?? 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const paymentsTotal = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-  const totalCollection = cashTripsCount * 50 + paymentsTotal
+  const { data, error } = await (supabase as any).rpc('get_login_stats').single()
+  if (error || !data) {
+    return { totalTrips: 0, totalFactories: 0, totalCollection: 0 }
+  }
   return {
-    totalTrips: tripsRes.count ?? 0,
-    totalFactories: factoriesRes.count ?? 0,
-    totalCollection,
+    totalTrips: data.total_trips ?? 0,
+    totalFactories: data.total_factories ?? 0,
+    totalCollection: Number(data.total_collection) || 0,
   }
 }
 

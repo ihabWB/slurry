@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerSupabase } from '@/lib/supabase/server';
 
 type UserRole = 'admin' | 'manager' | 'viewer' | 'approver' | 'operator';
 
@@ -13,6 +14,30 @@ function adminClient() {
   );
 }
 
+// Verifies the caller has a valid session AND is an admin before any
+// function below is allowed to touch the service-role client. Without this,
+// these server actions were callable directly (bypassing the UI's isAdmin
+// check entirely) by anyone who could reach the app.
+async function requireAdmin(): Promise<{ error: string | null }> {
+  const supabase = await createServerSupabase();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return { error: 'غير مصرح: يجب تسجيل الدخول' };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileError || profile?.role !== 'admin') {
+    return { error: 'غير مصرح: هذا الإجراء يتطلب صلاحية المدير' };
+  }
+
+  return { error: null };
+}
+
 // ─── Create user ────────────────────────────────────────────
 export async function createUser(
   email: string,
@@ -20,6 +45,9 @@ export async function createUser(
   fullName: string,
   role: UserRole
 ): Promise<{ error: string | null }> {
+  const authCheck = await requireAdmin();
+  if (authCheck.error) return authCheck;
+
   const admin = adminClient();
 
   // 1. Create auth user (email auto-confirmed)
@@ -51,6 +79,9 @@ export async function listUsers(): Promise<{
   users: { id: string; email: string; full_name: string | null; role: UserRole; created_at: string }[];
   error: string | null;
 }> {
+  const authCheck = await requireAdmin();
+  if (authCheck.error) return { users: [], error: authCheck.error };
+
   const admin = adminClient();
 
   // Get all profiles
@@ -83,6 +114,9 @@ export async function updateUserRole(
   userId: string,
   role: UserRole
 ): Promise<{ error: string | null }> {
+  const authCheck = await requireAdmin();
+  if (authCheck.error) return authCheck;
+
   const admin = adminClient();
   const { error } = await admin
     .from('user_profiles')
@@ -93,6 +127,9 @@ export async function updateUserRole(
 
 // ─── Delete user ─────────────────────────────────────────────
 export async function deleteUser(userId: string): Promise<{ error: string | null }> {
+  const authCheck = await requireAdmin();
+  if (authCheck.error) return authCheck;
+
   const admin = adminClient();
 
   // Delete from auth (cascades to user_profiles)
@@ -106,8 +143,14 @@ export async function logLogin(
   userAgent: string
 ): Promise<void> {
   try {
+    // Only allow logging a login for the caller's own verified session —
+    // otherwise anyone could write fake log rows for other user ids.
+    const supabase = await createServerSupabase();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || user.id !== userId) return;
+
     const admin = adminClient();
-    await admin.from('user_login_logs').insert({ user_id: userId, user_agent: userAgent });
+    await admin.from('user_login_logs').insert({ user_id: user.id, user_agent: userAgent });
   } catch { /* silent — login logging should never block the user */ }
 }
 
@@ -124,6 +167,9 @@ export async function getLoginLogs(): Promise<{
   }[]
   error: string | null
 }> {
+  const authCheck = await requireAdmin();
+  if (authCheck.error) return { logs: [], error: authCheck.error };
+
   const admin = adminClient();
 
   const { data: logs, error } = await admin
