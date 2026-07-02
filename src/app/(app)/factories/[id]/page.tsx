@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { use } from 'react'
 import { ArrowRight, Edit2, MapPin, Phone, User, Plus, Trash2, Hash, Droplets } from 'lucide-react'
 import Link from 'next/link'
-import { getFactory, getTrips, getPayments, deletePayment, reconcileFactory } from '@/lib/api'
+import { getFactory, getTrips, getPayments, deletePayment } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
@@ -57,14 +57,7 @@ export default function FactoryDetailPage({ params }: { params: Promise<{ id: st
       setFactory(fac)
       setPayments(paymentsData ?? [])
 
-      // مزامنة تلقائية: تغطية نقلات الذمة إذا كان الرصيد الدائن يكفيها
-      const reconciled = await reconcileFactory(id)
-      if (reconciled > 0) {
-        const updatedTrips = await getTrips({ factory_id: id })
-        setTrips(updatedTrips ?? [])
-      } else {
-        setTrips(tripsData ?? [])
-      }
+      setTrips(tripsData ?? [])
     } catch {
       showToast('error', 'فشل تحميل بيانات المصنع')
     } finally {
