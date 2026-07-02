@@ -39,7 +39,7 @@ function getDumpSiteLabel(t: AnyData): string {
   return t.dump_site ?? '—'
 }
 
-type Tab = 'active_factories' | 'trips' | 'costs' | 'contributions' | 'overdue' | 'payments' | 'cashflow'
+type Tab = 'active_factories' | 'trips' | 'costs' | 'contributions' | 'overdue' | 'payments' | 'cashflow' | 'monthly_summary'
 
 // Quick month buttons helper
 function getMonthRange(monthsAgo: number): { from: string; to: string } {
@@ -52,6 +52,12 @@ function getMonthRange(monthsAgo: number): { from: string; to: string } {
 }
 
 const CF_MUN_RATE = 0.14  // نسبة بلدية الخليل الثابتة — تُضاف فوق تكلفة النقلات
+
+const AR_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+function formatMonthAr(yyyyMM: string): string {
+  const [y, m] = yyyyMM.split('-').map(Number)
+  return `${AR_MONTHS[m - 1]} ${y}`
+}
 
 const USD_ILS_RATE = 2.95 // سعر صرف الدولار → شيكل (معتمد في العقد)
 const BUDGET_TRANCHES = [
@@ -1891,6 +1897,59 @@ export default function ReportsPage() {
     XLSX.writeFile(wb, 'cashflow-analysis.xlsx')
   }
 
+  // ── Tab: التقرير الشهري ──
+  const currentMonth = format(new Date(), 'yyyy-MM')
+  const [mrFrom, setMrFrom] = useState(currentMonth)
+  const [mrTo, setMrTo]     = useState(currentMonth)
+  const [mrTrips, setMrTrips] = useState<AnyData[]>([])
+  const [mrLoading, setMrLoading] = useState(false)
+  const [mrLoaded, setMrLoaded] = useState(false)
+
+  const generateMonthly = useCallback(async () => {
+    setMrLoading(true)
+    try {
+      const from = mrFrom + '-01'
+      const [y, m] = mrTo.split('-').map(Number)
+      const lastDay = new Date(y, m, 0).getDate()
+      const to = `${mrTo}-${String(lastDay).padStart(2, '0')}`
+      const data = await getTrips({ from, to })
+      setMrTrips((data || []).filter((t: AnyData) => t.approval_status === 'approved'))
+      setMrLoaded(true)
+    } catch (e) { console.error(e) }
+    finally { setMrLoading(false) }
+  }, [mrFrom, mrTo])
+
+  const mrRows = useMemo(() => {
+    if (!mrTrips.length) return []
+    const map = new Map<string, { solid: number; liquid: number; solidCost: number; liquidCost: number }>()
+    mrTrips.forEach((t: AnyData) => {
+      if (!t.trip_date) return
+      const key = t.trip_date.slice(0, 7)
+      if (!map.has(key)) map.set(key, { solid: 0, liquid: 0, solidCost: 0, liquidCost: 0 })
+      const e = map.get(key)!
+      const cost = Number(t.trip_cost ?? 0)
+      if (t.waste_type === 'solid') { e.solid++; e.solidCost += cost }
+      else { e.liquid++; e.liquidCost += cost }
+    })
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, v]) => ({
+        key,
+        label: formatMonthAr(key),
+        total: v.solid + v.liquid,
+        solid: v.solid,
+        liquid: v.liquid,
+        solidCost: v.solidCost,
+        liquidCost: v.liquidCost,
+        totalCost: v.solidCost + v.liquidCost,
+      }))
+  }, [mrTrips])
+
+  const mrTotals = useMemo(() => mrRows.reduce(
+    (acc, r) => ({ total: acc.total + r.total, solid: acc.solid + r.solid, liquid: acc.liquid + r.liquid, solidCost: acc.solidCost + r.solidCost, liquidCost: acc.liquidCost + r.liquidCost, totalCost: acc.totalCost + r.totalCost }),
+    { total: 0, solid: 0, liquid: 0, solidCost: 0, liquidCost: 0, totalCost: 0 }
+  ), [mrRows])
+
   // ── Tabs ──
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'active_factories', label: 'المصانع النشطة', icon: <Building2 size={15} /> },
@@ -1900,6 +1959,7 @@ export default function ReportsPage() {
     { id: 'overdue', label: 'الذمم', icon: <AlertTriangle size={15} /> },
     { id: 'payments', label: 'الدفعات', icon: <DollarSign size={15} /> },
     { id: 'cashflow', label: 'التدفق النقدي', icon: <Activity size={15} /> },
+    { id: 'monthly_summary', label: 'الملخص الشهري', icon: <BarChart2 size={15} /> },
   ]
 
   return (
@@ -3819,6 +3879,138 @@ export default function ReportsPage() {
                 </CardBody>
               </Card>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ══ TAB: الملخص الشهري ══ */}
+      {activeTab === 'monthly_summary' && (
+        <div className="space-y-5">
+          {/* فلاتر */}
+          <Card>
+            <CardHeader><h2 className="font-semibold text-slate-800 flex items-center gap-2"><Filter size={16} /> اختر الفترة</h2></CardHeader>
+            <CardBody className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: 'هذا الشهر', from: currentMonth, to: currentMonth },
+                  { label: 'آخر 3 أشهر', from: format(new Date(new Date().getFullYear(), new Date().getMonth() - 2, 1), 'yyyy-MM'), to: currentMonth },
+                  { label: 'آخر 6 أشهر', from: format(new Date(new Date().getFullYear(), new Date().getMonth() - 5, 1), 'yyyy-MM'), to: currentMonth },
+                  { label: 'هذه السنة',  from: format(new Date(), 'yyyy') + '-01', to: currentMonth },
+                ].map(opt => (
+                  <button key={opt.label}
+                    onClick={() => { setMrFrom(opt.from); setMrTo(opt.to) }}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${mrFrom === opt.from && mrTo === opt.to ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-slate-600 block mb-1">من شهر</label>
+                  <input type="month" value={mrFrom} onChange={e => setMrFrom(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="text-sm text-slate-600 block mb-1">إلى شهر</label>
+                  <input type="month" value={mrTo} onChange={e => setMrTo(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <Button onClick={generateMonthly} loading={mrLoading} size="lg"><BarChart2 size={16} /> توليد التقرير</Button>
+            </CardBody>
+          </Card>
+
+          {mrLoaded && mrRows.length > 0 && (
+            <>
+              {/* KPI cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'إجمالي النقلات',  value: mrTotals.total,     color: 'text-violet-600', bg: 'bg-violet-50 border-violet-100' },
+                  { label: 'نقلات جاف',        value: mrTotals.solid,     color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-100'  },
+                  { label: 'نقلات سائل',       value: mrTotals.liquid,    color: 'text-blue-600',   bg: 'bg-blue-50 border-blue-100'    },
+                  { label: 'الإجمالي التكلفة', value: mrTotals.totalCost.toLocaleString() + ' ₪', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-100' },
+                ].map(({ label, value, color, bg }) => (
+                  <Card key={label} className={`border ${bg}`}>
+                    <CardBody className="py-3 px-4">
+                      <p className="text-xs text-slate-500 mb-1">{label}</p>
+                      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                    </CardBody>
+                  </Card>
+                ))}
+              </div>
+
+              {/* مخطط شريطي */}
+              {mrRows.length > 1 && (
+                <Card>
+                  <CardHeader><h3 className="font-semibold text-slate-800 text-sm">عدد النقلات شهرياً</h3></CardHeader>
+                  <CardBody>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={mrRows} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <Tooltip formatter={(v: AnyData, name: AnyData) => [v, name === 'solid' ? '🪨 جاف' : '💧 سائل']} />
+                        <Legend formatter={(v) => v === 'solid' ? '🪨 جاف' : '💧 سائل'} />
+                        <Bar dataKey="solid"  stackId="a" fill="#f59e0b" name="solid"  radius={[0,0,0,0]} />
+                        <Bar dataKey="liquid" stackId="a" fill="#3b82f6" name="liquid" radius={[4,4,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardBody>
+                </Card>
+              )}
+
+              {/* جدول تفصيلي */}
+              <Card>
+                <CardHeader>
+                  <h3 className="font-semibold text-slate-800 text-sm">تفاصيل شهرية</h3>
+                </CardHeader>
+                <CardBody className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm" dir="rtl">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500">الشهر</th>
+                          <th className="text-center px-3 py-3 text-xs font-semibold text-violet-600">إجمالي النقلات</th>
+                          <th className="text-center px-3 py-3 text-xs font-semibold text-amber-600">نقلات جاف</th>
+                          <th className="text-center px-3 py-3 text-xs font-semibold text-blue-600">نقلات سائل</th>
+                          <th className="text-center px-3 py-3 text-xs font-semibold text-amber-700">تكلفة جاف (₪)</th>
+                          <th className="text-center px-3 py-3 text-xs font-semibold text-blue-700">تكلفة سائل (₪)</th>
+                          <th className="text-center px-3 py-3 text-xs font-semibold text-emerald-700">الإجمالي (₪)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mrRows.map(r => (
+                          <tr key={r.key} className="border-b border-slate-50 hover:bg-slate-50/60">
+                            <td className="px-4 py-3 font-medium text-slate-800">{r.label}</td>
+                            <td className="px-3 py-3 text-center font-bold text-violet-700">{r.total}</td>
+                            <td className="px-3 py-3 text-center text-amber-700">{r.solid}</td>
+                            <td className="px-3 py-3 text-center text-blue-700">{r.liquid}</td>
+                            <td className="px-3 py-3 text-center font-mono text-slate-700">{r.solidCost > 0 ? r.solidCost.toLocaleString() : '—'}</td>
+                            <td className="px-3 py-3 text-center font-mono text-slate-700">{r.liquidCost > 0 ? r.liquidCost.toLocaleString() : '—'}</td>
+                            <td className="px-3 py-3 text-center font-bold font-mono text-emerald-700">{r.totalCost.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold">
+                          <td className="px-4 py-3 text-slate-700">الإجمالي ({mrRows.length} شهر)</td>
+                          <td className="px-3 py-3 text-center text-violet-700">{mrTotals.total}</td>
+                          <td className="px-3 py-3 text-center text-amber-700">{mrTotals.solid}</td>
+                          <td className="px-3 py-3 text-center text-blue-700">{mrTotals.liquid}</td>
+                          <td className="px-3 py-3 text-center font-mono text-slate-800">{mrTotals.solidCost.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-center font-mono text-slate-800">{mrTotals.liquidCost.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-center font-mono text-emerald-800">{mrTotals.totalCost.toLocaleString()}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </CardBody>
+              </Card>
+            </>
+          )}
+
+          {mrLoaded && mrRows.length === 0 && (
+            <Card><CardBody><p className="text-center text-slate-400 py-8">لا توجد نقلات معتمدة في الفترة المحددة</p></CardBody></Card>
           )}
         </div>
       )}

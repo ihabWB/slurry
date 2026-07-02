@@ -591,31 +591,9 @@ export async function getRecentApprovedTrips(limit = 20, offset = 0): Promise<Tr
 
 export async function deletePayment(id: string) {
   const supabase = createClient()
-
-  // جلب بيانات الدفعة أولاً للحصول على factory_id
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: payment, error: fetchError } = await (supabase as any)
-    .from('payments').select('factory_id').eq('id', id).single()
-  if (fetchError) throw fetchError
-
-  // حذف الدفعة
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('payments').delete().eq('id', id)
   if (error) throw error
-
-  // إعادة ضبط جميع نقلات "دُفعت لاحقاً" للمصنع → ذمة
-  if (payment?.factory_id) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
-      .from('trips')
-      .update({ payment_status: 'credit', payment_method: null })
-      .eq('factory_id', payment.factory_id)
-      .eq('payment_status', 'paid')
-      .eq('payment_method', 'later')
-
-    // إعادة تطبيق الدفعات المتبقية لتغطية ما يكفيها
-    await reconcileFactory(payment.factory_id)
-  }
 }
 
 // ─── خطة vs فعلي ─────────────────────────────────────────────
@@ -823,49 +801,22 @@ export async function createPayment(payment: PaymentInsert) {
   const { data, error } = await (supabase as any).from('payments').insert(payment).select().single()
   if (error) throw error
 
-  // غطّ نقلات الذمة الأقدم أولاً باستخدام الدفعة الجديدة + أي رصيد دائن موجود مسبقاً
+  // غطّ نقلات الذمة الأقدم أولاً بالمبلغ المدفوع، نقلة نقلة (كل نقلة = 50₪)
   if (payment.factory_id && payment.amount_paid) {
-    // جلب كل النقلات + الدفعات السابقة (قبل هذه الدفعة) لحساب الرصيد الدائن المتاح
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [allTripsRes, prevPaymentsRes] = await Promise.all([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
-        .from('trips')
-        .select('id, factory_contribution, payment_status, payment_method')
-        .eq('factory_id', payment.factory_id)
-        .order('trip_date', { ascending: true })
-        .order('created_at', { ascending: true }),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
-        .from('payments')
-        .select('amount_paid')
-        .eq('factory_id', payment.factory_id)
-        .neq('id', data.id), // استثناء الدفعة الجديدة للحصول على الرصيد السابق
-    ])
+    let remaining = Number(payment.amount_paid)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allTrips = (allTripsRes.data ?? []) as any[]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const totalPaidBefore = (prevPaymentsRes.data ?? []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+    const { data: creditTrips } = await (supabase as any)
+      .from('trips')
+      .select('id, factory_contribution')
+      .eq('factory_id', payment.factory_id)
+      .eq('payment_status', 'credit')
+      .order('trip_date', { ascending: true })
+      .order('created_at', { ascending: true })
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const coveredByPayments = allTrips.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const currentDebt = allTrips.filter((t: any) => t.payment_status === 'credit')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-
-    // الرصيد الدائن الموجود مسبقاً = ما دُفع مسبقاً ولم يُخصَّص بعد لأي نقلة
-    const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments)
-    let remaining = Number(payment.amount_paid) + existingCredit
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const creditTrips = allTrips.filter((t: any) => t.payment_status === 'credit')
     const idsToSettle: string[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const trip of creditTrips as any[]) {
+    for (const trip of (creditTrips ?? []) as any[]) {
       const contrib = Number(trip.factory_contribution ?? 50)
       if (remaining >= contrib) {
         idsToSettle.push(trip.id)
@@ -882,77 +833,11 @@ export async function createPayment(payment: PaymentInsert) {
         .update({ payment_status: 'paid', payment_method: 'later' })
         .in('id', idsToSettle)
     }
+    // الـ remaining (الرصيد الدائن) يبقى محفوظاً في factories.balance كقيمة سالبة
+    // سيُستخدم تلقائياً لتغطية النقلات القادمة عبر applyFactoryCreditToNewTrip
   }
 
   return data as Payment
-}
-
-/**
- * مزامنة تلقائية: يُغطِّي نقلات الذمة التي يكفيها الرصيد الدائن الحالي.
- * يُستدعى عند تحميل صفحة المصنع لتصحيح أي تناقض في البيانات.
- * يُعيد عدد النقلات التي تمت تسويتها.
- */
-export async function reconcileFactory(factoryId: string): Promise<number> {
-  const supabase = createClient()
-
-  // ─── خطوة 1: إعادة ضبط كاملة — كل نقلات "دُفعت لاحقاً" تصبح ذمة
-  // هذا يُصحِّح أي بيانات خاطئة (مثل نقلات بقيت مغطاة بعد حذف الدفعة)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
-    .from('trips')
-    .update({ payment_status: 'credit', payment_method: null })
-    .eq('factory_id', factoryId)
-    .eq('payment_status', 'paid')
-    .eq('payment_method', 'later')
-
-  // ─── خطوة 2: جلب البيانات المحدّثة
-  const [allTripsRes, paymentsRes] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from('trips')
-      .select('id, factory_contribution, payment_status, payment_method, approval_status')
-      .eq('factory_id', factoryId)
-      .order('trip_date', { ascending: true })
-      .order('created_at', { ascending: true }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('payments').select('amount_paid').eq('factory_id', factoryId),
-  ])
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allTrips = (allTripsRes.data ?? []) as any[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalPaid = (paymentsRes.data ?? []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-
-  // نعمل فقط على النقلات المعتمدة
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const approvedTrips = allTrips.filter((t: any) => t.approval_status === 'approved')
-
-  // ─── خطوة 3: إعادة تطبيق التغطية بناءً على الدفعات الفعلية الموجودة
-  // نقلات الذمة المعتمدة، مرتبة من الأقدم للأحدث
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const approvedCreditTrips = approvedTrips.filter((t: any) => t.payment_status === 'credit')
-
-  let remaining = totalPaid
-  const idsToSettle: string[] = []
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const trip of approvedCreditTrips as any[]) {
-    const contrib = Number(trip.factory_contribution ?? 50)
-    if (remaining >= contrib) {
-      idsToSettle.push(trip.id)
-      remaining -= contrib
-    } else break
-  }
-
-  if (idsToSettle.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
-      .from('trips')
-      .update({ payment_status: 'paid', payment_method: 'later' })
-      .in('id', idsToSettle)
-  }
-
-  return idsToSettle.length
 }
 
 /**
@@ -992,8 +877,8 @@ export async function previewPayment(factoryId: string, amountPaid: number): Pro
     .filter(t => t.payment_status === 'credit')
     .reduce((s: number, t) => s + Number(t.factory_contribution ?? 50), 0)
 
-  // الرصيد الدائن الموجود قبل هذه الدفعة = ما دُفع مسبقاً ولم يُخصَّص بعد لأي نقلة
-  const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments)
+  // الرصيد الدائن الموجود قبل هذه الدفعة
+  const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments - currentDebt)
 
   // نقلات الذمة مرتبة لتغطيتها
   const creditTrips = allTrips.filter(t => t.payment_status === 'credit')
