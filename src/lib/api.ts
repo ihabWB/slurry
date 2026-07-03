@@ -1763,12 +1763,14 @@ export async function updateDisbursement(
   const total_factory_share     = tripsList.length * contributionPerTrip
   const factory_share_collected = paid_count * contributionPerTrip
   // disbursed_amount = تكلفة النقلات كاملة
-  const disbursed_amount    = total_trips_cost
-  const municipality_amount = disbursed_amount * 0.14
-  const retention_amount    = fields.retention_amount_override !== undefined
-    ? fields.retention_amount_override
-    : disbursed_amount * (newPct / 100)
-  const net_payment = disbursed_amount + municipality_amount - retention_amount
+  const disbursed_amount = total_trips_cost
+  const { municipality_amount, retention_amount, net_payment } = fields.retention_amount_override !== undefined
+    ? {
+        municipality_amount: Math.round(disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100,
+        retention_amount: fields.retention_amount_override,
+        net_payment: Math.round((disbursed_amount + Math.round(disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100 - fields.retention_amount_override) * 100) / 100,
+      }
+    : calcRetention(disbursed_amount, newPct)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
