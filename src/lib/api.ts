@@ -125,24 +125,25 @@ export async function updateFactory(id: string, updates: FactoryUpdate) {
 
 // ─── TRIPS ───────────────────────────────────────────────────
 
-export async function getTrips(filters?: {
+export interface TripFilters {
   factory_id?: string
   from?: string
   to?: string
   payment_status?: 'paid' | 'credit'
   approval_status?: 'draft' | 'pending_approval' | 'approved' | 'rejected'
   coupon_number?: string
-  search?: string // بحث بالاسم (factory name)
+  search?: string // بحث بالاسم/المنطقة (factory name/region)
   unpriced?: boolean // نقلات بدون تسعيرة فقط
-}) {
-  const supabase = createClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = (supabase as any)
-    .from('trips')
-    .select('*, factories(name, region)')
-    .order('trip_date', { ascending: false })
-    .limit(10000)
+}
 
+// يشيل أحرف بتأثر على بناء فلتر PostgREST (ilike wildcards + فواصل/أقواس or())
+// عشان نص بحث المستخدم ما يكسر الاستعلام أو يتفسر كـ wildcard غير مقصود
+function escapeTripSearchTerm(term: string): string {
+  return term.replace(/[%_,()]/g, '')
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyTripFilters(query: any, filters?: TripFilters) {
   if (filters?.factory_id) query = query.eq('factory_id', filters.factory_id)
   if (filters?.payment_status) query = query.eq('payment_status', filters.payment_status)
   if (filters?.approval_status) query = query.eq('approval_status', filters.approval_status)
@@ -150,21 +151,57 @@ export async function getTrips(filters?: {
   if (filters?.to) query = query.lte('trip_date', filters.to.substring(0, 10))
   if (filters?.coupon_number) query = query.ilike('coupon_number', `%${filters.coupon_number}%`)
   if (filters?.unpriced) query = query.is('trip_cost', null)
+  if (filters?.search) {
+    const s = escapeTripSearchTerm(filters.search)
+    // بحث server-side باسم/منطقة المصنع — !inner بالـ select تحت يخلي هذا الفلتر يشتغل
+    if (s) query = query.or(`name.ilike.%${s}%,region.ilike.%${s}%`, { foreignTable: 'factories' })
+  }
+  return query
+}
+
+export async function getTrips(filters?: TripFilters) {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = (supabase as any)
+    .from('trips')
+    .select('*, factories!inner(name, region)')
+    .order('trip_date', { ascending: false })
+    .limit(10000)
+
+  query = applyTripFilters(query, filters)
 
   const { data, error } = await query
   if (error) throw error
-
-  // فلتر اسم المصنع (client-side لأن Supabase لا يدعم filter على join مباشرة)
-  if (filters?.search) {
-    const s = filters.search.toLowerCase()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (data ?? []).filter((t: any) =>
-      t.factories?.name?.toLowerCase().includes(s) ||
-      t.factories?.region?.toLowerCase().includes(s)
-    )
-  }
-
   return data
+}
+
+/**
+ * نفس getTrips بس مع pagination حقيقي (page/pageSize) وترتيب من السيرفر —
+ * تُستخدم بشاشة قائمة النقلات بدل تحميل قائمة مسطحة محدودة بـ limit(10000).
+ */
+export async function getTripsPage(
+  filters: TripFilters | undefined,
+  page: number,
+  pageSize: number,
+  sortField: 'trip_date' | 'coupon_number' = 'trip_date',
+  sortDir: 'asc' | 'desc' = 'desc',
+): Promise<{ data: Trip[]; count: number }> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = (supabase as any)
+    .from('trips')
+    .select('*, factories!inner(name, region)', { count: 'exact' })
+    .order(sortField, { ascending: sortDir === 'asc' })
+
+  query = applyTripFilters(query, filters)
+
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  query = query.range(from, to)
+
+  const { data, error, count } = await query
+  if (error) throw error
+  return { data: (data ?? []) as Trip[], count: count ?? 0 }
 }
 
 // ─── IMPORT ──────────────────────────────────────────────────

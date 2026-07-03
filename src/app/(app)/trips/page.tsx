@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, ChevronUp, ChevronsUpDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
-import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval, getRecentApprovedTrips } from '@/lib/api'
+import { getTrips, getTripsPage, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval, getRecentApprovedTrips } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
 import { matchPricingRule, distanceBand } from '@/lib/pricing'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -26,6 +26,8 @@ const APPROVAL_LABELS: Record<ApprovalStatus, { label: string; color: string; ic
   approved:         { label: 'معتمدة',             color: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle size={11} /> },
   rejected:         { label: 'مرفوضة',             color: 'bg-red-100 text-red-700',        icon: <AlertCircle size={11} /> },
 }
+
+const PAGE_SIZE = 50
 
 // ─── Modal تسجيل نقلة جديدة ────────────────────────────────
 function NewTripModal({ onClose, onSuccess, isAdmin }: { onClose: () => void; onSuccess: () => void; isAdmin: boolean }) {
@@ -317,6 +319,10 @@ export default function TripsPage() {
   const [sortField, setSortField] = useState<'trip_date' | 'coupon_number' | null>(null)
   const [sortDir, setSortDir]     = useState<'asc' | 'desc'>('desc')
 
+  // ── Pagination ────────────────────────────────────
+  const [page, setPage]           = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+
   // ── View modal ───────────────────────────────────
   const [viewTrip, setViewTrip] = useState<Trip | null>(null)
 
@@ -407,7 +413,7 @@ export default function TripsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getTrips({
+      const { data, count } = await getTripsPage({
         approval_status: approvalFilter !== 'all' ? approvalFilter : undefined,
         payment_status: paymentFilter !== 'all' ? paymentFilter : undefined,
         from: dateFrom || undefined,
@@ -415,13 +421,19 @@ export default function TripsPage() {
         coupon_number: couponSearch || undefined,
         search: searchText || undefined,
         unpriced: unpricedOnly || undefined,
-      })
+      }, page, PAGE_SIZE, sortField ?? 'trip_date', sortDir)
       setTrips(data || [])
+      setTotalCount(count)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
-  }, [approvalFilter, paymentFilter, dateFrom, dateTo, couponSearch, searchText, unpricedOnly])
+  }, [approvalFilter, paymentFilter, dateFrom, dateTo, couponSearch, searchText, unpricedOnly, page, sortField, sortDir])
 
   useEffect(() => { load(); loadStats() }, [load, loadStats])
+
+  // أي تغيير على الفلاتر/البحث/الترتيب يرجّع القائمة لصفحة 1
+  useEffect(() => {
+    setPage(1)
+  }, [approvalFilter, paymentFilter, dateFrom, dateTo, couponSearch, searchText, unpricedOnly, sortField, sortDir])
 
   // جلب قواعد التسعيرة مرة واحدة عند تحميل الصفحة
   useEffect(() => {
@@ -468,16 +480,7 @@ export default function TripsPage() {
     }
   }, [editForm, pricingRules, editContribPerTrip])
 
-  // ── ترتيب النقلات ─────────────────────────────────
-  const sortedTrips = useMemo(() => {
-    if (!sortField) return trips
-    return [...trips].sort((a, b) => {
-      const va = (a[sortField] ?? '')
-      const vb = (b[sortField] ?? '')
-      const cmp = va < vb ? -1 : va > vb ? 1 : 0
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-  }, [trips, sortField, sortDir])
+  // الترتيب صار من السيرفر (getTripsPage) — trips توصل مرتّبة مسبقًا
 
   function toggleSort(field: 'trip_date' | 'coupon_number') {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -607,10 +610,26 @@ export default function TripsPage() {
     finally { setApprovingAll(false) }
   }
 
-  const handleExport = () => {
-    if (trips.length === 0) { showToast('error', 'لا توجد نقلات للتصدير'); return }
+  const [exporting, setExporting] = useState(false)
+
+  // التصدير بيجيب كل النقلات المطابقة للفلاتر الحالية (مش بس الصفحة المعروضة)
+  const handleExport = async () => {
+    if (totalCount === 0) { showToast('error', 'لا توجد نقلات للتصدير'); return }
+    setExporting(true)
+    let exportRows: Trip[] = []
+    try {
+      exportRows = await getTrips({
+        approval_status: approvalFilter !== 'all' ? approvalFilter : undefined,
+        payment_status: paymentFilter !== 'all' ? paymentFilter : undefined,
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+        coupon_number: couponSearch || undefined,
+        search: searchText || undefined,
+        unpriced: unpricedOnly || undefined,
+      })
+    } catch { showToast('error', 'فشل التصدير'); setExporting(false); return }
     const headers = ['#', 'المصنع', 'المنطقة', 'نوع الربو', 'الحجم (م³)', 'سعر النقلة (₪)', 'مساهمة المصنع (₪)', 'حالة الدفع', 'حالة الاعتماد', 'تاريخ النقلة', 'رقم الكوبون', 'السائق', 'نوع المركبة', 'موقع التفريغ', 'ملاحظات']
-    const rows = trips.map((t: Trip, i: number) => [
+    const rows = exportRows.map((t: Trip, i: number) => [
       i + 1,
       t.factories?.name ?? '',
       t.factories?.region ?? '',
@@ -637,7 +656,8 @@ export default function TripsPage() {
     a.download = `نقلات_${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    showToast('success', `تم تصدير ${trips.length} نقلة`)
+    showToast('success', `تم تصدير ${exportRows.length} نقلة`)
+    setExporting(false)
   }
 
   const canEditTrip = (t: Trip) => {
@@ -649,7 +669,9 @@ export default function TripsPage() {
     return t.approval_status === 'draft' || t.approval_status === 'rejected'
   }
 
-  const totalAmount = trips.reduce((s: number, t: Trip) => s + Number(t.amount), 0)
+  // amount ثابتة 50 لكل نقلة بكل مسارات الإدخال بالنظام — نحسب على إجمالي عدد النقلات
+  // المطابقة (totalCount) مش بس الصفحة المعروضة، عشان الرقم يبقى صحيح مع الـ pagination
+  const totalAmount = totalCount * 50
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -691,7 +713,7 @@ export default function TripsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">النقلات</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{trips.length} نقلة في العرض الحالي</p>
+          <p className="text-sm text-slate-500 mt-0.5">{totalCount.toLocaleString()} نقلة مطابقة للفلاتر الحالية</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* زر رفع للاعتماد — للمدير والمشغّل فقط */}
@@ -807,7 +829,7 @@ export default function TripsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-slate-800">قائمة النقلات</h2>
-            <Button variant="ghost" size="sm" onClick={handleExport}><Download size={14} /> تصدير ({trips.length})</Button>
+            <Button variant="ghost" size="sm" onClick={handleExport} loading={exporting}><Download size={14} /> تصدير ({totalCount.toLocaleString()})</Button>
           </div>
         </CardHeader>
         <div className="overflow-x-auto">
@@ -843,7 +865,7 @@ export default function TripsPage() {
               ) : trips.length === 0 ? (
                 <tr><td colSpan={11} className="text-center py-10 text-slate-400">لا توجد نقلات بهذه الفلاتر</td></tr>
               ) : (
-                sortedTrips.map((t: Trip, i: number) => {
+                trips.map((t: Trip, i: number) => {
                   const apStatus: ApprovalStatus = t.approval_status ?? 'draft'
                   const apInfo = APPROVAL_LABELS[apStatus]
                   const editable = canEditTrip(t)
@@ -853,7 +875,7 @@ export default function TripsPage() {
                       t.trip_cost == null ? 'bg-amber-50/40' :
                       apStatus === 'rejected' ? 'bg-red-50/30' :
                       apStatus === 'pending_approval' ? 'bg-amber-50/20' : ''}`}>
-                      <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">{(page - 1) * PAGE_SIZE + i + 1}</td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-slate-800 text-sm">{t.factories?.name ?? '—'}</p>
                         <p className="text-xs text-slate-400">{t.factories?.region ?? ''}</p>
@@ -969,6 +991,32 @@ export default function TripsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* ── Pagination ── */}
+        {totalCount > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm flex-wrap gap-3">
+            <span className="text-slate-500">
+              عرض {Math.min((page - 1) * PAGE_SIZE + 1, totalCount).toLocaleString()}–{Math.min(page * PAGE_SIZE, totalCount).toLocaleString()} من {totalCount.toLocaleString()}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+              >
+                السابق
+              </button>
+              <span className="text-slate-500 px-2">صفحة {page} من {Math.max(1, Math.ceil(totalCount / PAGE_SIZE))}</span>
+              <button
+                onClick={() => setPage(p => (p * PAGE_SIZE < totalCount ? p + 1 : p))}
+                disabled={page * PAGE_SIZE >= totalCount || loading}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
+              >
+                التالي
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* ── View / Details Modal ── */}
