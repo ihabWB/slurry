@@ -17,6 +17,7 @@ import {
 } from '@/lib/api'
 import type { Disbursement } from '@/lib/supabase/database.types'
 import type { PricingRule } from '@/lib/api'
+import { matchPricingRule } from '@/lib/pricing'
 import {
   Plus, RefreshCw, Lock, Trash2, RotateCcw, AlertTriangle, CheckCircle,
   Calendar, Banknote, FileText, X, ShieldCheck, Eye,
@@ -1403,14 +1404,9 @@ export default function DisbursementsPage() {
                   </thead>
                   <tbody>
                     {filtered.map((t, i) => {
-                      const maxDist = t.distance_km <= 7 ? 7 : 9999
-                      const matchedRule = (t.waste_type && t.volume_m3 && t.distance_km && t.dump_site)
-                        ? viewPricingRules.find((r: PricingRule) =>
-                            r.waste_type === t.waste_type &&
-                            r.volume_m3 === t.volume_m3 &&
-                            r.max_distance_km === maxDist &&
-                            r.dump_site === t.dump_site)
-                        : null
+                      const matchedRule = matchPricingRule(viewPricingRules, {
+                        waste_type: t.waste_type, volume_m3: t.volume_m3, distance_km: t.distance_km, dump_site: t.dump_site,
+                      })
                       return (
                       <tr key={t.id}
                         className={`border-b border-slate-50 ${
@@ -1491,13 +1487,9 @@ export default function DisbursementsPage() {
               let unclassified = 0
               for (const t of includedTrips) {
                 if (!t.waste_type || !t.volume_m3 || !t.distance_km || !t.dump_site) { unclassified++; continue }
-                const maxDist = t.distance_km <= 7 ? 7 : 9999
-                const rule = viewPricingRules.find((r: PricingRule) =>
-                  r.waste_type === t.waste_type &&
-                  r.volume_m3 === t.volume_m3 &&
-                  r.max_distance_km === maxDist &&
-                  r.dump_site === t.dump_site
-                )
+                const rule = matchPricingRule(viewPricingRules, {
+                  waste_type: t.waste_type, volume_m3: t.volume_m3, distance_km: t.distance_km, dump_site: t.dump_site,
+                })
                 if (!rule) { unclassified++; continue }
                 const key = rule.id
                 if (!bands[key]) {

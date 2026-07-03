@@ -9,6 +9,7 @@ import {
   getTrips, getFactoriesSummary, getPayments,
   getTripsForCosts, getTripsForContributions, getSettings, getDisbursements
 } from '@/lib/api'
+import { getDumpSiteLabel } from '@/lib/pricing'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select, Input } from '@/components/ui/Input'
@@ -28,16 +29,6 @@ type AnyData = any
 
 const WASTE_LABEL: Record<string, string> = { liquid: 'سائل', solid: 'جاف' }
 const WASTE_COLORS: Record<string, string> = { liquid: '#3b82f6', solid: '#f59e0b', unknown: '#94a3b8' }
-
-/** Returns the dump site label from trip data */
-function getDumpSiteLabel(t: AnyData): string {
-  if (t.dump_site === 'central_press') return 'عصارة الربو'
-  if (t.dump_site === 'municipal_dump') {
-    const km = Number(t.distance_km ?? 0)
-    return km <= 7 ? 'خلة الشرباتي' : 'سعير'
-  }
-  return t.dump_site ?? '—'
-}
 
 type Tab = 'active_factories' | 'trips' | 'costs' | 'contributions' | 'overdue' | 'payments' | 'cashflow' | 'monthly_summary'
 

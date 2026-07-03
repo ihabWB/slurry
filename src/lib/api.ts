@@ -1,5 +1,8 @@
 import { createClient } from '@/lib/supabase/client'
 import type { Factory, FactoryInsert, FactoryUpdate, Trip, TripInsert, Payment, PaymentInsert, Disbursement } from '@/lib/supabase/database.types'
+import { matchPricingRule, computeTripPricing } from '@/lib/pricing'
+import type { PricingRule } from '@/lib/pricing'
+export type { PricingRule } from '@/lib/pricing'
 
 // ─── FACTORIES ───────────────────────────────────────────────
 
@@ -496,22 +499,15 @@ export async function editAndApproveTrip(id: string, updates: {
       (supabase as any).from('pricing_rules').select('*'),
       (supabase as any).from('settings').select('key,value').eq('key', 'factory_contribution'),
     ])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rules: any[] = rulesRes.data ?? []
-    const maxDist = dist <= 7 ? 7 : 9999
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const match = rules.find((r: any) =>
-      r.waste_type === wt &&
-      r.volume_m3 === vol &&
-      r.max_distance_km === maxDist &&
-      r.dump_site === ds
-    )
+    const rules: PricingRule[] = rulesRes.data ?? []
+    const match = matchPricingRule(rules, { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds })
     if (match) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const contrib = Number((settingsRes.data ?? []).find((s: any) => s.key === 'factory_contribution')?.value ?? 50)
-      computedCost    = match.unit_price
-      computedContrib = contrib
-      computedSubsidy = match.unit_price - contrib
+      const pricing = computeTripPricing(match, contrib)
+      computedCost    = pricing.trip_cost
+      computedContrib = pricing.factory_contribution
+      computedSubsidy = pricing.subsidy_amount
     }
   }
 
@@ -1289,16 +1285,6 @@ export async function getDashboardStats() {
 }
 
 // ─── PRICING RULES ────────────────────────────────────────────
-
-export interface PricingRule {
-  id: string
-  waste_type: 'liquid' | 'solid'
-  volume_m3: number
-  max_distance_km: number   // 7 = "≤7 كم"، 9999 = ">7 كم"
-  dump_site: 'municipal_dump' | 'central_press'
-  unit_price: number
-  label: string | null
-}
 
 export async function getPricingRules(): Promise<PricingRule[]> {
   const supabase = createClient()

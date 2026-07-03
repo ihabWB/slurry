@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, ChevronUp, ChevronsUpDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
 import { getTrips, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval, getRecentApprovedTrips } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
+import { matchPricingRule, distanceBand } from '@/lib/pricing'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select, Input } from '@/components/ui/Input'
@@ -68,11 +69,7 @@ function NewTripModal({ onClose, onSuccess, isAdmin }: { onClose: () => void; on
 
   const calcCost = (wt: string, vol: string, dist: string, ds: string) => {
     if (!wt || !vol || !dist || !ds) { setTripCost(null); return }
-    const maxDist = parseFloat(dist) <= 7 ? 7 : 9999
-    const match = pricingRules.find(r =>
-      r.waste_type === wt && r.volume_m3 === parseFloat(vol) &&
-      r.max_distance_km === maxDist && r.dump_site === ds
-    )
+    const match = matchPricingRule(pricingRules, { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds })
     setTripCost(match ? match.unit_price : null)
   }
 
@@ -458,13 +455,8 @@ export default function TripsPage() {
   const pricingPreview = useMemo(() => {
     const { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds } = editForm
     if (!wt || !vol || !dist || !ds) return null
-    const maxDist = parseFloat(dist) <= 7 ? 7 : 9999
-    const match = pricingRules.find(r =>
-      r.waste_type === wt &&
-      r.volume_m3 === parseFloat(vol) &&
-      r.max_distance_km === maxDist &&
-      r.dump_site === ds
-    )
+    const maxDist = distanceBand(parseFloat(dist))
+    const match = matchPricingRule(pricingRules, { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds })
     if (!match) return { found: false as const, wt, vol, dist, ds, maxDist }
     return {
       found: true as const,
