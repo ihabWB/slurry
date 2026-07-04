@@ -1,5 +1,6 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Plus, Search, MapPin, Phone, User, Edit2, BarChart2, Upload, FileSpreadsheet, Download, X, CheckCircle, AlertCircle } from 'lucide-react'
 import { getFactoriesWithBalance, createFactory, updateFactory, checkTagExists } from '@/lib/api'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -16,6 +17,8 @@ const emptyForm = { name: '', owner_name: '', phone: '', lat: '', lng: '', regio
 
 export default function FactoriesPage() {
   const { canEdit } = useAuth()
+  const searchParams = useSearchParams()
+  const editFromLinkHandledRef = React.useRef(false)
   const [factories, setFactories] = useState<Factory[]>([])
   const [filtered, setFiltered] = useState<Factory[]>([])
   const [search, setSearch] = useState('')
@@ -137,6 +140,18 @@ export default function FactoriesPage() {
     setTagStatus('idle'); setRegionMode('select')
     setModalOpen(true)
   }
+
+  // فتح مودال التعديل تلقائيًا لو وصلنا من رابط /factories?edit=<id> (مثلاً من صفحة تفاصيل المصنع)
+  useEffect(() => {
+    if (editFromLinkHandledRef.current || factories.length === 0) return
+    const editId = searchParams.get('edit')
+    if (!editId) return
+    const target = factories.find(f => f.id === editId)
+    if (target) {
+      openEdit(target)
+      editFromLinkHandledRef.current = true
+    }
+  }, [factories, searchParams])
 
   const handleSave = async () => {
     if (!form.name || !form.owner_name || !form.phone) {
