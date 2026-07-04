@@ -4,6 +4,69 @@ import { matchPricingRule, computeTripPricing } from '@/lib/pricing'
 import type { PricingRule } from '@/lib/pricing'
 export type { PricingRule } from '@/lib/pricing'
 
+// ─── FACTORY BALANCE / DEBT RECONCILIATION (shared) ───────────
+// نقطة مركزية وحيدة لمنطق "قديش على المصنع وقديش إله" — بدل ما كان
+// مكرر ومش متسق (ترتيب تسوية مختلف، fallback مختلف) بعدة دوال.
+
+interface TripForBalance {
+  payment_status: string
+  payment_method?: string | null
+  factory_contribution?: number | null
+}
+
+/** يقرأ سعر مساهمة المصنع الافتراضي من الإعدادات (fallback 50 لو الإعداد غير موجود) */
+export async function getFactoryContributionSetting(): Promise<number> {
+  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('settings').select('value').eq('key', 'factory_contribution').single()
+  return Number(data?.value ?? 50)
+}
+
+/** مساهمة النقلة الفعلية — قيمتها المسجّلة، أو سعر الإعدادات الافتراضي لو null */
+function tripContribution(trip: { factory_contribution?: number | null }, defaultContribution: number): number {
+  return Number(trip.factory_contribution ?? defaultContribution)
+}
+
+/** ترتيب موحّد لتسوية النقلات: الأقدم بتاريخ النقلة أولاً، ثم الأقدم إدخالاً كـ tie-breaker */
+function sortTripsForSettlement<T extends { trip_date: string; created_at: string }>(trips: T[]): T[] {
+  return [...trips].sort((a, b) => {
+    if (a.trip_date !== b.trip_date) return a.trip_date < b.trip_date ? -1 : 1
+    return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0
+  })
+}
+
+/** حساب تجميعي (بدون ترتيب/walk) لذمة ورصيد مصنع من نقلاته ومدفوعاته */
+function computeFactoryBalance(inputs: {
+  trips: TripForBalance[]
+  payments: { amount_paid: number }[]
+  defaultContribution: number
+}): { debt: number; coveredByPayments: number; totalPaid: number; creditBalance: number } {
+  const { trips, payments, defaultContribution } = inputs
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount_paid), 0)
+  const debt = trips.filter(t => t.payment_status === 'credit')
+    .reduce((s, t) => s + tripContribution(t, defaultContribution), 0)
+  const coveredByPayments = trips.filter(t => t.payment_status === 'paid' && t.payment_method === 'later')
+    .reduce((s, t) => s + tripContribution(t, defaultContribution), 0)
+  const creditBalance = Math.max(0, totalPaid - coveredByPayments - debt)
+  return { debt, coveredByPayments, totalPaid, creditBalance }
+}
+
+/** يمشي على نقلات ذمة مرتّبة (sortTripsForSettlement) ويغطيها وحدة وحدة بمبلغ متاح */
+function selectTripsToSettle<T extends { factory_contribution?: number | null }>(
+  sortedCreditTrips: T[],
+  availableAmount: number,
+  defaultContribution: number,
+): { toSettle: T[]; remaining: number } {
+  let remaining = availableAmount
+  const toSettle: T[] = []
+  for (const t of sortedCreditTrips) {
+    const contrib = tripContribution(t, defaultContribution)
+    if (remaining >= contrib) { toSettle.push(t); remaining -= contrib } else break
+  }
+  return { toSettle, remaining }
+}
+
 // ─── FACTORIES ───────────────────────────────────────────────
 
 export async function getFactories() {
@@ -20,13 +83,14 @@ export async function getFactories() {
  */
 export async function getFactoriesWithBalance(): Promise<(Factory & { debt: number; creditBalance: number })[]> {
   const supabase = createClient()
-  const [factoriesRes, tripsRes, paymentsRes] = await Promise.all([
+  const [factoriesRes, tripsRes, paymentsRes, defaultContribution] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('factories').select('*').order('name'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_id, payment_status, payment_method, factory_contribution'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('factory_id, amount_paid'),
+    getFactoryContributionSetting(),
   ])
   if (factoriesRes.error) throw factoriesRes.error
 
@@ -37,12 +101,7 @@ export async function getFactoriesWithBalance(): Promise<(Factory & { debt: numb
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payments = (paymentsRes.data as any[] ?? []).filter((p: any) => p.factory_id === f.id)
 
-    const totalPaid = payments.reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-    const debt = trips.filter((t: any) => t.payment_status === 'credit')
-      .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-    const coveredByPayments = trips.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
-      .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-    const creditBalance = Math.max(0, totalPaid - coveredByPayments - debt)
+    const { debt, creditBalance } = computeFactoryBalance({ trips, payments, defaultContribution })
 
     return { ...f, debt, creditBalance } as Factory & { debt: number; creditBalance: number }
   })
@@ -52,10 +111,11 @@ export async function getFactoriesWithBalance(): Promise<(Factory & { debt: numb
 export async function getFactoriesSummary() {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [factoriesRes, tripsRes, paymentsRes] = await Promise.all([
+  const [factoriesRes, tripsRes, paymentsRes, defaultContribution] = await Promise.all([
     (supabase as any).from('factories').select('id, name, owner_name, phone, region'),
-    (supabase as any).from('trips').select('id, factory_id, payment_status, payment_method, amount'),
+    (supabase as any).from('trips').select('id, factory_id, payment_status, payment_method, amount, factory_contribution'),
     (supabase as any).from('payments').select('factory_id, amount_paid'),
+    getFactoryContributionSetting(),
   ])
   if (factoriesRes.error) throw factoriesRes.error
   if (tripsRes.error) throw tripsRes.error
@@ -71,10 +131,11 @@ export async function getFactoriesSummary() {
     const cashTrips = trips.filter((t: any) => t.payment_method === 'cash').length
     const laterTrips = trips.filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').length
     const creditTrips = trips.filter((t: any) => t.payment_status === 'credit').length
+    // amount ثابتة 50 بكل مسارات الإدخال — مفهوم منفصل عن factory_contribution المتغيّرة
     const totalAmount = totalTrips * 50
     const paymentsTotal = payments.reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
     const totalPaid = cashTrips * 50 + paymentsTotal
-    const balance = creditTrips * 50
+    const { debt: balance } = computeFactoryBalance({ trips, payments, defaultContribution })
     return { ...f, totalTrips, cashTrips, laterTrips, creditTrips, totalAmount, totalPaid, balance }
   })
 }
@@ -834,9 +895,9 @@ export async function createPayment(payment: PaymentInsert) {
   const { data, error } = await (supabase as any).from('payments').insert(payment).select().single()
   if (error) throw error
 
-  // غطّ نقلات الذمة الأقدم أولاً بالمبلغ المدفوع، نقلة نقلة (كل نقلة = 50₪)
+  // غطّ نقلات الذمة الأقدم أولاً بالمبلغ المدفوع، نقلة نقلة
   if (payment.factory_id && payment.amount_paid) {
-    let remaining = Number(payment.amount_paid)
+    const defaultContribution = await getFactoryContributionSetting()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: creditTrips } = await (supabase as any)
@@ -847,26 +908,18 @@ export async function createPayment(payment: PaymentInsert) {
       .order('trip_date', { ascending: true })
       .order('created_at', { ascending: true })
 
-    const idsToSettle: string[] = []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const trip of (creditTrips ?? []) as any[]) {
-      const contrib = Number(trip.factory_contribution ?? 50)
-      if (remaining >= contrib) {
-        idsToSettle.push(trip.id)
-        remaining -= contrib
-      } else {
-        break
-      }
-    }
+    const { toSettle } = selectTripsToSettle<{ id: string; factory_contribution: number | null }>(
+      creditTrips ?? [], Number(payment.amount_paid), defaultContribution
+    )
 
-    if (idsToSettle.length > 0) {
+    if (toSettle.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any)
         .from('trips')
         .update({ payment_status: 'paid', payment_method: 'later' })
-        .in('id', idsToSettle)
+        .in('id', toSettle.map(t => t.id))
     }
-    // الـ remaining (الرصيد الدائن) يبقى محفوظاً في factories.balance كقيمة سالبة
+    // الـ remaining (الرصيد الدائن) يُحسب لاحقًا من النقلات والمدفوعات مباشرةً —
     // سيُستخدم تلقائياً لتغطية النقلات القادمة عبر applyFactoryCreditToNewTrip
   }
 
@@ -885,7 +938,7 @@ export async function previewPayment(factoryId: string, amountPaid: number): Pro
 }> {
   const supabase = createClient()
 
-  const [allTripsRes, paymentsRes] = await Promise.all([
+  const [allTripsRes, paymentsRes, defaultContribution] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('trips').select('id, factory_contribution, payment_status, payment_method')
@@ -893,45 +946,26 @@ export async function previewPayment(factoryId: string, amountPaid: number): Pro
       .order('trip_date', { ascending: true }).order('created_at', { ascending: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('amount_paid').eq('factory_id', factoryId),
+    getFactoryContributionSetting(),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allTrips = (allTripsRes.data ?? []) as any[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalPaidBefore = (paymentsRes.data ?? []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-
-  // ما سبق تغطيته من مدفوعات سابقة
-  const coveredByPayments = allTrips
-    .filter(t => t.payment_status === 'paid' && t.payment_method === 'later')
-    .reduce((s: number, t) => s + Number(t.factory_contribution ?? 50), 0)
-
-  // الذمم الحالية (نقلات غير مسواة)
-  const currentDebt = allTrips
-    .filter(t => t.payment_status === 'credit')
-    .reduce((s: number, t) => s + Number(t.factory_contribution ?? 50), 0)
 
   // الرصيد الدائن الموجود قبل هذه الدفعة
-  const existingCredit = Math.max(0, totalPaidBefore - coveredByPayments - currentDebt)
+  const { creditBalance: existingCredit } = computeFactoryBalance({
+    trips: allTrips,
+    payments: paymentsRes.data ?? [],
+    defaultContribution,
+  })
 
-  // نقلات الذمة مرتبة لتغطيتها
+  // نقلات الذمة مرتبة لتغطيتها (مرتبة أصلاً من الاستعلام أعلاه: trip_date ثم created_at)
   const creditTrips = allTrips.filter(t => t.payment_status === 'credit')
-
-  let remaining = amountPaid + existingCredit
-  let tripsCount = 0
-  let totalCovered = 0
-
-  for (const trip of creditTrips) {
-    const contrib = Number(trip.factory_contribution ?? 50)
-    if (remaining >= contrib) {
-      tripsCount++
-      totalCovered += contrib
-      remaining -= contrib
-    } else break
-  }
+  const { toSettle, remaining } = selectTripsToSettle(creditTrips, amountPaid + existingCredit, defaultContribution)
 
   return {
-    tripsCount,
-    totalCovered,
+    tripsCount: toSettle.length,
+    totalCovered: toSettle.reduce((s, t) => s + tripContribution(t, defaultContribution), 0),
     remainingCredit: remaining,
     existingCredit,
   }
@@ -944,38 +978,26 @@ export async function previewPayment(factoryId: string, amountPaid: number): Pro
 export async function applyFactoryCreditToNewTrip(tripId: string, factoryId: string): Promise<boolean> {
   const supabase = createClient()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: trip } = await (supabase as any)
-    .from('trips')
-    .select('factory_contribution')
-    .eq('id', tripId)
-    .single()
-
-  const contrib = Number(trip?.factory_contribution ?? 50)
-
-  // نحسب الرصيد الدائن الحقيقي من النقلات والمدفوعات مباشرةً (لا نعتمد على factories.balance)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: allTrips } = await (supabase as any)
-    .from('trips').select('factory_contribution, payment_status, payment_method')
-    .eq('factory_id', factoryId)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: payments } = await (supabase as any)
-    .from('payments').select('amount_paid').eq('factory_id', factoryId)
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalPaid = (payments ?? []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const coveredByPayments = (allTrips ?? []).filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
+  const [tripRes, otherTripsRes, paymentsRes, defaultContribution] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const currentDebt = (allTrips ?? []).filter((t: any) => t.payment_status === 'credit')
+    (supabase as any).from('trips').select('factory_contribution').eq('id', tripId).single(),
+    // نحسب الرصيد الدائن الحقيقي من باقي نقلات المصنع (باستثناء هذي النقلة) والمدفوعات مباشرةً
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .reduce((s: number, t: any) => s + Number(t.factory_contribution ?? 50), 0)
+    (supabase as any).from('trips').select('factory_contribution, payment_status, payment_method')
+      .eq('factory_id', factoryId).neq('id', tripId),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('payments').select('amount_paid').eq('factory_id', factoryId),
+    getFactoryContributionSetting(),
+  ])
 
-  // الرصيد الدائن قبل هذه النقلة = totalPaid - coveredByPayments - (currentDebt - contrib)
-  // (نطرح contrib لأن النقلة الجديدة مُدرجة ضمن currentDebt)
-  const creditBeforeThisTrip = totalPaid - coveredByPayments - (currentDebt - contrib)
+  const contrib = tripContribution(tripRes.data ?? {}, defaultContribution)
+
+  // الرصيد الدائن قبل هذه النقلة (محسوب من باقي النقلات فقط، بدون هذي النقلة الجديدة)
+  const { creditBalance: creditBeforeThisTrip } = computeFactoryBalance({
+    trips: otherTripsRes.data ?? [],
+    payments: paymentsRes.data ?? [],
+    defaultContribution,
+  })
 
   if (creditBeforeThisTrip >= contrib) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1010,7 +1032,10 @@ export async function syncTripPaymentStatus() {
   const supabase = createClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: factories, error: fErr } = await (supabase as any).from('factories').select('id')
+  const [{ data: factories, error: fErr }, defaultContribution] = await Promise.all([
+    (supabase as any).from('factories').select('id'),
+    getFactoryContributionSetting(),
+  ])
   if (fErr) throw fErr
 
   let totalUpdated = 0
@@ -1020,52 +1045,51 @@ export async function syncTripPaymentStatus() {
 
     const [tripsRes, paymentsRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from('trips').select('id, payment_status, payment_method').eq('factory_id', fid).order('created_at', { ascending: true }),
+      (supabase as any).from('trips')
+        .select('id, payment_status, payment_method, factory_contribution, trip_date, created_at')
+        .eq('factory_id', fid),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('payments').select('amount_paid').eq('factory_id', fid),
     ])
 
-    const trips = tripsRes.data || []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const trips = (tripsRes.data || []) as any[]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const totalPaidViaPayments = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
+    const laterTrips = trips.filter(t => t.payment_status === 'paid' && t.payment_method === 'later')
 
     // If no payments at all for this factory, revert any wrongly-synced trips back to credit
     if (totalPaidViaPayments === 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const wronglyPaid = (trips as any[]).filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later')
-      if (wronglyPaid.length > 0) {
+      if (laterTrips.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('trips').update({ payment_status: 'credit', payment_method: null }).in('id', wronglyPaid.map((t: any) => t.id))
+        await (supabase as any).from('trips').update({ payment_status: 'credit', payment_method: null }).in('id', laterTrips.map((t: any) => t.id))
       }
       continue
     }
 
-    // How many trips (paid via 'later') are already marked as covered by payments?
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const alreadyCoveredByPayments = (trips as any[]).filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').length
-
-    // How many more trips can the remaining payment amount cover?
-    const alreadyCoveredAmount = alreadyCoveredByPayments * 50
+    // كم غطّت المدفوعات فعليًا من النقلات المعلّمة "مدفوعة لاحقًا" حاليًا؟
+    const alreadyCoveredAmount = laterTrips.reduce((s, t) => s + tripContribution(t, defaultContribution), 0)
     const remainingPaymentAmount = totalPaidViaPayments - alreadyCoveredAmount
-    const additionalTripsCoverable = Math.floor(remainingPaymentAmount / 50)
 
-    if (additionalTripsCoverable > 0) {
-      // Get oldest credit trips not yet covered
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const creditTrips = (trips as any[]).filter((t: any) => t.payment_status === 'credit')
-      const toMarkPaid = creditTrips.slice(0, additionalTripsCoverable)
-
-      if (toMarkPaid.length > 0) {
+    if (remainingPaymentAmount > 0) {
+      // غطّ نقلات ذمة إضافية (الأقدم بتاريخ النقلة أولاً) بالمبلغ المتبقي
+      const creditTrips = sortTripsForSettlement(trips.filter(t => t.payment_status === 'credit'))
+      const { toSettle } = selectTripsToSettle(creditTrips, remainingPaymentAmount, defaultContribution)
+      if (toSettle.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('trips').update({ payment_status: 'paid', payment_method: 'later' }).in('id', toMarkPaid.map((t: any) => t.id))
-        totalUpdated += toMarkPaid.length
+        await (supabase as any).from('trips').update({ payment_status: 'paid', payment_method: 'later' }).in('id', toSettle.map((t: any) => t.id))
+        totalUpdated += toSettle.length
       }
     } else if (remainingPaymentAmount < 0) {
-      // Payments were deleted — revert excess 'later' trips back to credit
-      const excessCount = Math.ceil(Math.abs(remainingPaymentAmount) / 50)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const laterTrips = (trips as any[]).filter((t: any) => t.payment_status === 'paid' && t.payment_method === 'later').reverse()
-      const toRevert = laterTrips.slice(0, excessCount)
+      // المدفوعات تناقصت (مثلاً حُذفت دفعة) — نتراجع عن أحدث النقلات المسوّاة لحد ما نطابق المبلغ الفعلي
+      const mostRecentFirst = [...sortTripsForSettlement(laterTrips)].reverse()
+      let toRevertAmount = Math.abs(remainingPaymentAmount)
+      const toRevert: typeof laterTrips = []
+      for (const t of mostRecentFirst) {
+        if (toRevertAmount <= 0) break
+        toRevert.push(t)
+        toRevertAmount -= tripContribution(t, defaultContribution)
+      }
       if (toRevert.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any).from('trips').update({ payment_status: 'credit', payment_method: null }).in('id', toRevert.map((t: any) => t.id))
@@ -1080,41 +1104,32 @@ export async function syncTripPaymentStatus() {
 
 export async function getFactoryStatement(factory_id: string) {
   const supabase = createClient()
-  const [tripsRes, paymentsRes] = await Promise.all([
+  const [tripsRes, paymentsRes, defaultContribution] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('*').eq('factory_id', factory_id).order('created_at'),
+    (supabase as any).from('trips').select('*').eq('factory_id', factory_id),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('payments').select('*').eq('factory_id', factory_id).order('date'),
+    getFactoryContributionSetting(),
   ])
   if (tripsRes.error) throw tripsRes.error
   if (paymentsRes.error) throw paymentsRes.error
 
-  const totalTrips = tripsRes.data?.length ?? 0
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const trips = sortTripsForSettlement<any>(tripsRes.data ?? [])
+  const totalTrips = trips.length
+  // amount ثابتة 50 بكل مسارات الإدخال — مفهوم منفصل عن factory_contribution المتغيّرة
   const totalAmount = totalTrips * 50
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const totalPaid = (paymentsRes.data || []).reduce((s: number, p: any) => s + Number(p.amount_paid), 0)
 
-  // الذمة الحقيقية = نقلات غير مسواة (credit)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const debt = (tripsRes.data || []).reduce((sum: number, t: any) => {
-    if (t.payment_status === 'credit') return sum + Number(t.factory_contribution ?? 50)
-    return sum
-  }, 0)
-
-  // ما غُطِّي فعلاً من مدفوعات (paid/later)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const coveredByPayments = (tripsRes.data || []).reduce((sum: number, t: any) => {
-    if (t.payment_status === 'paid' && t.payment_method === 'later') return sum + Number(t.factory_contribution ?? 50)
-    return sum
-  }, 0)
-
-  // الرصيد الدائن = totalPaid - coveredByPayments - debt (لا يعتمد على factories.balance)
-  const creditBalance = Math.max(0, totalPaid - coveredByPayments - debt)
+  const { debt, totalPaid, creditBalance } = computeFactoryBalance({
+    trips,
+    payments: paymentsRes.data ?? [],
+    defaultContribution,
+  })
 
   // balance للتوافق مع الكود القديم
   const balance = debt > 0 ? debt : -creditBalance
 
-  return { trips: tripsRes.data, payments: paymentsRes.data, totalTrips, totalAmount, totalPaid, balance, debt, creditBalance }
+  return { trips, payments: paymentsRes.data, totalTrips, totalAmount, totalPaid, balance, debt, creditBalance }
 }
 
 // ─── DASHBOARD STATS ─────────────────────────────────────────
