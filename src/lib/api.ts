@@ -572,6 +572,7 @@ export async function editAndApproveTrip(id: string, updates: {
   subsidy_amount?: number | null
   coupon_number?: string | null
   driver_name?: string | null
+  vehicle_type?: 'tank' | 'truck' | null
   distance_km?: number | null
   dump_site?: string | null
   transfer_zone?: string | null

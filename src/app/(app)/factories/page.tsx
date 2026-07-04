@@ -15,12 +15,14 @@ import * as XLSX from 'xlsx'
 
 const emptyForm = { name: '', owner_name: '', phone: '', lat: '', lng: '', region: '', tag_number: '', waste_type: '' }
 
+type FactoryWithBalance = Factory & { debt: number; creditBalance: number }
+
 export default function FactoriesPage() {
   const { canEdit } = useAuth()
   const searchParams = useSearchParams()
   const editFromLinkHandledRef = React.useRef(false)
-  const [factories, setFactories] = useState<Factory[]>([])
-  const [filtered, setFiltered] = useState<Factory[]>([])
+  const [factories, setFactories] = useState<FactoryWithBalance[]>([])
+  const [filtered, setFiltered] = useState<FactoryWithBalance[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
