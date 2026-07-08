@@ -9,7 +9,7 @@ import {
   getTrips, getFactoriesSummary, getPayments,
   getTripsForCosts, getTripsForContributions, getSettings, getDisbursements
 } from '@/lib/api'
-import { getDumpSiteLabel } from '@/lib/pricing'
+import { getDumpSiteLabel, distanceBandLabel } from '@/lib/pricing'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select, Input } from '@/components/ui/Input'
@@ -248,6 +248,7 @@ export default function ReportsPage() {
       'نوع الربو': t.waste_type ? WASTE_LABEL[t.waste_type] : 'غير محدد',
       'الحجم (م³)': t.volume_m3 ?? '', 'تكلفة النقلة (₪)': t.trip_cost ?? '', 'المبلغ (₪)': t.amount,
       'حالة الدفع': t.payment_status === 'paid' ? 'مدفوع' : 'ذمة',
+      'المسافة': distanceBandLabel(t.distance_km),
       'وجهة النقل': getDumpSiteLabel(t),
       'تاريخ النقلة': t.trip_date ?? '', 'ملاحظات': t.notes ?? '',
     }))

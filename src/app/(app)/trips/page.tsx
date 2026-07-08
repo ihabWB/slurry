@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { Plus, Filter, Download, Pencil, Trash2, Upload, X, Truck, RefreshCw, CheckCircle, Clock, AlertCircle, FileText, ChevronDown, ChevronUp, ChevronsUpDown, Search, SendHorizonal, ThumbsUp, ThumbsDown, Eye, RotateCcw } from 'lucide-react'
 import { getTrips, getTripsPage, updateTrip, deleteTrip, createTrip, checkCouponExists, getPricingRules, getSettings, getFactories, submitAllDraftTrips, submitTrip, approveTrip, rejectTrip, approveAllPendingTrips, editAndApproveTrip, getTripApprovalStats, revokeApproval, getRecentApprovedTrips } from '@/lib/api'
 import type { PricingRule } from '@/lib/api'
-import { matchPricingRule, distanceBand } from '@/lib/pricing'
+import { matchPricingRule, distanceBand, distanceBandLabel } from '@/lib/pricing'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select, Input } from '@/components/ui/Input'
@@ -628,7 +628,7 @@ export default function TripsPage() {
         unpriced: unpricedOnly || undefined,
       })
     } catch { showToast('error', 'فشل التصدير'); setExporting(false); return }
-    const headers = ['#', 'المصنع', 'المنطقة', 'نوع الربو', 'الحجم (م³)', 'سعر النقلة (₪)', 'مساهمة المصنع (₪)', 'حالة الدفع', 'حالة الاعتماد', 'تاريخ النقلة', 'رقم الكوبون', 'السائق', 'نوع المركبة', 'موقع التفريغ', 'ملاحظات']
+    const headers = ['#', 'المصنع', 'المنطقة', 'نوع الربو', 'الحجم (م³)', 'سعر النقلة (₪)', 'مساهمة المصنع (₪)', 'حالة الدفع', 'حالة الاعتماد', 'تاريخ النقلة', 'رقم الكوبون', 'السائق', 'نوع المركبة', 'المسافة', 'موقع التفريغ', 'ملاحظات']
     const rows = exportRows.map((t: Trip, i: number) => [
       i + 1,
       t.factories?.name ?? '',
@@ -643,6 +643,7 @@ export default function TripsPage() {
       t.coupon_number ?? '',
       t.driver_name ?? '',
       t.vehicle_type ?? '',
+      distanceBandLabel(t.distance_km),
       t.dump_site ?? '',
       t.notes ?? '',
     ])
@@ -1050,7 +1051,7 @@ export default function TripsPage() {
                       جميع الحقول موجودة لكن لا توجد قاعدة تسعيرة تطابق:
                       <span className="font-bold"> {viewTrip.waste_type === 'liquid' ? 'سائل' : 'جاف'}</span> ·
                       <span className="font-bold"> {viewTrip.volume_m3} م³</span> ·
-                      <span className="font-bold"> {Number(viewTrip.distance_km) <= 7 ? '≤7 كم' : '>7 كم'}</span> ·
+                      <span className="font-bold"> {distanceBandLabel(viewTrip.distance_km)}</span> ·
                       <span className="font-bold"> {viewTrip.dump_site === 'central_press' ? 'مكبس مركزي' : 'مكب بلدي'}</span>
                     </p>
                   )}

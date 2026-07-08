@@ -13,6 +13,13 @@ export function distanceBand(distanceKm: number): 7 | 9999 {
   return distanceKm <= 7 ? 7 : 9999
 }
 
+/** تسمية نطاق المسافة للعرض/التصدير: "≤7 كم" أو ">7 كم"، و"—" إذا المسافة مفقودة */
+export function distanceBandLabel(distanceKm: number | string | null | undefined): string {
+  const km = typeof distanceKm === 'string' ? parseFloat(distanceKm) : distanceKm
+  if (km == null || Number.isNaN(km)) return '—'
+  return distanceBand(km) === 7 ? '≤7 كم' : '>7 كم'
+}
+
 export interface PricingMatchInput {
   waste_type: string | null | undefined
   volume_m3: number | string | null | undefined
