@@ -463,6 +463,34 @@ export async function createTrip(trip: TripInsert) {
   return data as Trip
 }
 
+/**
+ * يعيد حساب trip_cost/factory_contribution/subsidy_amount من قواعد التسعير الحالية
+ * لو توفرت الحقول الأربعة المؤثرة (نوع الربو/الحجم/المسافة/المكب) ولقيت قاعدة مطابقة.
+ * ترجع null لو الحقول ناقصة أو ما في قاعدة مطابقة — الطرف المستدعي يقرر وقتها شو يعمل.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function recomputeTripPricing(supabase: any, fields: {
+  waste_type?: string | null
+  volume_m3?: number | null
+  distance_km?: number | null
+  dump_site?: string | null
+}): Promise<{ trip_cost: number; factory_contribution: number; subsidy_amount: number } | null> {
+  const { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds } = fields
+  if (!wt || vol == null || dist == null || !ds) return null
+
+  const [rulesRes, settingsRes] = await Promise.all([
+    supabase.from('pricing_rules').select('*'),
+    supabase.from('settings').select('key,value').eq('key', 'factory_contribution'),
+  ])
+  const rules: PricingRule[] = rulesRes.data ?? []
+  const match = matchPricingRule(rules, { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds })
+  if (!match) return null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contrib = Number((settingsRes.data ?? []).find((s: any) => s.key === 'factory_contribution')?.value ?? 50)
+  return computeTripPricing(match, contrib)
+}
+
 export async function updateTrip(id: string, updates: {
   volume_m3?: number | null
   waste_type?: 'liquid' | 'solid' | null
@@ -477,8 +505,27 @@ export async function updateTrip(id: string, updates: {
   coupon_number?: string | null
 }) {
   const supabase = createClient()
+
+  // إعادة حساب التسعيرة تلقائياً لو الحقول المؤثرة تغيّرت ولقيت قاعدة مطابقة —
+  // بدون هذا كانت trip_cost تضل بالقيمة القديمة حتى لو المسافة/المكب/الحجم/نوع الربو تغيّروا
+  const recomputed = await recomputeTripPricing(supabase, {
+    waste_type: updates.waste_type, volume_m3: updates.volume_m3, distance_km: updates.distance_km, dump_site: updates.dump_site,
+  })
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).from('trips').update(updates).eq('id', id).select().single()
+  const { data, error } = await (supabase as any)
+    .from('trips')
+    .update({
+      ...updates,
+      ...(recomputed ? {
+        trip_cost:            recomputed.trip_cost,
+        factory_contribution: recomputed.factory_contribution,
+        subsidy_amount:       recomputed.subsidy_amount,
+      } : {}),
+    })
+    .eq('id', id)
+    .select()
+    .single()
   if (error) throw error
   return data as Trip
 }
@@ -582,33 +629,12 @@ export async function editAndApproveTrip(id: string, updates: {
   const { data: { user } } = await supabase.auth.getUser()
 
   // ── إعادة حساب التسعيرة تلقائياً إذا توفرت البيانات ──────────
-  let computedCost: number | null = updates.trip_cost ?? null
-  let computedContrib: number | null = updates.factory_contribution ?? null
-  let computedSubsidy: number | null = updates.subsidy_amount ?? null
-
-  const wt   = updates.waste_type
-  const vol  = updates.volume_m3
-  const dist = updates.distance_km
-  const ds   = updates.dump_site
-
-  if (wt && vol != null && dist != null && ds) {
-    // جلب قواعد التسعيرة وإعداد الإعدادات
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [rulesRes, settingsRes] = await Promise.all([
-      (supabase as any).from('pricing_rules').select('*'),
-      (supabase as any).from('settings').select('key,value').eq('key', 'factory_contribution'),
-    ])
-    const rules: PricingRule[] = rulesRes.data ?? []
-    const match = matchPricingRule(rules, { waste_type: wt, volume_m3: vol, distance_km: dist, dump_site: ds })
-    if (match) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const contrib = Number((settingsRes.data ?? []).find((s: any) => s.key === 'factory_contribution')?.value ?? 50)
-      const pricing = computeTripPricing(match, contrib)
-      computedCost    = pricing.trip_cost
-      computedContrib = pricing.factory_contribution
-      computedSubsidy = pricing.subsidy_amount
-    }
-  }
+  const recomputed = await recomputeTripPricing(supabase, {
+    waste_type: updates.waste_type, volume_m3: updates.volume_m3, distance_km: updates.distance_km, dump_site: updates.dump_site,
+  })
+  const computedCost:    number | null = recomputed?.trip_cost            ?? (updates.trip_cost            ?? null)
+  const computedContrib: number | null = recomputed?.factory_contribution ?? (updates.factory_contribution ?? null)
+  const computedSubsidy: number | null = recomputed?.subsidy_amount       ?? (updates.subsidy_amount       ?? null)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
