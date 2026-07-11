@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   FileText, FileSpreadsheet, Filter, BarChart2, Droplets, Package,
   Building2, AlertTriangle, DollarSign, TrendingUp, TrendingDown, Truck, Users,
-  MapPin, Coins, Activity
+  MapPin, Coins, Activity, Banknote
 } from 'lucide-react'
 import {
   getTrips, getFactoriesSummary, getPayments,
@@ -30,7 +30,15 @@ type AnyData = any
 const WASTE_LABEL: Record<string, string> = { liquid: 'سائل', solid: 'جاف' }
 const WASTE_COLORS: Record<string, string> = { liquid: '#3b82f6', solid: '#f59e0b', unknown: '#94a3b8' }
 
-type Tab = 'active_factories' | 'trips' | 'costs' | 'contributions' | 'overdue' | 'payments' | 'cashflow' | 'monthly_summary'
+type Tab = 'active_factories' | 'trips' | 'costs' | 'contributions' | 'overdue' | 'payments' | 'financial_claims' | 'cashflow' | 'monthly_summary'
+
+// حالات المطالبة المالية — نفس التسميات والألوان المعتمدة بصفحة المطالبات (disbursements)
+const CLAIM_STATUS_META: Record<string, { label: string; cls: string }> = {
+  draft:    { label: 'مسودة',            cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  pending:  { label: 'بانتظار الاعتماد', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  closed:   { label: 'مُعتمدة ومقفلة',   cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  returned: { label: 'مُرجعة للتعديل',   cls: 'bg-red-50 text-red-700 border-red-200' },
+}
 
 // Quick month buttons helper
 function getMonthRange(monthsAgo: number): { from: string; to: string } {
@@ -452,6 +460,55 @@ export default function ReportsPage() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'الدفعات')
     XLSX.writeFile(wb, `payments-${payFrom}-to-${payTo}.xlsx`)
+  }
+
+  // ── Tab: المطالبات المالية ──
+  const [claimsData, setClaimsData] = useState<AnyData[]>([])
+  const [claimsLoading, setClaimsLoading] = useState(false)
+  const [claimsLoaded, setClaimsLoaded] = useState(false)
+  const [claimsStatusFilter, setClaimsStatusFilter] = useState<'all' | 'draft' | 'pending' | 'closed' | 'returned'>('all')
+
+  // تحميل تلقائي عند أول فتح للتبويب — البيانات صغيرة (عدد مطالبات محدود)
+  useEffect(() => {
+    if (activeTab !== 'financial_claims' || claimsLoaded || claimsLoading) return
+    setClaimsLoading(true)
+    getDisbursements()
+      .then(d => { setClaimsData(d ?? []); setClaimsLoaded(true) })
+      .catch(console.error)
+      .finally(() => setClaimsLoading(false))
+  }, [activeTab, claimsLoaded, claimsLoading])
+
+  const filteredClaims = useMemo(() =>
+    claimsStatusFilter === 'all' ? claimsData : claimsData.filter((d: AnyData) => d.status === claimsStatusFilter),
+    [claimsData, claimsStatusFilter])
+
+  const claimsTotals = useMemo(() => ({
+    trips:        filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.trips_count ?? 0), 0),
+    cost:         filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.total_trips_cost ?? 0), 0),
+    factoryShare: filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.total_factory_share ?? 0), 0),
+    municipality: filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.municipality_amount ?? 0), 0),
+    retention:    filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.retention_amount ?? 0), 0),
+    net:          filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.net_payment ?? 0), 0),
+  }), [filteredClaims])
+
+  const exportClaimsExcel = () => {
+    const rows = filteredClaims.map((d: AnyData, i: number) => ({
+      '#': i + 1,
+      'الفترة من': d.period_from, 'الفترة إلى': d.period_to,
+      'الحالة': CLAIM_STATUS_META[d.status]?.label ?? d.status,
+      'عدد النقلات': Number(d.trips_count ?? 0),
+      'إجمالي التكلفة (₪)': Number(d.total_trips_cost ?? 0),
+      'إيرادات المصانع (₪)': Number(d.total_factory_share ?? 0),
+      'نسبة البلدية %': Number(d.municipality_pct ?? 0),
+      'مبلغ البلدية (₪)': Number(d.municipality_amount ?? 0),
+      'نسبة الحجز %': Number(d.retention_pct ?? 0),
+      'مبلغ الحجز (₪)': Number(d.retention_amount ?? 0),
+      'صافي الدفعة (₪)': Number(d.net_payment ?? 0),
+      'ملاحظات': d.notes ?? '',
+    }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'المطالبات المالية')
+    XLSX.writeFile(wb, `claims-${today}.xlsx`)
   }
 
   // ── Tab 7: التدفق النقدي ──
@@ -1950,6 +2007,7 @@ export default function ReportsPage() {
     { id: 'contributions', label: 'المساهمات', icon: <Coins size={15} /> },
     { id: 'overdue', label: 'الذمم', icon: <AlertTriangle size={15} /> },
     { id: 'payments', label: 'الدفعات', icon: <DollarSign size={15} /> },
+    { id: 'financial_claims', label: 'المطالبات المالية', icon: <Banknote size={15} /> },
     { id: 'cashflow', label: 'التدفق النقدي', icon: <Activity size={15} /> },
     { id: 'monthly_summary', label: 'الملخص الشهري', icon: <BarChart2 size={15} /> },
   ]
@@ -2755,6 +2813,120 @@ export default function ReportsPage() {
                         </tr>
                       ))}
                     </tbody>
+                  </table>
+                </div>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══ TAB: المطالبات المالية ══ */}
+      {activeTab === 'financial_claims' && (
+        <div className="space-y-5">
+          {claimsLoading ? (
+            <Card><CardBody className="text-center py-10 text-slate-400">جاري تحميل المطالبات...</CardBody></Card>
+          ) : (
+            <>
+              {/* فلتر الحالة */}
+              <div className="flex flex-wrap gap-2">
+                {([['all', 'الكل'], ['draft', 'مسودة'], ['pending', 'بانتظار الاعتماد'], ['closed', 'مُعتمدة ومقفلة'], ['returned', 'مُرجعة للتعديل']] as const).map(([val, lbl]) => (
+                  <button key={val} onClick={() => setClaimsStatusFilter(val)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${claimsStatusFilter === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              {/* بطاقات ملخص */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <Card className="border-slate-100"><CardBody className="text-center py-4">
+                  <p className="text-2xl font-bold text-slate-700">{filteredClaims.length}</p>
+                  <p className="text-xs text-slate-500 mt-1">عدد المطالبات</p>
+                </CardBody></Card>
+                <Card className="border-red-100"><CardBody className="text-center py-4">
+                  <p className="text-2xl font-bold text-red-600">{claimsTotals.cost.toLocaleString()} ₪</p>
+                  <p className="text-xs text-slate-500 mt-1">إجمالي التكلفة</p>
+                </CardBody></Card>
+                <Card className="border-blue-100"><CardBody className="text-center py-4">
+                  <p className="text-2xl font-bold text-blue-600">{claimsTotals.municipality.toLocaleString()} ₪</p>
+                  <p className="text-xs text-slate-500 mt-1">إجمالي البلدية</p>
+                </CardBody></Card>
+                <Card className="border-amber-100"><CardBody className="text-center py-4">
+                  <p className="text-2xl font-bold text-amber-600">{claimsTotals.retention.toLocaleString()} ₪</p>
+                  <p className="text-xs text-slate-500 mt-1">إجمالي المحجوز</p>
+                </CardBody></Card>
+                <Card className="border-emerald-100"><CardBody className="text-center py-4">
+                  <p className="text-2xl font-bold text-emerald-600">{claimsTotals.net.toLocaleString()} ₪</p>
+                  <p className="text-xs text-slate-500 mt-1">صافي المصروف</p>
+                </CardBody></Card>
+              </div>
+
+              <div className="flex justify-end">
+                <Button variant="success" size="sm" onClick={exportClaimsExcel}><FileSpreadsheet size={14} /> تصدير Excel</Button>
+              </div>
+
+              {/* جدول المطالبات */}
+              <Card>
+                <CardHeader><h2 className="font-semibold text-slate-800 text-sm">تفاصيل المطالبات المالية</h2></CardHeader>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">#</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">الفترة</th>
+                        <th className="text-center px-4 py-3 text-xs text-slate-500 font-semibold">الحالة</th>
+                        <th className="text-center px-4 py-3 text-xs text-blue-600 font-semibold">عدد النقلات</th>
+                        <th className="text-center px-4 py-3 text-xs text-red-600 font-semibold">إجمالي التكلفة</th>
+                        <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">إيرادات المصانع</th>
+                        <th className="text-center px-4 py-3 text-xs text-blue-600 font-semibold">بلدية</th>
+                        <th className="text-center px-4 py-3 text-xs text-amber-600 font-semibold">حجز</th>
+                        <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">صافي الدفعة</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">ملاحظات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredClaims.length === 0 ? (
+                        <tr><td colSpan={10} className="text-center py-10 text-slate-400">لا توجد مطالبات {claimsStatusFilter !== 'all' ? 'بهذه الحالة' : ''}</td></tr>
+                      ) : filteredClaims.map((d: AnyData, i: number) => (
+                        <tr key={d.id} className={`border-b border-slate-50 hover:bg-slate-50 ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
+                          <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                          <td className="px-4 py-3 text-slate-700 text-xs font-medium whitespace-nowrap">
+                            {d.period_from ? format(new Date(d.period_from), 'dd/MM/yyyy') : '—'} ← {d.period_to ? format(new Date(d.period_to), 'dd/MM/yyyy') : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${CLAIM_STATUS_META[d.status]?.cls ?? 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                              {CLAIM_STATUS_META[d.status]?.label ?? d.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-blue-600">{Number(d.trips_count ?? 0).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-center font-bold text-red-600">{Number(d.total_trips_cost ?? 0).toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-violet-600">{Number(d.total_factory_share ?? 0).toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-blue-600 whitespace-nowrap">
+                            +{Number(d.municipality_amount ?? 0).toLocaleString()} ₪ <span className="text-[10px] text-slate-400">({Number(d.municipality_pct ?? 0)}%)</span>
+                          </td>
+                          <td className="px-4 py-3 text-center text-amber-600 whitespace-nowrap">
+                            −{Number(d.retention_amount ?? 0).toLocaleString()} ₪ <span className="text-[10px] text-slate-400">({Number(d.retention_pct ?? 0)}%)</span>
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-emerald-700">{Number(d.net_payment ?? 0).toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-slate-400 text-xs max-w-[160px] truncate" title={d.notes ?? ''}>{d.notes ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {filteredClaims.length > 0 && (
+                      <tfoot>
+                        <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                          <td className="px-4 py-3 text-slate-700" colSpan={3}>الإجمالي</td>
+                          <td className="px-4 py-3 text-center text-blue-600">{claimsTotals.trips.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-center text-red-600">{claimsTotals.cost.toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-violet-600">{claimsTotals.factoryShare.toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-blue-600">+{claimsTotals.municipality.toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-amber-600">−{claimsTotals.retention.toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-emerald-700">{claimsTotals.net.toLocaleString()} ₪</td>
+                          <td className="px-4 py-3"></td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
               </Card>
