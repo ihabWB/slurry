@@ -1616,21 +1616,24 @@ async function calcDisbursementAmounts(from: string, to: string) {
 }
 
 const MUNICIPALITY_PCT = 14 // نسبة ثابتة لبلدية الخليل
+const MUNICIPALITY_RETENTION_PCT = 10 // حجز 10% من حصة البلدية
 
 /**
  * حساب حقول الدفعة الكاملة:
  *   المبلغ الأساسي (disbursed_amount) = تكلفة النقلات كاملة
  *   municipality_amount = disbursed_amount × 14%  (يُضاف)
+ *   municipality_retention_amount = municipality_amount × 10%  (يُخصم)
  *   retention_amount    = disbursed_amount × retention_pct%  (يُخصم)
- *   net_payment         = disbursed_amount + municipality_amount - retention_amount
+ *   net_payment         = disbursed_amount + municipality_amount - municipality_retention_amount - retention_amount
  *
  *   total_factory_share = رصيد مستقل للمشروع (لا يدخل في حساب net_payment)
  */
 function calcRetention(disbursed_amount: number, retention_pct: number) {
   const municipality_amount = Math.round(disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100
+  const municipality_retention_amount = Math.round(municipality_amount * MUNICIPALITY_RETENTION_PCT / 100 * 100) / 100
   const retention_amount    = Math.round(disbursed_amount * retention_pct / 100 * 100) / 100
-  const net_payment         = Math.round((disbursed_amount + municipality_amount - retention_amount) * 100) / 100
-  return { municipality_amount, retention_amount, net_payment }
+  const net_payment         = Math.round((disbursed_amount + municipality_amount - municipality_retention_amount - retention_amount) * 100) / 100
+  return { municipality_amount, municipality_retention_amount, retention_amount, net_payment }
 }
 
 /** إنشاء دفعة جديدة (مسودة) وحساب مجاميعها تلقائياً */
@@ -1688,13 +1691,17 @@ export async function createDisbursement(
 
   // ── حساب الحجوزات ──
   const municipality_pct = MUNICIPALITY_PCT
-  const { municipality_amount, retention_amount, net_payment } = retention_amount_override !== undefined
-    ? {
-        municipality_amount: Math.round(amounts.disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100,
-        retention_amount: retention_amount_override,
-        net_payment: Math.round((amounts.disbursed_amount + Math.round(amounts.disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100 - retention_amount_override) * 100) / 100,
-      }
-    : calcRetention(amounts.disbursed_amount, retention_pct)
+  let municipality_amount: number, municipality_retention_amount: number, retention_amount: number, net_payment: number
+  if (retention_amount_override !== undefined) {
+    const overrideMunicipality = Math.round(amounts.disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100
+    const overrideMunRetention = Math.round(overrideMunicipality * MUNICIPALITY_RETENTION_PCT / 100 * 100) / 100
+    municipality_amount = overrideMunicipality
+    municipality_retention_amount = overrideMunRetention
+    retention_amount = retention_amount_override
+    net_payment = Math.round((amounts.disbursed_amount + overrideMunicipality - overrideMunRetention - retention_amount_override) * 100) / 100
+  } else {
+    ;({ municipality_amount, municipality_retention_amount, retention_amount, net_payment } = calcRetention(amounts.disbursed_amount, retention_pct))
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: { user } } = await (supabase as any).auth.getUser()
@@ -1709,6 +1716,7 @@ export async function createDisbursement(
       retention_amount,
       municipality_pct,
       municipality_amount,
+      municipality_retention_amount,
       net_payment,
       notes: notes ?? null,
       status: 'draft',
@@ -1734,14 +1742,14 @@ export async function recalcDisbursement(id: string): Promise<Disbursement> {
 
   const amounts = await calcDisbursementAmounts(current.period_from, current.period_to)
   // إعادة حساب الحجوزات بنفس النسبة المحفوظة في السجل
-  const { municipality_amount, retention_amount, net_payment } = calcRetention(
+  const { municipality_amount, municipality_retention_amount, retention_amount, net_payment } = calcRetention(
     amounts.disbursed_amount,
     Number(current.retention_pct ?? 10)
   )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('disbursements')
-    .update({ ...amounts, municipality_amount, retention_amount, net_payment })
+    .update({ ...amounts, municipality_amount, municipality_retention_amount, retention_amount, net_payment })
     .eq('id', id)
     .select()
     .single()
@@ -1829,13 +1837,17 @@ export async function updateDisbursement(
   const factory_share_collected = paid_count * contributionPerTrip
   // disbursed_amount = تكلفة النقلات كاملة
   const disbursed_amount = total_trips_cost
-  const { municipality_amount, retention_amount, net_payment } = fields.retention_amount_override !== undefined
-    ? {
-        municipality_amount: Math.round(disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100,
-        retention_amount: fields.retention_amount_override,
-        net_payment: Math.round((disbursed_amount + Math.round(disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100 - fields.retention_amount_override) * 100) / 100,
-      }
-    : calcRetention(disbursed_amount, newPct)
+  let municipality_amount: number, municipality_retention_amount: number, retention_amount: number, net_payment: number
+  if (fields.retention_amount_override !== undefined) {
+    const overrideMunicipality = Math.round(disbursed_amount * MUNICIPALITY_PCT / 100 * 100) / 100
+    const overrideMunRetention = Math.round(overrideMunicipality * MUNICIPALITY_RETENTION_PCT / 100 * 100) / 100
+    municipality_amount = overrideMunicipality
+    municipality_retention_amount = overrideMunRetention
+    retention_amount = fields.retention_amount_override
+    net_payment = Math.round((disbursed_amount + overrideMunicipality - overrideMunRetention - fields.retention_amount_override) * 100) / 100
+  } else {
+    ;({ municipality_amount, municipality_retention_amount, retention_amount, net_payment } = calcRetention(disbursed_amount, newPct))
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
@@ -1851,6 +1863,7 @@ export async function updateDisbursement(
       factory_share_collected,
       disbursed_amount,
       municipality_amount,
+      municipality_retention_amount,
       retention_amount,
       net_payment,
     })

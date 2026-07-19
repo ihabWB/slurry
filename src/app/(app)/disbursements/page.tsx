@@ -316,6 +316,10 @@ function AdminReviewModal({
             <span>بلدية 14%</span>
             <span className="font-semibold">+ {fmt(disb.municipality_amount)}</span>
           </div>
+          <div className="flex justify-between text-rose-700">
+            <span>حجز بلدية 10%</span>
+            <span className="font-semibold">− {fmt(disb.municipality_retention_amount ?? 0)}</span>
+          </div>
           <div className="flex justify-between text-orange-700">
             <span>حجز {disb.retention_pct}%</span>
             <span className="font-semibold">− {fmt(disb.retention_amount)}</span>
@@ -906,6 +910,12 @@ function DisbursementCard({
             <Banknote size={10} /> بلدية 14%
           </p>
           <p className="text-sm font-bold text-violet-700">+ {fmt(disb.municipality_amount)}</p>
+        </div>
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center">
+          <p className="text-[11px] text-rose-600 mb-1 flex items-center justify-center gap-0.5">
+            <ShieldCheck size={10} /> حجز بلدية 10%
+          </p>
+          <p className="text-sm font-bold text-rose-700">− {fmt(disb.municipality_retention_amount ?? 0)}</p>
         </div>
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
           <p className="text-[11px] text-orange-600 mb-1 flex items-center justify-center gap-0.5">

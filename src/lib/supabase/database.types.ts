@@ -202,6 +202,7 @@ export interface Database {
           retention_amount: number
           municipality_pct: number
           municipality_amount: number
+          municipality_retention_amount: number
           net_payment: number
           notes: string | null
           status: 'draft' | 'pending' | 'closed' | 'returned'
@@ -228,6 +229,7 @@ export interface Database {
           retention_amount?: number
           municipality_pct?: number
           municipality_amount?: number
+          municipality_retention_amount?: number
           net_payment?: number
           notes?: string | null
           status?: 'draft' | 'pending' | 'closed' | 'returned'
@@ -249,6 +251,7 @@ export interface Database {
           retention_amount?: number
           municipality_pct?: number
           municipality_amount?: number
+          municipality_retention_amount?: number
           net_payment?: number
           notes?: string | null
           status?: 'draft' | 'pending' | 'closed' | 'returned'

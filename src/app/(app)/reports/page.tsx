@@ -487,6 +487,7 @@ export default function ReportsPage() {
     cost:         filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.total_trips_cost ?? 0), 0),
     factoryShare: filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.total_factory_share ?? 0), 0),
     municipality: filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.municipality_amount ?? 0), 0),
+    munRetention: filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.municipality_retention_amount ?? 0), 0),
     retention:    filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.retention_amount ?? 0), 0),
     net:          filteredClaims.reduce((s: number, d: AnyData) => s + Number(d.net_payment ?? 0), 0),
   }), [filteredClaims])
@@ -501,6 +502,7 @@ export default function ReportsPage() {
       'إيرادات المصانع (₪)': Number(d.total_factory_share ?? 0),
       'نسبة البلدية %': Number(d.municipality_pct ?? 0),
       'مبلغ البلدية (₪)': Number(d.municipality_amount ?? 0),
+      'حجز البلدية (₪)': Number(d.municipality_retention_amount ?? 0),
       'نسبة الحجز %': Number(d.retention_pct ?? 0),
       'مبلغ الحجز (₪)': Number(d.retention_amount ?? 0),
       'صافي الدفعة (₪)': Number(d.net_payment ?? 0),
@@ -2839,7 +2841,7 @@ export default function ReportsPage() {
               </div>
 
               {/* بطاقات ملخص */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <Card className="border-slate-100"><CardBody className="text-center py-4">
                   <p className="text-2xl font-bold text-slate-700">{filteredClaims.length}</p>
                   <p className="text-xs text-slate-500 mt-1">عدد المطالبات</p>
@@ -2851,6 +2853,10 @@ export default function ReportsPage() {
                 <Card className="border-blue-100"><CardBody className="text-center py-4">
                   <p className="text-2xl font-bold text-blue-600">{claimsTotals.municipality.toLocaleString()} ₪</p>
                   <p className="text-xs text-slate-500 mt-1">إجمالي البلدية</p>
+                </CardBody></Card>
+                <Card className="border-rose-100"><CardBody className="text-center py-4">
+                  <p className="text-2xl font-bold text-rose-600">{claimsTotals.munRetention.toLocaleString()} ₪</p>
+                  <p className="text-xs text-slate-500 mt-1">إجمالي حجز البلدية</p>
                 </CardBody></Card>
                 <Card className="border-amber-100"><CardBody className="text-center py-4">
                   <p className="text-2xl font-bold text-amber-600">{claimsTotals.retention.toLocaleString()} ₪</p>
@@ -2880,6 +2886,7 @@ export default function ReportsPage() {
                         <th className="text-center px-4 py-3 text-xs text-red-600 font-semibold">إجمالي التكلفة</th>
                         <th className="text-center px-4 py-3 text-xs text-violet-600 font-semibold">إيرادات المصانع</th>
                         <th className="text-center px-4 py-3 text-xs text-blue-600 font-semibold">بلدية</th>
+                        <th className="text-center px-4 py-3 text-xs text-rose-600 font-semibold">حجز البلدية</th>
                         <th className="text-center px-4 py-3 text-xs text-amber-600 font-semibold">حجز</th>
                         <th className="text-center px-4 py-3 text-xs text-emerald-600 font-semibold">صافي الدفعة</th>
                         <th className="text-right px-4 py-3 text-xs text-slate-500 font-semibold">ملاحظات</th>
@@ -2887,7 +2894,7 @@ export default function ReportsPage() {
                     </thead>
                     <tbody>
                       {filteredClaims.length === 0 ? (
-                        <tr><td colSpan={10} className="text-center py-10 text-slate-400">لا توجد مطالبات {claimsStatusFilter !== 'all' ? 'بهذه الحالة' : ''}</td></tr>
+                        <tr><td colSpan={11} className="text-center py-10 text-slate-400">لا توجد مطالبات {claimsStatusFilter !== 'all' ? 'بهذه الحالة' : ''}</td></tr>
                       ) : filteredClaims.map((d: AnyData, i: number) => (
                         <tr key={d.id} className={`border-b border-slate-50 hover:bg-slate-50 ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                           <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
@@ -2905,6 +2912,9 @@ export default function ReportsPage() {
                           <td className="px-4 py-3 text-center text-blue-600 whitespace-nowrap">
                             +{Number(d.municipality_amount ?? 0).toLocaleString()} ₪ <span className="text-[10px] text-slate-400">({Number(d.municipality_pct ?? 0)}%)</span>
                           </td>
+                          <td className="px-4 py-3 text-center text-rose-600 whitespace-nowrap">
+                            −{Number(d.municipality_retention_amount ?? 0).toLocaleString()} ₪
+                          </td>
                           <td className="px-4 py-3 text-center text-amber-600 whitespace-nowrap">
                             −{Number(d.retention_amount ?? 0).toLocaleString()} ₪ <span className="text-[10px] text-slate-400">({Number(d.retention_pct ?? 0)}%)</span>
                           </td>
@@ -2921,6 +2931,7 @@ export default function ReportsPage() {
                           <td className="px-4 py-3 text-center text-red-600">{claimsTotals.cost.toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-violet-600">{claimsTotals.factoryShare.toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-blue-600">+{claimsTotals.municipality.toLocaleString()} ₪</td>
+                          <td className="px-4 py-3 text-center text-rose-600">−{claimsTotals.munRetention.toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-amber-600">−{claimsTotals.retention.toLocaleString()} ₪</td>
                           <td className="px-4 py-3 text-center text-emerald-700">{claimsTotals.net.toLocaleString()} ₪</td>
                           <td className="px-4 py-3"></td>
