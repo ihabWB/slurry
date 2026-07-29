@@ -572,11 +572,14 @@ export async function approveTrip(id: string): Promise<void> {
   const now = new Date().toISOString()
   const { data: { user } } = await supabase.auth.getUser()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { data, error } = await (supabase as any)
     .from('trips')
     .update({ approval_status: 'approved', approved_at: now, approved_by: user?.id ?? null, rejection_note: null })
     .eq('id', id)
+    .select('factory_id, payment_status')
+    .single()
   if (error) throw error
+  if (data?.payment_status === 'credit' && data.factory_id) await applyFactoryCreditToNewTrip(id, data.factory_id)
 }
 
 /** الأدمن: رفض نقلة مع سبب */
@@ -602,8 +605,13 @@ export async function approveAllPendingTrips(): Promise<number> {
     .from('trips')
     .update({ approval_status: 'approved', approved_at: now, approved_by: user?.id ?? null, rejection_note: null })
     .eq('approval_status', 'pending_approval')
-    .select('id')
+    .select('id, factory_id, payment_status')
   if (error) throw error
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const creditRows = (data ?? []).filter((t: any) => t.payment_status === 'credit' && t.factory_id)
+  for (const t of creditRows) {
+    await applyFactoryCreditToNewTrip(t.id, t.factory_id)
+  }
   return (data ?? []).length
 }
 
@@ -637,7 +645,7 @@ export async function editAndApproveTrip(id: string, updates: {
   const computedSubsidy: number | null = recomputed?.subsidy_amount       ?? (updates.subsidy_amount       ?? null)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { data, error } = await (supabase as any)
     .from('trips')
     .update({
       ...updates,
@@ -650,7 +658,10 @@ export async function editAndApproveTrip(id: string, updates: {
       rejection_note:  null,
     })
     .eq('id', id)
+    .select('factory_id, payment_status')
+    .single()
   if (error) throw error
+  if (data?.payment_status === 'credit' && data.factory_id) await applyFactoryCreditToNewTrip(id, data.factory_id)
 }
 
 /** الأدمن: إلغاء اعتماد نقلة معتمدة → ترجع لحالة pending_approval */
@@ -932,6 +943,7 @@ export async function createPayment(payment: PaymentInsert) {
       .select('id, factory_contribution')
       .eq('factory_id', payment.factory_id)
       .eq('payment_status', 'credit')
+      .eq('approval_status', 'approved')
       .order('trip_date', { ascending: true })
       .order('created_at', { ascending: true })
 
@@ -968,7 +980,7 @@ export async function previewPayment(factoryId: string, amountPaid: number): Pro
   const [allTripsRes, paymentsRes, defaultContribution] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
-      .from('trips').select('id, factory_contribution, payment_status, payment_method')
+      .from('trips').select('id, factory_contribution, payment_status, payment_method, approval_status')
       .eq('factory_id', factoryId)
       .order('trip_date', { ascending: true }).order('created_at', { ascending: true }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -987,7 +999,7 @@ export async function previewPayment(factoryId: string, amountPaid: number): Pro
   })
 
   // نقلات الذمة مرتبة لتغطيتها (مرتبة أصلاً من الاستعلام أعلاه: trip_date ثم created_at)
-  const creditTrips = allTrips.filter(t => t.payment_status === 'credit')
+  const creditTrips = allTrips.filter(t => t.payment_status === 'credit' && t.approval_status === 'approved')
   const { toSettle, remaining } = selectTripsToSettle(creditTrips, amountPaid + existingCredit, defaultContribution)
 
   return {
@@ -1007,7 +1019,7 @@ export async function applyFactoryCreditToNewTrip(tripId: string, factoryId: str
 
   const [tripRes, otherTripsRes, paymentsRes, defaultContribution] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from('trips').select('factory_contribution').eq('id', tripId).single(),
+    (supabase as any).from('trips').select('factory_contribution, approval_status').eq('id', tripId).single(),
     // نحسب الرصيد الدائن الحقيقي من باقي نقلات المصنع (باستثناء هذي النقلة) والمدفوعات مباشرةً
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('trips').select('factory_contribution, payment_status, payment_method')
@@ -1026,7 +1038,7 @@ export async function applyFactoryCreditToNewTrip(tripId: string, factoryId: str
     defaultContribution,
   })
 
-  if (creditBeforeThisTrip >= contrib) {
+  if (tripRes.data?.approval_status === 'approved' && creditBeforeThisTrip >= contrib) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any)
       .from('trips')
