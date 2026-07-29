@@ -1225,10 +1225,14 @@ export default function TripsPage() {
                       <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
 
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">حالة الدفع</label>
-                      <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                      <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))} disabled={editTrip?.payment_status === 'paid' && editTrip?.payment_method === 'later'}>
                         <option value="credit">⏳ ذمة</option>
                         <option value="paid">✅ مدفوع</option>
-                      </Select></div>
+                      </Select>
+                      {editTrip?.payment_status === 'paid' && editTrip?.payment_method === 'later' && (
+                        <p className="text-[10px] text-amber-600 mt-1">🔒 مسوّاة تلقائيًا من دفعة سابقة — لتغيير حالتها عدّل/احذف الدفعة من صفحة المصنع</p>
+                      )}
+                    </div>
 
                     <div><label className="block text-xs font-medium text-slate-600 mb-1">رقم الكوبون</label>
                       <Input value={editForm.coupon_number} onChange={e => setEditForm(f => ({ ...f, coupon_number: e.target.value }))} placeholder="مثال: K-001" /></div>
@@ -1376,10 +1380,14 @@ export default function TripsPage() {
                 <div><label className="block text-xs font-medium text-slate-600 mb-1">تاريخ النقلة</label>
                   <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
                 <div><label className="block text-xs font-medium text-slate-600 mb-1">حالة الدفع</label>
-                  <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                  <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))} disabled={editTrip?.payment_status === 'paid' && editTrip?.payment_method === 'later'}>
                     <option value="credit">⏳ ذمة</option>
                     <option value="paid">✅ مدفوع</option>
-                  </Select></div>
+                  </Select>
+                  {editTrip?.payment_status === 'paid' && editTrip?.payment_method === 'later' && (
+                    <p className="text-[10px] text-amber-600 mt-1">🔒 مسوّاة تلقائيًا من دفعة سابقة — لتغيير حالتها عدّل/احذف الدفعة من صفحة المصنع</p>
+                  )}
+                </div>
                 <div><label className="block text-xs font-medium text-slate-600 mb-1">رقم الكوبون</label>
                   <Input value={editForm.coupon_number} onChange={e => setEditForm(f => ({ ...f, coupon_number: e.target.value }))} placeholder="مثال: K-001" /></div>
                 <div><label className="block text-xs font-medium text-slate-600 mb-1">اسم السائق</label>
@@ -1433,9 +1441,13 @@ export default function TripsPage() {
               <div><label className="block text-sm font-medium text-slate-700 mb-1">تاريخ النقلة</label>
                 <Input type="date" value={editForm.trip_date} onChange={e => setEditForm(f => ({ ...f, trip_date: e.target.value }))} /></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">حالة الدفع</label>
-                <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))}>
+                <Select value={editForm.payment_status} onChange={e => setEditForm(f => ({ ...f, payment_status: e.target.value }))} disabled={editTrip?.payment_status === 'paid' && editTrip?.payment_method === 'later'}>
                   <option value="credit">ذمة</option><option value="paid">مدفوع</option>
-                </Select></div>
+                </Select>
+                {editTrip?.payment_status === 'paid' && editTrip?.payment_method === 'later' && (
+                  <p className="text-[10px] text-amber-600 mt-1">🔒 مسوّاة تلقائيًا من دفعة سابقة — لتغيير حالتها عدّل/احذف الدفعة من صفحة المصنع</p>
+                )}
+              </div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">نوع الربو</label>
                 <Select value={editForm.waste_type} onChange={e => setEditForm(f => ({ ...f, waste_type: e.target.value }))}>
                   <option value="">غير محدد</option><option value="liquid">💧 سائل</option><option value="solid">🪨 جاف</option>
